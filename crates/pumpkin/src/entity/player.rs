@@ -2445,10 +2445,11 @@ impl Player {
         .await;
 
         let chunk_pos = self.living_entity.entity.chunk_pos.load();
-        world.broadcast_to_chunk(
-            chunk_pos,
-            &CEntityAnimation::new(self.entity_id().into(), Animation::LeaveBed),
-        );
+        let leave_bed = CEntityAnimation::new(self.entity_id().into(), Animation::LeaveBed);
+        world.broadcast_java_to_entity_trackers_sync(self.entity_id(), chunk_pos, &leave_bed);
+        // The player's own client is not in its entity tracker set, but still
+        // needs the animation when a command/plugin wakes it remotely.
+        self.client.enqueue_packet(&leave_bed).await;
 
         self.sleeping_since.store(None);
         self.sleeping_pos.store(None);
