@@ -3025,7 +3025,14 @@ impl Player {
             }
             ClientPlatform::Bedrock(bedrock) => {
                 let abilities = self.abilities.lock().await;
-                let is_op = self.permission_lvl.load() == PermissionLvl::Four;
+                let permission_level = self.permission_lvl.load();
+                let is_op = self
+                    .world()
+                    .server
+                    .upgrade()
+                    .map_or(permission_level == PermissionLvl::Four, |server| {
+                        permission_level >= server.basic_config.op_permission_level
+                    });
                 let is_spectator = self.gamemode.load() == GameMode::Spectator;
 
                 // 1. Permission Mapping
