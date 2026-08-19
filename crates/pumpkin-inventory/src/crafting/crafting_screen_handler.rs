@@ -72,10 +72,11 @@ fn canonicalize_recipe_id(id: &str) -> String {
     }
 }
 
-/// Finds the first vanilla or dynamic crafting recipe that matches an input
-/// grid.  This is intentionally shared by regular crafting screens and the
-/// Crafter block entity so both paths use exactly the same shaped/shapeless
-/// matching rules (including mirrored shaped recipes).
+/// Finds the first vanilla or dynamic crafting recipe that matches an input grid.
+///
+/// This is intentionally shared by regular crafting screens and the Crafter
+/// block entity so both paths use exactly the same shaped/shapeless matching
+/// rules (including mirrored shaped recipes).
 pub async fn find_crafting_result(
     inventory: &dyn RecipeInputInventory,
     provider: Option<&dyn RecipeProvider>,

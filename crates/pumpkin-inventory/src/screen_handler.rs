@@ -60,7 +60,7 @@ use tracing::warn;
 const SLOT_INDEX_OUTSIDE: i32 = -999;
 
 #[inline]
-fn is_valid_slot_index(slot: i32, slot_count: usize) -> bool {
+const fn is_valid_slot_index(slot: i32, slot_count: usize) -> bool {
     slot == -1 || slot == SLOT_INDEX_OUTSIDE || (slot >= 0 && (slot as usize) < slot_count)
 }
 
@@ -93,7 +93,7 @@ fn calculate_quick_craft_plan(
         // Creative quick-craft uses the item's maximum, not the current
         // carried count, and the cursor is cleared after the operation.
         2 => source.get_max_stack_size(),
-        _ => unreachable!(),
+        _ => return (Vec::new(), source.item_count),
     };
     let mut remaining = source.item_count;
     let mut placements = Vec::with_capacity(slots.len());
@@ -300,7 +300,7 @@ pub async fn offer_or_drop_stack(player: &dyn InventoryPlayer, stack: ItemStack)
 /// These indices are stable Java protocol positions for the player inventory
 /// screen. Other container menus do not expose the off-hand slot, so callers
 /// must only use this mapping for a player inventory layout.
-pub(crate) fn player_screen_equipment_slot(slot_index: i32) -> Option<EquipmentSlot> {
+pub(crate) const fn player_screen_equipment_slot(slot_index: i32) -> Option<EquipmentSlot> {
     match slot_index {
         5 => Some(EquipmentSlot::HEAD),
         6 => Some(EquipmentSlot::CHEST),
@@ -1142,7 +1142,7 @@ pub trait ScreenHandler: Send + Sync {
                         drop(cursor_stack);
                         behaviour.reset_quick_craft();
                     }
-                    _ => unreachable!(),
+                    _ => {}
                 }
             } else if action_type == SlotActionType::Throw {
                 if slot_index >= 0 && self.get_behaviour().cursor_stack.lock().await.is_empty() {

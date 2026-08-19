@@ -56,8 +56,12 @@ impl PlayerInventory {
     /// Creates a new player inventory.
     ///
     /// # Arguments
+    ///
     /// - `entity_equipment` - The entity equipment storage for armor/off-hand
     /// - `equipment_slots` - Mapping of slot indices to equipment slots
+    ///
+    /// # Persistence
+    ///
     /// Constructs an empty inventory.  Persistence is applied by
     /// `Player::read_nbt_non_mut`, which first clears this instance and then
     /// reads Mojang's main/armor/off-hand slot numbers.
