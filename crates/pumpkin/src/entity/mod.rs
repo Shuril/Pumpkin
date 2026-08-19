@@ -3370,17 +3370,44 @@ impl Entity {
                 .store((pitch * 256.0 / 360.0).rem_euclid(256.0) as u8, Relaxed);
         }
         let chunk_pos = self.chunk_pos.load();
-        self.world.load().broadcast_to_chunk(
-            chunk_pos,
-            &CEntityPositionSync::new(
-                self.entity_id.into(),
-                position,
-                Vector3::new(0.0, 0.0, 0.0),
-                yaw.unwrap_or(self.yaw.load()),
-                pitch.unwrap_or(self.pitch.load()),
-                self.on_ground.load(Ordering::SeqCst),
-            ),
-        );
+        let final_yaw = yaw.unwrap_or(self.yaw.load());
+        let final_pitch = pitch.unwrap_or(self.pitch.load());
+        let yaw_byte = (final_yaw * 256.0 / 360.0).rem_euclid(256.0) as u8;
+        let pitch_byte = (final_pitch * 256.0 / 360.0).rem_euclid(256.0) as u8;
+        let mut flags = MOVE_ACTOR_DELTA_FLAG_HAS_X
+            | MOVE_ACTOR_DELTA_FLAG_HAS_Y
+            | MOVE_ACTOR_DELTA_FLAG_HAS_Z
+            | MOVE_ACTOR_DELTA_FLAG_HAS_PITCH
+            | MOVE_ACTOR_DELTA_FLAG_HAS_YAW
+            | MOVE_ACTOR_DELTA_FLAG_HAS_HEAD_YAW
+            | MOVE_ACTOR_DELTA_FLAG_FORCE_MOVE;
+        if self.on_ground.load(Ordering::SeqCst) {
+            flags |= MOVE_ACTOR_DELTA_FLAG_ON_GROUND;
+        }
+        self.world
+            .load()
+            .broadcast_to_entity_trackers_editioned_sync(
+                self.entity_id,
+                chunk_pos,
+                &CEntityPositionSync::new(
+                    self.entity_id.into(),
+                    position,
+                    Vector3::new(0.0, 0.0, 0.0),
+                    final_yaw,
+                    final_pitch,
+                    self.on_ground.load(Ordering::SeqCst),
+                ),
+                &CMoveActorDelta::new(
+                    VarULong(self.entity_id as u64),
+                    flags,
+                    position.x as f32,
+                    position.y as f32,
+                    position.z as f32,
+                    pitch_byte,
+                    yaw_byte,
+                    yaw_byte,
+                ),
+            );
     }
 
     pub fn get_eye_pos(&self) -> Vector3<f64> {
