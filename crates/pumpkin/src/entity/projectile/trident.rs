@@ -13,6 +13,8 @@ use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_protocol::IdOr;
+use pumpkin_protocol::bedrock::client::CSetActorMotion;
+use pumpkin_protocol::codec::var_ulong::VarULong;
 use pumpkin_protocol::java::client::play::{CEntityVelocity, CSoundEffect};
 use pumpkin_util::math::boundingbox::BoundingBox;
 use pumpkin_util::math::position::BlockPos;
@@ -214,7 +216,16 @@ impl EntityBase for TridentEntity {
             // Broadcast velocity update
             let packet = CEntityVelocity::new(entity.entity_id.into(), velocity);
             let chunk_pos = entity.chunk_pos.load();
-            world.broadcast_to_chunk(chunk_pos, &packet);
+            world.broadcast_to_entity_trackers_editioned_sync(
+                entity.entity_id,
+                chunk_pos,
+                &packet,
+                &CSetActorMotion::new(
+                    VarULong(entity.entity_id as u64),
+                    Vector3::new(velocity.x as f32, velocity.y as f32, velocity.z as f32),
+                    VarULong(0),
+                ),
+            );
 
             // Check for collisions using raycasting
             let search_box = BoundingBox::new(

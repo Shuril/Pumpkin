@@ -2,6 +2,8 @@ use super::{Entity, EntityBase, NBTStorage, living::LivingEntity};
 use crate::server::Server;
 use pumpkin_data::BlockDirection;
 use pumpkin_data::entity::EntityType;
+use pumpkin_protocol::bedrock::client::CSetActorMotion;
+use pumpkin_protocol::codec::var_ulong::VarULong;
 use pumpkin_protocol::java::client::play::CEntityVelocity;
 use pumpkin_util::math::boundingbox::BoundingBox;
 use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
@@ -147,7 +149,16 @@ impl ThrownItemEntity {
         // Send updated velocity to clients
         let packet = CEntityVelocity::new(entity.entity_id.into(), velocity);
         let chunk_pos = entity.chunk_pos.load();
-        world.broadcast_java_to_entity_trackers_sync(entity.entity_id, chunk_pos, &packet);
+        world.broadcast_to_entity_trackers_editioned_sync(
+            entity.entity_id,
+            chunk_pos,
+            &packet,
+            &CSetActorMotion::new(
+                VarULong(entity.entity_id as u64),
+                Vector3::new(velocity.x as f32, velocity.y as f32, velocity.z as f32),
+                VarULong(0),
+            ),
+        );
 
         // Calculate search box for collisions
         let search_box = BoundingBox::new(
