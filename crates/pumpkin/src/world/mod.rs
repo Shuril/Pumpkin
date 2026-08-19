@@ -180,6 +180,11 @@ fn entity_visibility_transition(was_visible: bool, is_visible: bool) -> EntityVi
     }
 }
 
+#[inline]
+const fn entity_query_capacity_reached(len: usize, max: usize) -> bool {
+    len >= max
+}
+
 #[must_use]
 fn can_spawn_entities_in_chunk(
     active_chunks: &FxHashSet<Vector2<i32>>,
@@ -4958,7 +4963,7 @@ impl World {
             // We add the player to the list.
             list.push(player.clone());
             // Check if the list is too big.
-            if list.len() > max_list_capacity {
+            if entity_query_capacity_reached(list.len(), max_list_capacity) {
                 return;
             }
         }
@@ -4968,7 +4973,7 @@ impl World {
                 continue;
             }
             list.push(entity.clone());
-            if list.len() > max_list_capacity {
+            if entity_query_capacity_reached(list.len(), max_list_capacity) {
                 return;
             }
             // TODO: Implement ender dragon handling
@@ -7361,5 +7366,12 @@ mod tests {
             super::bedrock_permission_level(PermissionLvl::Four, PermissionLvl::Four),
             2
         );
+    }
+
+    #[test]
+    fn entity_query_capacity_is_exact_at_the_boundary() {
+        assert!(super::entity_query_capacity_reached(3, 3));
+        assert!(super::entity_query_capacity_reached(4, 3));
+        assert!(!super::entity_query_capacity_reached(2, 3));
     }
 }

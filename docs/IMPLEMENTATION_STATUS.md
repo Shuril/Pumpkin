@@ -352,6 +352,8 @@ registry entry exists.
   completed before those phases. Each item still runs in an isolated spawned
   task so a panic is logged and does not abort the server, but no phase can
   observe another phase's partially committed state.
+- Entity query helpers now stop at the requested maximum instead of appending
+  one extra player/entity at the capacity boundary.
 - `chunk.loading_ticket_recovery`: a stale derived chunk-level map no longer
   panics the server during ticket removal. The authoritative ticket set is
   rebuilt, affected stage transitions are published to the worker, and a

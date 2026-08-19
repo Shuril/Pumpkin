@@ -74,7 +74,7 @@ Pumpkin API.
 
 | Область | Pumpkin | Vanilla reference | Статус / что сделать |
 |---|---|---|---|
-| Entity base/NBT | `entity/mod.rs` | `Entity`, `EntityType`, `SynchedEntityData` | mostly; test every entity type's NBT and unknown-field retention |
+| Entity base/NBT | `entity/mod.rs`, `world/mod.rs` | `Entity`, `EntityType`, `SynchedEntityData`, `Level#getEntities` | mostly; entity query capacity bounds now stop exactly at the requested maximum; test every entity type's NBT and unknown-field retention |
 | Player | `entity/player.rs`, `net/java/{mod,play}.rs`, `world/mod.rs` | `ServerPlayer`, `ServerGamePacketListenerImpl`, Bedrock `StartGame` | mostly; swimming entry now uses the Mojang block-fluid predicate, Java `ClientTickEnd` maintains/resets known client movement, and Bedrock advertises configured member/operator permission; cross-dimension respawn and some client edge cases remain |
 | Bed/villager sleep | `block/blocks/bed.rs`, `entity/passive/villager` | `BedBlock#kickVillagerOutOfBed` | mostly; occupied-bed villager wake-up and sleeping metadata are wired; full sleep/POI timing fixtures remain |
 | Damage/death | `entity/living.rs`, `entity/mob/mod.rs`, `entity/experience_orb.rs` | `LivingEntity`, `Mob`, `CombatTracker`, `ExperienceOrb` | mostly; fall/death messages, hurt/death state, mob equipment XP bonuses and award-time orb coalescing are wired; killer enchantment bonuses, full merge/concurrency fixtures, damage-source edge cases and gamerule/client fixtures remain |
