@@ -340,6 +340,9 @@ registry entry exists.
   and removes fast entities even after they cross a boundary. Movement,
   rotation, head-yaw, velocity and metadata deltas now use the same paired-ID
   gate, so a client cannot receive a delta before spawn or after removal.
+  Java `ClientTickEnd` now tracks the last accepted client movement delta and
+  resets it to zero when a tick contains no movement packet, matching
+  `ServerGamePacketListenerImpl` and the player known-movement predicates.
 - `world.tick_phase_order`: player, entity and block-entity ticks are now
   processed in deterministic order (players in connection order, entities by
   server entity id, block entities by block position), with chunk ticking
@@ -868,7 +871,7 @@ registry entry exists.
   `waterlogged` property while retaining the vanilla facing.
 - `parity/manifest.toml` and `tools/parity_inventory.py` provide a
   machine-readable ledger and deterministic source/TODO inventory. The
-  inventory report currently validates 143 tracked contracts; all remain
+  inventory report currently validates 147 tracked contracts; all remain
   explicitly `mostly` until their world/packet/persistence boundaries have
   differential evidence.
 
@@ -878,11 +881,11 @@ registry entry exists.
 cargo fmt --all -- --check
 cargo check -p pumpkin --lib
 cargo check --workspace
-cargo test -p pumpkin --lib                         # 359 passed in the last full run
+cargo test -p pumpkin --lib                         # 386 passed in the last full run
   cargo test -p pumpkin --lib block::entities::chest::tests::deferred_loot_table_can_be_restored_without_losing_seed  # 1 passed
   cargo test -p pumpkin-inventory --lib               # 13 passed
   cargo test -p pumpkin-data --lib use_remainder_converts_only_the_exhausted_survival_stack
-  cargo test -p pumpkin-world --lib                   # 213 passed in the current checkout
+  cargo test -p pumpkin-world --lib                   # 226 passed in the current checkout
   cargo test -p pumpkin-protocol --lib                # 93 passed
   cargo test -p pumpkin-protocol --lib light_update  # 4 passed
 python3 tools/parity_inventory.py --output report.json
@@ -899,11 +902,11 @@ movement additions, plus the player/dispenser brush state machine and the
   advancements and structures.
 The same run includes datapack function ZIP/directory priority, validation,
 canonical `/function` and `/schedule` command coverage; the Pumpkin library
-The last full Pumpkin suite is 359/359, including the deferred-chest and
+The last full Pumpkin suite is 386/386, including the deferred-chest and
 storage-minecart datapack regressions, fishing pool/open-water coverage, and
 minecart persistence-related regressions. World-info scheduled callback persistence has a
 dedicated round-trip test in the world crate.
-Pumpkin World baseline is green at 213/213, and the post-change chunk-loading
+Pumpkin World baseline is green at 226/226, and the post-change chunk-loading
 targeted suite is green at 2/2,
 the protocol crate is 93/93 (including item-component and malformed-packet
 guards), Java light serialization is 4/4, and inventory is 13/13. A complete
@@ -935,7 +938,7 @@ coverage, generated protocol certification, Bedrock parity and the differential
 Java 26.2 harness. These must be closed and promoted to `complete` before a
 release claim.
 
-The current ledger intentionally reports all 143 contracts as `mostly`: this is
+The current ledger intentionally reports all 147 contracts as `mostly`: this is
 not a build failure, but a release gate. Each row still needs its world/packet/
 persistence boundary fixture and differential evidence before it may become
 `complete`.

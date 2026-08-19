@@ -75,7 +75,7 @@ Pumpkin API.
 | Область | Pumpkin | Vanilla reference | Статус / что сделать |
 |---|---|---|---|
 | Entity base/NBT | `entity/mod.rs` | `Entity`, `EntityType`, `SynchedEntityData` | mostly; test every entity type's NBT and unknown-field retention |
-| Player | `entity/player.rs` | `ServerPlayer` | mostly; swimming entry now uses the Mojang block-fluid predicate; cross-dimension respawn and some client edge cases remain |
+| Player | `entity/player.rs`, `net/java/{mod,play}.rs` | `ServerPlayer`, `ServerGamePacketListenerImpl` | mostly; swimming entry now uses the Mojang block-fluid predicate and Java `ClientTickEnd` maintains/reset known client movement; cross-dimension respawn and some client edge cases remain |
 | Bed/villager sleep | `block/blocks/bed.rs`, `entity/passive/villager` | `BedBlock#kickVillagerOutOfBed` | mostly; occupied-bed villager wake-up and sleeping metadata are wired; full sleep/POI timing fixtures remain |
 | Damage/death | `entity/living.rs`, `entity/mob/mod.rs`, `entity/experience_orb.rs` | `LivingEntity`, `Mob`, `CombatTracker`, `ExperienceOrb` | mostly; fall/death messages, hurt/death state, mob equipment XP bonuses and award-time orb coalescing are wired; killer enchantment bonuses, full merge/concurrency fixtures, damage-source edge cases and gamerule/client fixtures remain |
 | Hunger/food bounds | `entity/hunger.rs`, `entity/living.rs` | `FoodData`, `MobEffect` | mostly; food additions saturate at 20 and malformed saturation/exhaustion data is bounded; starvation/regen timing and food-component fixtures remain |

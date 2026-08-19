@@ -812,6 +812,11 @@ pub struct Player {
     pub watched_section: AtomicCell<Cylindrical>,
     /// The last time the player performed an action (for idle timeout).
     pub last_action_time: AtomicCell<Instant>,
+    /// Last movement delta reported by the Java client for advancement and
+    /// projectile movement predicates.  Vanilla clears this value at
+    /// `ClientTickEnd` when no movement packet arrived during the tick; it is
+    /// deliberately separate from the server-integrated entity movement.
+    pub known_client_movement: AtomicCell<Vector3<f64>>,
     /// The ping in millis.
     pub ping: AtomicU32,
     /// The amount of ticks since the player's last attack.
@@ -1079,6 +1084,7 @@ impl Player {
                 NonZeroU8::new(1).unwrap_or(NonZeroU8::MIN),
             )),
             last_action_time: AtomicCell::new(std::time::Instant::now()),
+            known_client_movement: AtomicCell::new(Vector3::default()),
             ping: AtomicU32::new(0),
             last_attacked_ticks: AtomicU32::new(0),
             client_loaded: AtomicBool::new(false),
@@ -3611,6 +3617,17 @@ impl Player {
     /// Updates the last action time to now. Call this on player actions like movement, chat, etc.
     pub fn update_last_action_time(&self) {
         self.last_action_time.store(std::time::Instant::now());
+    }
+
+    /// Returns the last movement delta accepted from the Java client.
+    #[must_use]
+    pub fn known_client_movement(&self) -> Vector3<f64> {
+        self.known_client_movement.load()
+    }
+
+    /// Updates the movement used by vanilla's client-known movement queries.
+    pub fn set_known_client_movement(&self, movement: Vector3<f64>) {
+        self.known_client_movement.store(movement);
     }
 
     pub fn can_food_heal(&self) -> bool {

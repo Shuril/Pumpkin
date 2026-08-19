@@ -1622,4 +1622,14 @@ status = "mostly"
 observable_contracts = ["a target with a valid soul-sand/soil base receives a dispenser-oriented wither skull state", "peaceful or below-build-limit candidates fall back without consuming the skull", "the normal skull placed callback checks the soul-sand pattern and can spawn a wither", "a blocked or base-less target falls back to equipment/default dispense without consuming the skull", "the block-place vibration is emitted only after successful placement"]
 tests = ["cargo check -p pumpkin --lib"]
 dependencies = ["block.wither_skull", "dispenser.equipment", "entity.wither"]
+
+[[contract]]
+id = "player.client_tick_known_movement"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/server/network/ServerGamePacketListenerImpl.java", "net/minecraft/server/level/ServerPlayer.java"]
+pumpkin_sources = ["crates/pumpkin/src/net/java/mod.rs", "crates/pumpkin/src/net/java/play.rs", "crates/pumpkin/src/entity/player.rs", "crates/pumpkin/src/entity/living.rs"]
+status = "mostly"
+observable_contracts = ["accepted position, rotation and vehicle movement packets update the player's known client movement", "a non-zero known movement refreshes the idle-action timestamp", "ClientTickEnd clears known movement when no accepted movement packet arrived during the tick", "player movement predicates read the known client movement rather than a concurrent server-integrated displacement"]
+tests = ["cargo check -p pumpkin --lib"]
+dependencies = ["protocol.client_tick_end", "entity.player", "entity.movement_predicates"]
 last_verified_commit = "working-tree"

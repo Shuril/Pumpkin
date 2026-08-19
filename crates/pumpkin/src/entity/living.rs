@@ -2527,6 +2527,18 @@ impl LivingEntity {
     }
 
     pub fn get_movement(&self) -> Vector3<f64> {
+        // ServerPlayer#getKnownMovement is the client-reported delta, not the
+        // server-integrated displacement stored on Entity.  Use it whenever
+        // this living entity is the player currently registered in its world;
+        // mobs and players not yet registered retain the normal entity value.
+        if let Some(player) = self
+            .entity
+            .world
+            .load()
+            .get_player_by_id(self.entity.entity_id)
+        {
+            return player.known_client_movement();
+        }
         self.entity.movement.load()
     }
 

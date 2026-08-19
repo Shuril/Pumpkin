@@ -110,6 +110,11 @@ pub struct JavaClient {
     /// The last time we sent a keep alive packet.
     pub last_keep_alive_time: AtomicCell<Instant>,
 
+    /// Whether an accepted player/vehicle movement packet was received since
+    /// the last `ClientTickEnd`.  Vanilla resets the player's known movement
+    /// to zero when this is false at the end of a client tick.
+    received_movement_this_tick: AtomicBool,
+
     pub packet_sequence: AtomicI32,
 }
 
@@ -140,6 +145,33 @@ impl OutgoingPacket {
 }
 
 impl JavaClient {
+    /// Records the movement delta accepted from a Java client movement packet.
+    /// The flag is consumed by `ClientTickEnd`; keeping it on the connection
+    /// makes the reset independent of packet-handler task scheduling.
+    pub fn handle_player_known_movement(
+        &self,
+        player: &Player,
+        movement: pumpkin_util::math::vector3::Vector3<f64>,
+    ) {
+        if movement.length_squared() > 1.0e-5 {
+            player.update_last_action_time();
+        }
+        player.set_known_client_movement(movement);
+        self.received_movement_this_tick
+            .store(true, Ordering::Release);
+    }
+
+    /// Completes one client tick using the same known-movement reset as
+    /// `ServerGamePacketListenerImpl.handleClientTickEnd`.
+    pub fn handle_client_tick_end(&self, player: &Player) {
+        if !self
+            .received_movement_this_tick
+            .swap(false, Ordering::AcqRel)
+        {
+            player.set_known_client_movement(Default::default());
+        }
+    }
+
     #[must_use]
     pub fn from_pending(
         pending: PendingConnection,
@@ -170,6 +202,7 @@ impl JavaClient {
             wait_for_keep_alive: AtomicBool::new(false),
             keep_alive_id: AtomicCell::new(0),
             last_keep_alive_time: AtomicCell::new(Instant::now()),
+            received_movement_this_tick: AtomicBool::new(false),
             packet_sequence: AtomicI32::new(-1),
         }
     }
@@ -757,7 +790,7 @@ impl JavaClient {
                 .await;
             }
             id if id == SClientTickEnd::to_id(version) => {
-                // TODO
+                self.handle_client_tick_end(player);
             }
             id if id == STestInstanceBlockAction::to_id(version) => {
                 self.handle_test_instance_block_action(

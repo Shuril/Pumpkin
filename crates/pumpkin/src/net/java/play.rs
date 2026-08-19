@@ -433,10 +433,7 @@ impl JavaClient {
                     pos.y - last_pos.y,
                     pos.z - last_pos.z,
                 );
-                // Only update idle timeout if there's actual movement (vanilla threshold)
-                if delta.length_squared() > 1.0E-5 {
-                    player.update_last_action_time();
-                }
+                self.handle_player_known_movement(player, delta);
                 player.progress_motion(delta).await;
             }
 
@@ -589,10 +586,7 @@ impl JavaClient {
                     pos.y - last_pos.y,
                     pos.z - last_pos.z,
                 );
-                // Only update idle timeout if there's actual movement (vanilla threshold)
-                if delta.length_squared() > 1.0E-5 {
-                    player.update_last_action_time();
-                }
+                self.handle_player_known_movement(player, delta);
                 player.progress_motion(delta).await;
             }
 
@@ -1132,6 +1126,7 @@ impl JavaClient {
     pub async fn handle_move_vehicle(&self, player: &Arc<Player>, packet: SMoveVehicle) {
         let entity = player.get_entity();
         let pos = Vector3::new(packet.x, packet.y, packet.z);
+        let old_pos = entity.pos.load();
         let vehicle = entity.vehicle.lock().await;
         if let Some(vehicle) = vehicle.as_ref() {
             let vehicle_entity = vehicle.get_entity();
@@ -1140,6 +1135,7 @@ impl JavaClient {
         }
         drop(vehicle);
         entity.set_pos(pos);
+        self.handle_player_known_movement(player, pos - old_pos);
         chunker::update_position(player).await;
     }
 
