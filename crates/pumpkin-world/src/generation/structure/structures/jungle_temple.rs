@@ -516,7 +516,7 @@ impl StructurePieceBase for JungleTemplePiece {
                 3,
                 -2,
                 1,
-                &Self::dispenser_facing(Facing::North),
+                Self::dispenser_facing(Facing::North),
                 "minecraft:dispenser",
                 "minecraft:chests/jungle_temple_dispenser",
             );
@@ -601,7 +601,7 @@ impl StructurePieceBase for JungleTemplePiece {
                 9,
                 -2,
                 3,
-                &Self::dispenser_facing(Facing::West),
+                Self::dispenser_facing(Facing::West),
                 "minecraft:dispenser",
                 "minecraft:chests/jungle_temple_dispenser",
             );

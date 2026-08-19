@@ -462,7 +462,7 @@ impl ChunkData {
             let heights = data.get_list("heights").map(|values| {
                 values
                     .iter()
-                    .filter_map(|value| value.extract_double())
+                    .filter_map(pumpkin_nbt::tag::NbtTag::extract_double)
                     .collect::<Vec<_>>()
             });
             Some(
@@ -804,7 +804,7 @@ impl ChunkEntityData {
         // Keep every root field that is not part of the stable entity-region
         // contract.  This mirrors the chunk-region loader and is important for
         // newer Java versions adding metadata to `entities/*.mca`.
-        let mut unknown_nbt = nbt.root_tag.clone();
+        let mut unknown_nbt = nbt.root_tag;
         for key in [
             "DataVersion",
             "Position-X",
@@ -1210,6 +1210,7 @@ mod tests {
         assert_eq!(reloaded.section.dump_biomes()[0], Biome::DESERT.id);
     }
 
+    #[allow(clippy::too_many_lines)]
     #[test]
     fn vanilla_chunk_auxiliary_data_round_trips_without_loss() {
         // This is the part of SerializableChunkData which is easiest to lose when a

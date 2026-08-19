@@ -62,14 +62,13 @@ struct PortalSetup {
 }
 
 fn setup_for(variant: StructureKeys, random: &mut RandomGenerator) -> PortalSetup {
-    use PortalPlacement::*;
     match variant {
         StructureKeys::RuinedPortal => {
             // The standard pool is two equal-weight entries. Keep this draw
             // before all template draws to preserve vanilla's RNG sequence.
             if random.next_f32() < 0.5 {
                 PortalSetup {
-                    placement: Underground,
+                    placement: PortalPlacement::Underground,
                     air_pocket_probability: 1.0,
                     mossiness: 0.2,
                     overgrown: false,
@@ -78,7 +77,7 @@ fn setup_for(variant: StructureKeys, random: &mut RandomGenerator) -> PortalSetu
                 }
             } else {
                 PortalSetup {
-                    placement: Land,
+                    placement: PortalPlacement::Land,
                     air_pocket_probability: 0.5,
                     mossiness: 0.2,
                     overgrown: false,
@@ -90,7 +89,7 @@ fn setup_for(variant: StructureKeys, random: &mut RandomGenerator) -> PortalSetu
         StructureKeys::RuinedPortalMountain => {
             if random.next_f32() < 0.5 {
                 PortalSetup {
-                    placement: Mountain,
+                    placement: PortalPlacement::Mountain,
                     air_pocket_probability: 1.0,
                     mossiness: 0.2,
                     overgrown: false,
@@ -99,7 +98,7 @@ fn setup_for(variant: StructureKeys, random: &mut RandomGenerator) -> PortalSetu
                 }
             } else {
                 PortalSetup {
-                    placement: Land,
+                    placement: PortalPlacement::Land,
                     air_pocket_probability: 0.5,
                     mossiness: 0.2,
                     overgrown: false,
@@ -109,7 +108,7 @@ fn setup_for(variant: StructureKeys, random: &mut RandomGenerator) -> PortalSetu
             }
         }
         StructureKeys::RuinedPortalDesert => PortalSetup {
-            placement: Buried,
+            placement: PortalPlacement::Buried,
             air_pocket_probability: 0.0,
             mossiness: 0.0,
             overgrown: false,
@@ -117,7 +116,7 @@ fn setup_for(variant: StructureKeys, random: &mut RandomGenerator) -> PortalSetu
             replace_with_blackstone: false,
         },
         StructureKeys::RuinedPortalJungle => PortalSetup {
-            placement: Land,
+            placement: PortalPlacement::Land,
             air_pocket_probability: 0.5,
             mossiness: 0.8,
             overgrown: true,
@@ -125,7 +124,7 @@ fn setup_for(variant: StructureKeys, random: &mut RandomGenerator) -> PortalSetu
             replace_with_blackstone: false,
         },
         StructureKeys::RuinedPortalNether => PortalSetup {
-            placement: Nether,
+            placement: PortalPlacement::Nether,
             air_pocket_probability: 0.5,
             mossiness: 0.0,
             overgrown: false,
@@ -133,7 +132,7 @@ fn setup_for(variant: StructureKeys, random: &mut RandomGenerator) -> PortalSetu
             replace_with_blackstone: true,
         },
         StructureKeys::RuinedPortalOcean => PortalSetup {
-            placement: OceanFloor,
+            placement: PortalPlacement::OceanFloor,
             air_pocket_probability: 0.0,
             mossiness: 0.8,
             overgrown: false,
@@ -141,7 +140,7 @@ fn setup_for(variant: StructureKeys, random: &mut RandomGenerator) -> PortalSetu
             replace_with_blackstone: false,
         },
         StructureKeys::RuinedPortalSwamp => PortalSetup {
-            placement: OceanFloor,
+            placement: PortalPlacement::OceanFloor,
             air_pocket_probability: 0.0,
             mossiness: 0.5,
             overgrown: false,

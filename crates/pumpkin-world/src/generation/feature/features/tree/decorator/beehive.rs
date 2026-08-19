@@ -49,11 +49,13 @@ impl BeehiveTreeDecorator {
         }
 
         let first_log_y = log_positions[0].0.y;
-        let hive_y = if let Some(first_leaf) = leaves_positions.first() {
-            (first_leaf.0.y - 1).max(first_log_y + 1)
-        } else {
-            (first_log_y + 1 + random.next_bounded_i32(3)).min(log_positions.last().unwrap().0.y)
-        };
+        let last_log_y = log_positions
+            .last()
+            .map_or(first_log_y, |position| position.0.y);
+        let hive_y = leaves_positions.first().map_or_else(
+            || (first_log_y + 1 + random.next_bounded_i32(3)).min(last_log_y),
+            |first_leaf| (first_leaf.0.y - 1).max(first_log_y + 1),
+        );
 
         // Direction.Plane.HORIZONTAL minus the opposite of SOUTH (NORTH), in
         // vanilla order NORTH, EAST, SOUTH, WEST.

@@ -94,8 +94,10 @@ pub fn place_template(
 }
 
 /// Places a template with its rotation around `pivot`, matching vanilla's
-/// `StructurePlaceSettings#setRotationPivot`.  Most templates use the origin;
-/// shipwrecks are the notable exception and rotate around `(4, 0, 15)`.
+/// `StructurePlaceSettings#setRotationPivot`.
+///
+/// Most templates use the origin; shipwrecks are the notable exception and
+/// rotate around `(4, 0, 15)`.
 #[allow(clippy::too_many_arguments)]
 pub fn place_template_with_pivot(
     placer: &mut impl BlockPlacer,
@@ -267,11 +269,12 @@ pub fn place_template_with_settings(
     }
 }
 
-/// Visits the data markers stored as structure blocks in a template using the
-/// exact same coordinate transform as [`place_template`].  Vanilla consumes
-/// these markers after placement to create loot containers and structure mobs;
-/// keeping their decoding here prevents individual generators from drifting
-/// from template rotation rules.
+/// Visits data markers stored as structure blocks in a template using the exact
+/// same coordinate transform as [`place_template`].
+///
+/// Vanilla consumes these markers after placement to create loot containers and
+/// structure mobs; keeping their decoding here prevents individual generators
+/// from drifting from template rotation rules.
 pub fn for_each_data_marker(
     template: &StructureTemplate,
     origin: Vector3<i32>,
@@ -328,7 +331,7 @@ pub fn for_each_data_marker_with_pivot(
 /// Transforms a position inside a template. A zero pivot uses the compact
 /// bounded transform used by existing templates; non-zero pivots follow the
 /// coordinate rotation performed by vanilla's `BlockPos#rotate`.
-fn transform_template_pos(
+const fn transform_template_pos(
     pos: Vector3<i32>,
     size: Vector3<i32>,
     rotation: Rotation,

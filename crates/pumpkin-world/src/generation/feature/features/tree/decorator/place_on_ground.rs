@@ -83,7 +83,7 @@ impl PlaceOnGroundTreeDecorator {
         let up_state = GenerationCache::get_block_state(chunk, &up_pos.0).to_state();
         let top_no_leaves =
             chunk.top_motion_blocking_block_no_leaves_height_exclusive(pos.0.x, pos.0.z);
-        if can_place_above(&state, &up_state, top_no_leaves, up_pos.0.y) {
+        if can_place_above(state, up_state, top_no_leaves, up_pos.0.y) {
             chunk.set_block_state(
                 &up_pos.0,
                 self.block_state_provider

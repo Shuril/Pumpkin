@@ -538,7 +538,7 @@ impl Level {
         self.get_tick_data_with_random_tick_speed_seeded(
             active_chunks,
             random_tick_speed,
-            self.seed.0 as u64,
+            self.seed.0,
             0,
         )
     }
@@ -1073,7 +1073,7 @@ impl Level {
 /// final splitmix-style avalanche prevents nearby chunks or adjacent ticks
 /// from sharing the same low bits (the bits used for the X/Y/Z offsets).
 #[inline]
-fn random_tick_seed(world_seed: u64, world_age: i64, chunk: Vector2<i32>) -> u64 {
+const fn random_tick_seed(world_seed: u64, world_age: i64, chunk: Vector2<i32>) -> u64 {
     let mut value = world_seed
         ^ (world_age as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
         ^ (chunk.x as i64 as u64).wrapping_mul(0xBF58_476D_1CE4_E5B9)

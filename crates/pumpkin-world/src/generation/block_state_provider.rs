@@ -189,6 +189,7 @@ fn with_integer_property(
     ))
 }
 
+#[allow(clippy::items_after_test_module)]
 #[cfg(test)]
 mod tests {
     use pumpkin_data::{Block, BlockState};

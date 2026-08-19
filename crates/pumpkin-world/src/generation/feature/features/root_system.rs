@@ -202,7 +202,7 @@ const fn tree_space_allowed(
     vertical_space: i32,
     allowed_vertical_water: i32,
 ) -> bool {
-    state_is_air || (vertical_space + 1 <= allowed_vertical_water && fluid_is_water)
+    state_is_air || (vertical_space < allowed_vertical_water && fluid_is_water)
 }
 
 #[cfg(test)]

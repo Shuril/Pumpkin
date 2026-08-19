@@ -64,7 +64,7 @@ impl SimpleBlockFeature {
             // not a process-global random source, so chunk generation remains
             // reproducible.
             let base_state = pale_moss_state(chunk, pos, true);
-            chunk.set_block_state(&pos.0, &base_state);
+            chunk.set_block_state(&pos.0, base_state);
 
             let above = pos.up();
             let above_previous = GenerationCache::get_block_state(chunk, &above.0).to_state();
@@ -102,13 +102,13 @@ impl SimpleBlockFeature {
                 props.r#bottom = false;
                 topper =
                     pumpkin_data::BlockState::from_id(props.to_state_id(&Block::PALE_MOSS_CARPET));
-                if pale_moss_has_faces(&props) {
-                    chunk.set_block_state(&above.0, &topper);
+                if pale_moss_has_faces(props) {
+                    chunk.set_block_state(&above.0, topper);
                     // The lower layer is re-evaluated after the topper exists;
                     // supported sides become TALL exactly as in
                     // MossyCarpetBlock.placeAt.
                     let updated_base = pale_moss_state(chunk, pos, true);
-                    chunk.set_block_state(&pos.0, &updated_base);
+                    chunk.set_block_state(&pos.0, updated_base);
                 }
             }
         } else {
@@ -230,7 +230,7 @@ fn pale_moss_state<T: GenerationCache>(
 }
 
 fn pale_moss_has_faces(
-    props: &pumpkin_data::block_properties::PaleMossCarpetLikeProperties,
+    props: pumpkin_data::block_properties::PaleMossCarpetLikeProperties,
 ) -> bool {
     props.r#bottom
         || props.r#north != pumpkin_data::block_properties::NorthWall::None
@@ -252,9 +252,9 @@ mod tests {
     fn pale_moss_topper_requires_a_surviving_wall_face() {
         let mut topper = PaleMossCarpetLikeProperties::default(&Block::PALE_MOSS_CARPET);
         topper.r#bottom = false;
-        assert!(!pale_moss_has_faces(&topper));
+        assert!(!pale_moss_has_faces(topper));
 
         topper.r#north = NorthWall::Low;
-        assert!(pale_moss_has_faces(&topper));
+        assert!(pale_moss_has_faces(topper));
     }
 }

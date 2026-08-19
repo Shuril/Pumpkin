@@ -173,7 +173,7 @@ impl StructurePieceBase for ShipwreckPiece {
         &mut self,
         chunk: &mut ProtoChunk,
         _block_registry: &dyn WorldPortalExt,
-        _random: &mut RandomGenerator,
+        random: &mut RandomGenerator,
         _seed: i64,
         chunk_box: &BlockBox,
     ) {
@@ -237,7 +237,7 @@ impl StructurePieceBase for ShipwreckPiece {
                 nbt.put_int("y", chest_pos.y);
                 nbt.put_int("z", chest_pos.z);
                 nbt.put_string("LootTable", loot_table.to_string());
-                nbt.put_long("LootTableSeed", _random.next_i64());
+                nbt.put_long("LootTableSeed", random.next_i64());
                 chunk.add_block_entity(nbt);
             },
         );

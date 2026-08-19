@@ -56,7 +56,7 @@ impl TryFrom<i32> for TickPriority {
 
 #[derive(Clone)]
 pub struct ScheduledTick<T> {
-    /// Delay in game ticks. Vanilla's SavedTick codec stores this as an int;
+    /// Delay in game ticks. Vanilla's `SavedTick` codec stores this as an int;
     /// it is deliberately wider than the scheduler wheel so long delays are
     /// never wrapped into an earlier tick.
     pub delay: u32,

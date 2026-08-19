@@ -12,6 +12,7 @@ use crate::{
     world::WorldPortalExt,
 };
 
+#[allow(clippy::struct_field_names)]
 pub struct PaleMossTreeDecorator {
     pub leaves_probability: f32,
     pub trunk_probability: f32,
@@ -19,6 +20,7 @@ pub struct PaleMossTreeDecorator {
 }
 
 impl PaleMossTreeDecorator {
+    #[allow(clippy::too_many_arguments)]
     pub fn generate<T: GenerationCache>(
         &self,
         chunk: &mut T,
@@ -82,13 +84,13 @@ impl PaleMossTreeDecorator {
         mut pos: BlockPos,
     ) {
         while chunk.is_air(&pos.down().0) && random.next_f32() >= 0.5 {
-            let state = PaleHangingMossLikeProperties { r#tip: false }
-                .to_state_id(&Block::PALE_HANGING_MOSS);
+            let state =
+                PaleHangingMossLikeProperties { tip: false }.to_state_id(&Block::PALE_HANGING_MOSS);
             chunk.set_block_state(&pos.0, BlockState::from_id(state));
             pos = pos.down();
         }
         let state =
-            PaleHangingMossLikeProperties { r#tip: true }.to_state_id(&Block::PALE_HANGING_MOSS);
+            PaleHangingMossLikeProperties { tip: true }.to_state_id(&Block::PALE_HANGING_MOSS);
         chunk.set_block_state(&pos.0, BlockState::from_id(state));
     }
 }
@@ -103,7 +105,7 @@ mod tests {
     #[test]
     fn hanging_moss_tip_property_round_trips() {
         for tip in [false, true] {
-            let properties = PaleHangingMossLikeProperties { r#tip: tip };
+            let properties = PaleHangingMossLikeProperties { tip };
             let state = BlockState::from_id(properties.to_state_id(&Block::PALE_HANGING_MOSS));
             assert!(
                 PaleHangingMossLikeProperties::from_state_id(state.id, &Block::PALE_HANGING_MOSS)

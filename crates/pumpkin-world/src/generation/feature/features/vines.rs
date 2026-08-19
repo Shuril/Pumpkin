@@ -7,7 +7,7 @@ use crate::world::WorldPortalExt;
 pub struct VinesFeature;
 
 #[inline]
-fn is_acceptable_neighbour(
+const fn is_acceptable_neighbour(
     state: &pumpkin_data::BlockState,
     direction_to_neighbour: BlockDirection,
 ) -> bool {

@@ -96,9 +96,10 @@ pub struct WanderingTraderData {
     pub data_version: i32,
 }
 
-/// A vanilla `scheduled_events.dat` function callback.  The server crate owns
-/// queue ordering/execution; this small data type keeps the on-disk codec in
-/// the world-info crate so unknown callbacks can remain lossless.
+/// A vanilla `scheduled_events.dat` function callback.
+///
+/// The server crate owns queue ordering/execution; this small data type keeps
+/// the on-disk codec in the world-info crate so unknown callbacks remain lossless.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ScheduledFunctionData {
     pub trigger_time: i64,
@@ -448,9 +449,11 @@ pub fn write_wandering_trader(
 }
 
 /// Rewrites `custom_boss_events.dat` without discarding boss-bar entries or
-/// future fields introduced by a newer vanilla server.  The live boss-bar
-/// manager supplies its own state when available; this low-level writer is
-/// deliberately lossless for fields that this crate does not understand yet.
+/// future fields introduced by a newer vanilla server.
+///
+/// The live boss-bar manager supplies its own state when available; this
+/// low-level writer is deliberately lossless for fields that this crate does
+/// not understand yet.
 pub fn write_custom_boss_events(
     level_folder: &Path,
     data_version: i32,
@@ -466,8 +469,10 @@ pub fn write_custom_boss_events(
 }
 
 /// Rewrites `scheduled_events.dat` while retaining unknown event entries and
-/// root/data metadata.  The actual block/fluid tick queues are persisted in
-/// chunk NBT; this file is reserved for global scheduled events.
+/// root/data metadata.
+///
+/// The actual block/fluid tick queues are persisted in chunk NBT; this file is
+/// reserved for global scheduled events.
 pub fn write_scheduled_events(
     level_folder: &Path,
     data_version: i32,

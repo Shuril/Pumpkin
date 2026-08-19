@@ -609,15 +609,14 @@ impl<S: SingleChunkDataSerializer + 'static> ChunkSerializer for AnvilChunkFile<
             if sector_offset < 2 {
                 return Err(ChunkReadingError::ParsingError(
                     ChunkParsingError::ErrorDeserializingChunk(format!(
-                        "Chunk {} points into the Anvil header (sector {})",
-                        i, sector_offset
+                        "Chunk {i} points into the Anvil header (sector {sector_offset})",
                     )),
                 ));
             }
 
             let end_offset = sector_offset.checked_add(sector_count).ok_or_else(|| {
                 ChunkReadingError::ParsingError(ChunkParsingError::ErrorDeserializingChunk(
-                    format!("Chunk {} sector range overflows", i),
+                    format!("Chunk {i} sector range overflows"),
                 ))
             })?;
 
@@ -631,18 +630,18 @@ impl<S: SingleChunkDataSerializer + 'static> ChunkSerializer for AnvilChunkFile<
                 .checked_mul(SECTOR_BYTES)
                 .ok_or_else(|| {
                     ChunkReadingError::ParsingError(ChunkParsingError::ErrorDeserializingChunk(
-                        format!("Chunk {} byte offset overflows", i),
+                        format!("Chunk {i} byte offset overflows"),
                     ))
                 })?;
             let bytes_count = sector_count.checked_mul(SECTOR_BYTES).ok_or_else(|| {
                 ChunkReadingError::ParsingError(ChunkParsingError::ErrorDeserializingChunk(
-                    format!("Chunk {} byte length overflows", i),
+                    format!("Chunk {i} byte length overflows"),
                 ))
             })?;
 
             let bytes_end = bytes_offset.checked_add(bytes_count).ok_or_else(|| {
                 ChunkReadingError::ParsingError(ChunkParsingError::ErrorDeserializingChunk(
-                    format!("Chunk {} byte range overflows", i),
+                    format!("Chunk {i} byte range overflows"),
                 ))
             })?;
 
@@ -1428,9 +1427,9 @@ mod tests {
 
     #[test]
     fn malformed_region_entry_pointing_into_header_is_rejected() {
-        let mut region = vec![0_u8; 3 * 4096];
+        let mut region = vec![0u8; 3 * 4096];
         // offset 1 overlaps the two-sector location/timestamp header
-        region[0..4].copy_from_slice(&((1_u32 << 8) | 1).to_be_bytes());
+        region[0..4].copy_from_slice(&((1u32 << 8) | 1).to_be_bytes());
         assert!(matches!(
             AnvilChunkFile::<ChunkEntityData>::read(Bytes::from(region)),
             Err(crate::chunk::ChunkReadingError::ParsingError(_))
@@ -1463,11 +1462,11 @@ mod tests {
         let record_len = compressed.len() + 1;
         assert!(record_len + 4 <= 4096, "fixture unexpectedly spans sectors");
 
-        let mut region = vec![0_u8; 3 * 4096];
+        let mut region = vec![0u8; 3 * 4096];
         // location table entry (chunk 0,0): sector offset 2, one sector
-        region[0..4].copy_from_slice(&((2_u32 << 8) | 1).to_be_bytes());
+        region[0..4].copy_from_slice(&((2u32 << 8) | 1).to_be_bytes());
         // timestamp table entry
-        region[4096..4100].copy_from_slice(&1_u32.to_be_bytes());
+        region[4096..4100].copy_from_slice(&1u32.to_be_bytes());
         let record = 2 * 4096;
         region[record..record + 4].copy_from_slice(&(record_len as u32).to_be_bytes());
         region[record + 4] = Compression::ZLib as u8;

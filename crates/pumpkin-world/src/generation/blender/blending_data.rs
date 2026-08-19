@@ -138,11 +138,11 @@ impl BlendingData {
         for cell_y in min_cell_y..=max_cell_y {
             if (0..cell_count_y).contains(&cell_y) {
                 for (index, column) in self.densities.iter().enumerate() {
-                    if let Some(&density) = column.get(cell_y as usize) {
-                        if density != Self::NO_VALUE {
-                            let (x, z) = Self::column_coords(index);
-                            consumer(quart_x + x, cell_y, quart_z + z, density * 0.1);
-                        }
+                    if let Some(&density) = column.get(cell_y as usize)
+                        && density != Self::NO_VALUE
+                    {
+                        let (x, z) = Self::column_coords(index);
+                        consumer(quart_x + x, cell_y, quart_z + z, density * 0.1);
                     }
                 }
             }
@@ -155,7 +155,7 @@ impl BlendingData {
     {
         for (index, column) in self.biomes.iter().enumerate() {
             let (x, z) = Self::column_coords(index);
-            if let Some(biome) = column.get(0).copied() {
+            if let Some(biome) = column.first().copied() {
                 consumer(quart_x + x, quart_z + z, biome);
             }
         }

@@ -286,6 +286,7 @@ impl ProtoChunk {
     }
 
     #[must_use]
+    #[allow(clippy::too_many_lines)]
     pub fn from_chunk_data(
         chunk_data: &ChunkData,
         generator: &super::generator::WorldGenerator,
