@@ -285,7 +285,6 @@ async fn apply_darkness(world: &Arc<World>, pos: &BlockPos) {
         blend: true,
     };
     for player in world.get_nearby_players(pos.to_centered_f64(), DARKNESS_RADIUS) {
-        player.send_effect(darkness.clone()).await;
         player.living_entity.add_effect(darkness.clone()).await;
     }
 }

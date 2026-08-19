@@ -606,15 +606,22 @@ impl World {
                 &je_packet,
             );
         }
+        // A player's own entity is deliberately absent from its tracker set,
+        // but vanilla still delivers self-scoped status packets (equipment
+        // break, hurt animation, etc.) to that connection.
+        if let Some(player) = self.get_player_by_id(entity.entity_id) {
+            player.client.try_enqueue_packet(&je_packet);
+        }
     }
 
     pub fn send_remove_mob_effect(&self, entity: &Entity, effect_type: &'static StatusEffect) {
         let chunk_pos = entity.chunk_pos.load();
-        self.broadcast_java_to_entity_trackers_sync(
-            entity.entity_id,
-            chunk_pos,
-            &CRemoveMobEffect::new(entity.entity_id.into(), VarInt(i32::from(effect_type.id))),
-        );
+        let packet =
+            CRemoveMobEffect::new(entity.entity_id.into(), VarInt(i32::from(effect_type.id)));
+        self.broadcast_java_to_entity_trackers_sync(entity.entity_id, chunk_pos, &packet);
+        if let Some(player) = self.get_player_by_id(entity.entity_id) {
+            player.client.try_enqueue_packet(&packet);
+        }
     }
 
     pub fn send_add_mob_effect(&self, entity: &Entity, effect: &pumpkin_data::potion::Effect) {
@@ -648,6 +655,9 @@ impl World {
             entity.chunk_pos.load(),
             &packet,
         );
+        if let Some(player) = self.get_player_by_id(entity.entity_id) {
+            player.client.try_enqueue_packet(&packet);
+        }
     }
 
     pub fn set_difficulty(&self, difficulty: Difficulty) {

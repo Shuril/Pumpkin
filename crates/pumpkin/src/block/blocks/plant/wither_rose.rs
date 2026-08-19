@@ -36,9 +36,10 @@ impl BlockBehaviour for WitherRoseBlock {
                     blend: true,
                 };
                 if let Some(player) = args.entity.get_player() {
-                    player.send_effect(effect.clone()).await;
+                    player.living_entity.add_effect(effect).await;
+                } else {
+                    living_entity.add_effect(effect).await;
                 }
-                living_entity.add_effect(effect).await;
             }
         })
     }
