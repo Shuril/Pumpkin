@@ -123,7 +123,9 @@ Checkpoint branch: `codex/intermediate-parity-checkpoint`
    и Bedrock `SetActorLink` для rider/passenger/remove transitions. Остаются
    chunk-send ACK barriers для всех редких типов, полноценные
    metadata/attribute/equipment dirty snapshots, unload/reload ghost removal и
-   minecart live-client fixture.
+   minecart live-client fixture. Bedrock leash-holder rendering still needs a
+   dedicated metadata/event mapping; `SetActorLink` is intentionally reserved
+   for mounts and is no longer misused for leads.
 4. **Chunk persistence.** Нужны реальные `.mca` fixtures для всех block entities,
    ticks, entities, unknown components и crash-safe atomic save/unload; текущие
    round-trip tests не заменяют такую certification.
