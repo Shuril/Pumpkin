@@ -24,7 +24,14 @@ use pumpkin_data::{
 };
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_protocol::{
+    bedrock::client::move_actor_delta::{
+        CMoveActorDelta, MOVE_ACTOR_DELTA_FLAG_FORCE_MOVE, MOVE_ACTOR_DELTA_FLAG_HAS_HEAD_YAW,
+        MOVE_ACTOR_DELTA_FLAG_HAS_PITCH, MOVE_ACTOR_DELTA_FLAG_HAS_X, MOVE_ACTOR_DELTA_FLAG_HAS_Y,
+        MOVE_ACTOR_DELTA_FLAG_HAS_YAW, MOVE_ACTOR_DELTA_FLAG_HAS_Z,
+        MOVE_ACTOR_DELTA_FLAG_ON_GROUND,
+    },
     codec::var_int::VarInt,
+    codec::var_ulong::VarULong,
     java::client::play::{CEntityPositionSync, Metadata},
 };
 use pumpkin_util::math::{boundingbox::BoundingBox, position::BlockPos, vector3::Vector3};
@@ -249,7 +256,29 @@ impl EndermanEntity {
 
         entity.set_pos(new_pos);
         let chunk_pos = entity.chunk_pos.load();
-        world.broadcast_java_to_entity_trackers_sync(
+        let yaw = (entity.yaw.load() * 256.0 / 360.0).rem_euclid(256.0) as u8;
+        let pitch = (entity.pitch.load() * 256.0 / 360.0).rem_euclid(256.0) as u8;
+        let mut flags = MOVE_ACTOR_DELTA_FLAG_HAS_X
+            | MOVE_ACTOR_DELTA_FLAG_HAS_Y
+            | MOVE_ACTOR_DELTA_FLAG_HAS_Z
+            | MOVE_ACTOR_DELTA_FLAG_HAS_PITCH
+            | MOVE_ACTOR_DELTA_FLAG_HAS_YAW
+            | MOVE_ACTOR_DELTA_FLAG_HAS_HEAD_YAW
+            | MOVE_ACTOR_DELTA_FLAG_FORCE_MOVE;
+        if entity.on_ground.load(Ordering::Relaxed) {
+            flags |= MOVE_ACTOR_DELTA_FLAG_ON_GROUND;
+        }
+        let bedrock_packet = CMoveActorDelta::new(
+            VarULong(entity.entity_id as u64),
+            flags,
+            new_pos.x as f32,
+            new_pos.y as f32,
+            new_pos.z as f32,
+            pitch,
+            yaw,
+            yaw,
+        );
+        world.broadcast_to_entity_trackers_editioned_sync(
             entity.entity_id,
             chunk_pos,
             &CEntityPositionSync::new(
@@ -260,6 +289,7 @@ impl EndermanEntity {
                 entity.pitch.load(),
                 entity.on_ground.load(Ordering::Relaxed),
             ),
+            &bedrock_packet,
         );
 
         self.mob_entity
