@@ -3145,25 +3145,35 @@ impl EntityBase for LivingEntity {
                     event_data: VarInt(0),
                     fire_at_position: None,
                 };
+                let hurt_packet = CHurtAnimation::new(VarInt(entity_id), hurt_yaw);
                 world.broadcast_to_entity_trackers_editioned_sync(
                     entity_id,
                     self.entity.chunk_pos.load(),
-                    &CHurtAnimation::new(VarInt(entity_id), hurt_yaw),
+                    &hurt_packet,
                     &hurt_event,
                 );
+                if let Some(player) = world.get_player_by_id(entity_id) {
+                    player
+                        .client
+                        .try_enqueue_packet_editioned(&hurt_packet, &hurt_event);
+                }
             }
 
+            let damage_packet = CDamageEvent::new(
+                self.entity.entity_id.into(),
+                damage_type.id.into(),
+                source.map(|e| e.get_entity().entity_id.into()),
+                cause.map(|e| e.get_entity().entity_id.into()),
+                position,
+            );
             world.broadcast_java_to_entity_trackers_sync(
                 self.entity.entity_id,
                 self.entity.chunk_pos.load(),
-                &CDamageEvent::new(
-                    self.entity.entity_id.into(),
-                    damage_type.id.into(),
-                    source.map(|e| e.get_entity().entity_id.into()),
-                    cause.map(|e| e.get_entity().entity_id.into()),
-                    position,
-                ),
+                &damage_packet,
             );
+            if let Some(player) = world.get_player_by_id(self.entity.entity_id) {
+                player.client.try_enqueue_packet(&damage_packet);
+            }
 
             // Try to spawn infested silverfish
             self.try_spawn_infested_silverfish().await;
