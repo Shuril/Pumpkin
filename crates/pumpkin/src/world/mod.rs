@@ -599,6 +599,11 @@ impl World {
                 &je_packet,
                 &be_packet,
             );
+            if let Some(player) = self.get_player_by_id(entity.entity_id) {
+                player
+                    .client
+                    .try_enqueue_packet_editioned(&je_packet, &be_packet);
+            }
         } else {
             self.broadcast_java_to_entity_trackers_sync(
                 entity.entity_id,
