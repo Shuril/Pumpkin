@@ -110,6 +110,28 @@ pub mod predicate;
 /// The maximum number of scoreboard tags an entity can carry, matching Vanilla.
 pub const MAX_SCOREBOARD_TAGS: usize = 1024;
 
+/// Builds the Bedrock link used by Java's passenger-list transition.
+/// Bedrock reserves link type 0 for removal, 1 for the first rider and 2 for
+/// additional passengers.  Keeping the encoding in one constructor prevents
+/// leash updates from accidentally reusing a mount link and makes the packet
+/// direction (vehicle -> passenger) explicit.
+fn bedrock_passenger_link(
+    vehicle_id: i32,
+    passenger_id: i32,
+    link_type: u8,
+) -> pumpkin_protocol::bedrock::client::CSetActorLink {
+    pumpkin_protocol::bedrock::client::CSetActorLink {
+        link: pumpkin_protocol::bedrock::client::common::EntityLink {
+            ridden_unique_id: pumpkin_protocol::codec::var_long::VarLong(vehicle_id as i64),
+            rider_unique_id: pumpkin_protocol::codec::var_long::VarLong(passenger_id as i64),
+            link_type,
+            immediate: false,
+            rider_initiated: false,
+            vehicle_angular_velocity: 0.0,
+        },
+    }
+}
+
 /// Entity fields written by Pumpkin's common `Entity` serializer.  Any other
 /// root tags are retained verbatim so a newer vanilla server can add fields
 /// without Pumpkin destroying them on an unload/reload round trip.
@@ -3571,16 +3593,7 @@ impl Entity {
         } else {
             2 // EntityLinkData::PASSENGER
         };
-        let passenger_link_packet = pumpkin_protocol::bedrock::client::CSetActorLink {
-            link: pumpkin_protocol::bedrock::client::common::EntityLink {
-                ridden_unique_id: pumpkin_protocol::codec::var_long::VarLong(self.entity_id as i64),
-                rider_unique_id: pumpkin_protocol::codec::var_long::VarLong(passenger_id as i64),
-                link_type,
-                immediate: false,
-                rider_initiated: false,
-                vehicle_angular_velocity: 0.0,
-            },
-        };
+        let passenger_link_packet = bedrock_passenger_link(self.entity_id, passenger_id, link_type);
         if emit_game_event {
             // The rider must receive the mount transition even when its own
             // tracker has not paired the vehicle yet.  Other Java clients are
@@ -3628,16 +3641,7 @@ impl Entity {
         drop(passengers);
 
         let packet = CSetPassengers::new(VarInt(self.entity_id), &passenger_ids);
-        let unlink_packet = pumpkin_protocol::bedrock::client::CSetActorLink {
-            link: pumpkin_protocol::bedrock::client::common::EntityLink {
-                ridden_unique_id: pumpkin_protocol::codec::var_long::VarLong(self.entity_id as i64),
-                rider_unique_id: pumpkin_protocol::codec::var_long::VarLong(passenger_id as i64),
-                link_type: 0, // EntityLinkData::REMOVE
-                immediate: false,
-                rider_initiated: false,
-                vehicle_angular_velocity: 0.0,
-            },
-        };
+        let unlink_packet = bedrock_passenger_link(self.entity_id, passenger_id, 0);
         self.world
             .load()
             .broadcast_to_entity_trackers_editioned_sync(
@@ -3712,20 +3716,8 @@ impl Entity {
                 )
                 .await;
             let passengers_packet = CSetPassengers::new(VarInt(self.entity_id), &passenger_ids);
-            let unlink_packet = pumpkin_protocol::bedrock::client::CSetActorLink {
-                link: pumpkin_protocol::bedrock::client::common::EntityLink {
-                    ridden_unique_id: pumpkin_protocol::codec::var_long::VarLong(
-                        self.entity_id as i64,
-                    ),
-                    rider_unique_id: pumpkin_protocol::codec::var_long::VarLong(
-                        passenger_entity.entity_id as i64,
-                    ),
-                    link_type: 0, // EntityLinkData::REMOVE
-                    immediate: false,
-                    rider_initiated: false,
-                    vehicle_angular_velocity: 0.0,
-                },
-            };
+            let unlink_packet =
+                bedrock_passenger_link(self.entity_id, passenger_entity.entity_id, 0);
             if let Some(player) = passenger.get_player() {
                 player
                     .client
@@ -4377,6 +4369,16 @@ impl Flag {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bedrock_passenger_link_preserves_direction_and_link_type() {
+        let link = bedrock_passenger_link(42, 99, 1).link;
+        assert_eq!(link.ridden_unique_id.0, 42);
+        assert_eq!(link.rider_unique_id.0, 99);
+        assert_eq!(link.link_type, 1);
+        assert!(!link.immediate);
+        assert!(!link.rider_initiated);
+    }
 
     #[test]
     fn equipment_break_status_maps_all_slots() {
