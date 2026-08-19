@@ -89,8 +89,7 @@ impl ItemBehaviour for ShovelItem {
             }
 
             if changed && player.gamemode.load() != GameMode::Creative {
-                // TODO: Handle DamageResult::Broken to broadcast item break and update player slot.
-                let _ = item.damage_item(1);
+                player.damage_item_stack_for_use(item, 1).await;
             }
         })
     }

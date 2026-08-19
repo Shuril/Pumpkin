@@ -85,11 +85,13 @@ impl ToFromWasmEvent for ChunkLoad {
                         std::collections::HashMap::default(),
                     ),
                     light_engine: std::sync::Mutex::new(pumpkin_world::chunk::ChunkLight::default()),
+                    dirty_light_sections: std::sync::Mutex::default(),
                     light_populated: std::sync::atomic::AtomicBool::new(false),
                     status: pumpkin_data::chunk::ChunkStatus::Empty,
                     blending_data: None,
                     dirty: std::sync::atomic::AtomicBool::new(false),
                     inhabited_time: std::sync::atomic::AtomicU64::new(0),
+                    unknown_nbt: std::sync::Mutex::default(),
                 };
                 Self {
                     world,
@@ -134,11 +136,13 @@ impl ToFromWasmEvent for ChunkSave {
                         std::collections::HashMap::default(),
                     ),
                     light_engine: std::sync::Mutex::new(pumpkin_world::chunk::ChunkLight::default()),
+                    dirty_light_sections: std::sync::Mutex::default(),
                     light_populated: std::sync::atomic::AtomicBool::new(false),
                     status: pumpkin_data::chunk::ChunkStatus::Empty,
                     blending_data: None,
                     dirty: std::sync::atomic::AtomicBool::new(false),
                     inhabited_time: std::sync::atomic::AtomicU64::new(0),
+                    unknown_nbt: std::sync::Mutex::default(),
                 };
                 Self {
                     world,
@@ -182,11 +186,13 @@ impl ToFromWasmEvent for ChunkSend {
                         std::collections::HashMap::default(),
                     ),
                     light_engine: std::sync::Mutex::new(pumpkin_world::chunk::ChunkLight::default()),
+                    dirty_light_sections: std::sync::Mutex::default(),
                     light_populated: std::sync::atomic::AtomicBool::new(false),
                     status: pumpkin_data::chunk::ChunkStatus::Empty,
                     blending_data: None,
                     dirty: std::sync::atomic::AtomicBool::new(false),
                     inhabited_time: std::sync::atomic::AtomicU64::new(0),
+                    unknown_nbt: std::sync::Mutex::default(),
                 };
                 Self {
                     world,

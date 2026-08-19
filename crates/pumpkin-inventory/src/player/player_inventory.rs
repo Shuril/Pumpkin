@@ -58,7 +58,9 @@ impl PlayerInventory {
     /// # Arguments
     /// - `entity_equipment` - The entity equipment storage for armor/off-hand
     /// - `equipment_slots` - Mapping of slot indices to equipment slots
-    // TODO: Add inventory load from nbt
+    /// Constructs an empty inventory.  Persistence is applied by
+    /// `Player::read_nbt_non_mut`, which first clears this instance and then
+    /// reads Mojang's main/armor/off-hand slot numbers.
     pub fn new(
         entity_equipment: Arc<Mutex<EntityEquipment>>,
         equipment_slots: Arc<HashMap<usize, EquipmentSlot>>,
@@ -205,9 +207,13 @@ impl PlayerInventory {
 
         if self_stack.is_empty() {
             *self_stack = stack.copy_with_count(0);
+        } else if !self_stack.are_items_and_components_equal(&stack) || !self_stack.is_stackable() {
+            return stack.item_count as usize;
         }
 
-        let count_left = self_stack.get_max_stack_size() - self_stack.item_count;
+        let count_left = self_stack
+            .get_max_stack_size()
+            .saturating_sub(self_stack.item_count);
         let count_min = stack_count.min(count_left);
 
         if count_min != 0 {
@@ -526,5 +532,19 @@ impl PlayerInventory {
     /// Gets the currently selected hotbar slot index.
     pub fn get_selected_slot(&self) -> u8 {
         self.selected_slot.load(Ordering::Relaxed)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PlayerInventory;
+    use pumpkin_data::{item::Item, item_stack::ItemStack};
+
+    #[test]
+    fn specific_slot_rejects_a_different_item_instead_of_incrementing_it() {
+        let existing = ItemStack::static_new_java(1, &Item::STONE);
+        let incoming = ItemStack::static_new_java(1, &Item::DIRT);
+        assert!(!PlayerInventory::can_stack_add_more(&existing, &incoming));
+        assert!(PlayerInventory::can_stack_add_more(&existing, &existing));
     }
 }

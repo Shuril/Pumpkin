@@ -210,8 +210,8 @@ pub struct CraftingShapedRecipeStruct {
     result: RecipeResultStruct,
 }
 
-impl ToTokens for CraftingShapedRecipeStruct {
-    fn to_tokens(&self, tokens: &mut TokenStream) {
+impl CraftingShapedRecipeStruct {
+    fn to_tokens_with_id(&self, tokens: &mut TokenStream, recipe_id: &str) {
         let category = match &self.category {
             Some(category) => category.to_token_stream(),
             None => RecipeCategoryTypes::Misc.to_token_stream(),
@@ -239,6 +239,7 @@ impl ToTokens for CraftingShapedRecipeStruct {
 
         tokens.extend(quote! {
             CraftingRecipeTypes::CraftingShaped {
+                recipe_id: #recipe_id,
                 category: #category,
                 group: #group,
                 show_notification: #show_notification,
@@ -263,8 +264,8 @@ pub struct CraftingShapelessRecipeStruct {
     result: RecipeResultStruct,
 }
 
-impl ToTokens for CraftingShapelessRecipeStruct {
-    fn to_tokens(&self, tokens: &mut TokenStream) {
+impl CraftingShapelessRecipeStruct {
+    fn to_tokens_with_id(&self, tokens: &mut TokenStream, recipe_id: &str) {
         let category = match &self.category {
             Some(category) => category.to_token_stream(),
             None => RecipeCategoryTypes::Misc.to_token_stream(),
@@ -283,6 +284,7 @@ impl ToTokens for CraftingShapelessRecipeStruct {
 
         tokens.extend(quote! {
             CraftingRecipeTypes::CraftingShapeless {
+                recipe_id: #recipe_id,
                 category: #category,
                 group: #group,
                 ingredients: &[#(#ingredients),*],
@@ -303,12 +305,22 @@ pub struct CraftingTransmuteRecipeStruct {
     input: RecipeIngredientTypes,
     /// The material item consumed alongside `input`.
     material: RecipeIngredientTypes,
+    /// Inclusive material-count bounds. Vanilla defaults to exactly one.
+    material_count: Option<MaterialCountBounds>,
+    /// Whether the number of materials is added to the result count.
+    add_material_count_to_result: Option<bool>,
     /// The base item type of the result (inherits components from `input`).
     result: RecipeResultStruct,
 }
 
-impl ToTokens for CraftingTransmuteRecipeStruct {
-    fn to_tokens(&self, tokens: &mut TokenStream) {
+#[derive(Deserialize)]
+struct MaterialCountBounds {
+    min: Option<u8>,
+    max: Option<u8>,
+}
+
+impl CraftingTransmuteRecipeStruct {
+    fn to_tokens_with_id(&self, tokens: &mut TokenStream, recipe_id: &str) {
         let category = match &self.category {
             Some(category) => category.to_token_stream(),
             None => RecipeCategoryTypes::Misc.to_token_stream(),
@@ -321,13 +333,28 @@ impl ToTokens for CraftingTransmuteRecipeStruct {
         let input = self.input.to_token_stream();
         let material = self.material.to_token_stream();
         let result = self.result.to_token_stream();
+        let material_count_min = self
+            .material_count
+            .as_ref()
+            .and_then(|bounds| bounds.min)
+            .unwrap_or(1);
+        let material_count_max = self
+            .material_count
+            .as_ref()
+            .and_then(|bounds| bounds.max)
+            .unwrap_or(material_count_min);
+        let add_material_count_to_result = self.add_material_count_to_result.unwrap_or(false);
 
         tokens.extend(quote! {
             CraftingRecipeTypes::CraftingTransmute {
+                recipe_id: #recipe_id,
                 category: #category,
                 group: #group,
                 input: #input,
                 material: #material,
+                material_count_min: #material_count_min,
+                material_count_max: #material_count_max,
+                add_material_count_to_result: #add_material_count_to_result,
                 result: #result,
             }
         });
@@ -341,8 +368,8 @@ pub struct CraftingDecoratedPotStruct {
     category: Option<RecipeCategoryTypes>,
 }
 
-impl ToTokens for CraftingDecoratedPotStruct {
-    fn to_tokens(&self, tokens: &mut TokenStream) {
+impl CraftingDecoratedPotStruct {
+    fn to_tokens_with_id(&self, tokens: &mut TokenStream, recipe_id: &str) {
         let category = match &self.category {
             Some(category) => category.to_token_stream(),
             None => RecipeCategoryTypes::Misc.to_token_stream(),
@@ -350,6 +377,7 @@ impl ToTokens for CraftingDecoratedPotStruct {
 
         tokens.extend(quote! {
             CraftingRecipeTypes::CraftingDecoratedPot {
+                recipe_id: #recipe_id,
                 category: #category,
             }
         });
@@ -496,16 +524,24 @@ pub fn build() -> TokenStream {
                 cooking_recipes.push(campfire_token);
             }
             RecipeTypes::CraftingShaped(recipe) => {
-                crafting_recipes.push(recipe.to_token_stream());
+                let mut token = TokenStream::new();
+                recipe.to_tokens_with_id(&mut token, &recipe_id);
+                crafting_recipes.push(token);
             }
             RecipeTypes::CraftingShapeless(recipe) => {
-                crafting_recipes.push(recipe.to_token_stream());
+                let mut token = TokenStream::new();
+                recipe.to_tokens_with_id(&mut token, &recipe_id);
+                crafting_recipes.push(token);
             }
             RecipeTypes::CraftingTransmute(recipe) => {
-                crafting_recipes.push(recipe.to_token_stream());
+                let mut token = TokenStream::new();
+                recipe.to_tokens_with_id(&mut token, &recipe_id);
+                crafting_recipes.push(token);
             }
             RecipeTypes::CraftingDecoratedPot(recipe) => {
-                crafting_recipes.push(recipe.to_token_stream());
+                let mut token = TokenStream::new();
+                recipe.to_tokens_with_id(&mut token, &recipe_id);
+                crafting_recipes.push(token);
             }
             RecipeTypes::Smelting(recipe) => {
                 let mut common_cooking_token = TokenStream::new();
@@ -539,11 +575,12 @@ pub fn build() -> TokenStream {
     quote! {
         use crate::tag::Taggable;
         use crate::item::Item;
-        use serde::{Serialize, Deserialize};
+        use serde::Serialize;
 
         #[derive(Clone, Debug, Serialize)]
         pub enum CraftingRecipeTypes {
             CraftingShaped {
+                recipe_id: &'static str,
                 category: RecipeCategoryTypes,
                 group: Option<&'static str>,
                 show_notification: bool,
@@ -552,19 +589,25 @@ pub fn build() -> TokenStream {
                 result: RecipeResultStruct,
             },
             CraftingShapeless {
+                recipe_id: &'static str,
                 category: RecipeCategoryTypes,
                 group: Option<&'static str>,
                 ingredients: &'static [RecipeIngredientTypes],
                 result: RecipeResultStruct,
             },
             CraftingTransmute {
+                recipe_id: &'static str,
                 category: RecipeCategoryTypes,
                 group: Option<&'static str>,
                 input: RecipeIngredientTypes,
                 material: RecipeIngredientTypes,
+                material_count_min: u8,
+                material_count_max: u8,
+                add_material_count_to_result: bool,
                 result: RecipeResultStruct,
             },
             CraftingDecoratedPot {
+                recipe_id: &'static str,
                 category: RecipeCategoryTypes,
             },
             CraftingSpecial,

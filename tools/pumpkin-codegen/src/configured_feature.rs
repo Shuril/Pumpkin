@@ -1471,13 +1471,20 @@ fn value_to_tree_decorator(v: &Value) -> TokenStream {
             let prob = v["probability"].as_f64().unwrap_or(0.0) as f32;
             quote! { TreeDecorator::LeaveVine(LeavesVineTreeDecorator { probability: #prob }) }
         }
-        "minecraft:cocoa" => quote! { TreeDecorator::Cocoa(CocoaTreeDecorator {}) },
+        "minecraft:cocoa" => {
+            // Cocoa's probability is part of the vanilla decorator codec.
+            // Preserve it instead of silently turning the decorator into a
+            // unit value (which changes jungle generation deterministically).
+            let probability = v["probability"].as_f64().unwrap_or(0.0) as f32;
+            quote! { TreeDecorator::Cocoa(CocoaTreeDecorator { probability: #probability }) }
+        }
         "minecraft:beehive" => {
             let prob = v["probability"].as_f64().unwrap_or(0.0) as f32;
             quote! { TreeDecorator::Beehive(BeehiveTreeDecorator { probability: #prob }) }
         }
         "minecraft:alter_ground" => {
-            quote! { TreeDecorator::AlterGround(AlterGroundTreeDecorator {}) }
+            let provider = value_to_block_state_provider(&v["provider"]);
+            quote! { TreeDecorator::AlterGround(AlterGroundTreeDecorator { provider: #provider }) }
         }
         "minecraft:attached_to_logs" => {
             let prob = v["probability"].as_f64().unwrap_or(0.0) as f32;
@@ -1499,7 +1506,29 @@ fn value_to_tree_decorator(v: &Value) -> TokenStream {
             }
         }
         "minecraft:attached_to_leaves" => {
-            quote! { TreeDecorator::AttachedToLeaves(AttachedToLeavesTreeDecorator {}) }
+            let probability = v["probability"].as_f64().unwrap_or(0.0) as f32;
+            let exclusion_radius_xz = v["exclusion_radius_xz"].as_i64().unwrap_or(0) as i32;
+            let exclusion_radius_y = v["exclusion_radius_y"].as_i64().unwrap_or(0) as i32;
+            let block_provider = value_to_block_state_provider(&v["block_provider"]);
+            let required_empty_blocks = v["required_empty_blocks"].as_i64().unwrap_or(1) as i32;
+            let directions: Vec<TokenStream> = v["directions"]
+                .as_array()
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|direction| direction.as_str().map(value_to_block_direction))
+                        .collect()
+                })
+                .unwrap_or_default();
+            quote! {
+                TreeDecorator::AttachedToLeaves(AttachedToLeavesTreeDecorator {
+                    probability: #probability,
+                    exclusion_radius_xz: #exclusion_radius_xz,
+                    exclusion_radius_y: #exclusion_radius_y,
+                    block_provider: #block_provider,
+                    required_empty_blocks: #required_empty_blocks,
+                    directions: vec![#(#directions),*],
+                })
+            }
         }
         "minecraft:place_on_ground" => {
             let tries = v["tries"].as_i64().unwrap_or(1) as i32;
@@ -1516,10 +1545,20 @@ fn value_to_tree_decorator(v: &Value) -> TokenStream {
             }
         }
         "minecraft:creaking_heart" => {
-            quote! { TreeDecorator::CreakingHeart(CreakingHeartTreeDecorator {}) }
+            let probability = v["probability"].as_f64().unwrap_or(1.0) as f32;
+            quote! { TreeDecorator::CreakingHeart(CreakingHeartTreeDecorator { probability: #probability }) }
         }
         "minecraft:pale_moss" => {
-            quote! { TreeDecorator::PaleMoss(PaleMossTreeDecorator {}) }
+            let leaves_probability = v["leaves_probability"].as_f64().unwrap_or(0.0) as f32;
+            let trunk_probability = v["trunk_probability"].as_f64().unwrap_or(0.0) as f32;
+            let ground_probability = v["ground_probability"].as_f64().unwrap_or(0.0) as f32;
+            quote! {
+                TreeDecorator::PaleMoss(PaleMossTreeDecorator {
+                    leaves_probability: #leaves_probability,
+                    trunk_probability: #trunk_probability,
+                    ground_probability: #ground_probability,
+                })
+            }
         }
         other => {
             let msg = format!("unknown tree decorator: {other}");

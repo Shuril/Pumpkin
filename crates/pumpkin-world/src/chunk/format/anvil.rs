@@ -37,8 +37,31 @@ pub const CHUNK_COUNT: usize = REGION_SIZE * REGION_SIZE;
 /// The number of bytes in a sector (4 KiB)
 const SECTOR_BYTES: usize = 4096;
 
-// 26.2
-pub const WORLD_DATA_VERSION: i32 = 4903;
+/// The `DataVersion` stamped on every chunk we write.
+///
+/// This has to name the format `internal_to_bytes` actually produces, because it is
+/// what tells vanilla which datafixers to run when it opens a world we saved. Too low
+/// and vanilla migrates data that has already been migrated; too high and it skips
+/// fixes the data still needs.
+///
+/// Which makes it the same version `level.dat` claims through
+/// `MAXIMUM_SUPPORTED_WORLD_DATA_VERSION` — a world whose `level.dat` says 26.2 while
+/// its chunks say 1.21.11 is not a coherent world. This sat at 4790 while `level.dat`
+/// said 4903, which went unnoticed only because the numeric block palette meant nothing
+/// outside Pumpkin could read our chunks anyway.
+pub const WORLD_DATA_VERSION: i32 = 4903; // 26.2
+
+/// A guard, deliberately not an alias: what we emit and what we accept on load are
+/// different questions, and tying them together would mean the next widening of load
+/// support silently stamped a newer version onto chunks still written in the old shape.
+/// Failing the build instead forces the choice to be made on purpose.
+///
+/// If you are raising the load ceiling to a format `internal_to_bytes` does not yet
+/// produce, separate these two rather than bumping this one to match.
+const _: () = assert!(
+    WORLD_DATA_VERSION == crate::world_info::MAXIMUM_SUPPORTED_WORLD_DATA_VERSION,
+    "a chunk's DataVersion must name the format we write, which is also what level.dat claims"
+);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -246,11 +269,27 @@ impl AnvilChunkData {
     }
 
     fn from_bytes(bytes: Bytes) -> Result<Self, ChunkReadingError> {
+        if bytes.len() < 5 {
+            return Err(ChunkReadingError::ParsingError(
+                ChunkParsingError::ErrorDeserializingChunk(
+                    "Anvil chunk record is shorter than its length/compression header".to_string(),
+                ),
+            ));
+        }
         let mut bytes = bytes;
-        // Minus one for the compression byte
-        let length = bytes.get_u32() as usize - 1;
+        // The length includes the one-byte compression id.  Validate before
+        // subtracting: a corrupt zero length used to underflow to usize::MAX.
+        let length_with_compression = bytes.get_u32() as usize;
+        if length_with_compression == 0 {
+            return Err(ChunkReadingError::ParsingError(
+                ChunkParsingError::ErrorDeserializingChunk(
+                    "Anvil chunk record has a zero length".to_string(),
+                ),
+            ));
+        }
+        let length = length_with_compression - 1;
 
-        if length > bytes.len() {
+        if length > bytes.len().saturating_sub(1) {
             return Err(ChunkReadingError::ParsingError(
                 ChunkParsingError::ErrorDeserializingChunk(format!(
                     "Chunk length is greater than available bytes ({} vs {})",
@@ -562,12 +601,25 @@ impl<S: SingleChunkDataSerializer + 'static> ChunkSerializer for AnvilChunkFile<
 
             let sector_count = (location & 0xFF) as usize;
             let sector_offset = (location >> 8) as usize;
-            let end_offset = sector_offset + sector_count;
-
             // If the sector offset or count is 0, the chunk is not present (we should not parse empty chunks)
             if sector_offset == 0 || sector_count == 0 {
                 continue;
             }
+
+            if sector_offset < 2 {
+                return Err(ChunkReadingError::ParsingError(
+                    ChunkParsingError::ErrorDeserializingChunk(format!(
+                        "Chunk {} points into the Anvil header (sector {})",
+                        i, sector_offset
+                    )),
+                ));
+            }
+
+            let end_offset = sector_offset.checked_add(sector_count).ok_or_else(|| {
+                ChunkReadingError::ParsingError(ChunkParsingError::ErrorDeserializingChunk(
+                    format!("Chunk {} sector range overflows", i),
+                ))
+            })?;
 
             if end_offset > last_offset {
                 last_offset = end_offset;
@@ -575,10 +627,26 @@ impl<S: SingleChunkDataSerializer + 'static> ChunkSerializer for AnvilChunkFile<
 
             // We always subtract 2 for the first two sectors for the timestamp and location tables
             // that we walked earlier
-            let bytes_offset = (sector_offset - 2) * SECTOR_BYTES;
-            let bytes_count = sector_count * SECTOR_BYTES;
+            let bytes_offset = (sector_offset - 2)
+                .checked_mul(SECTOR_BYTES)
+                .ok_or_else(|| {
+                    ChunkReadingError::ParsingError(ChunkParsingError::ErrorDeserializingChunk(
+                        format!("Chunk {} byte offset overflows", i),
+                    ))
+                })?;
+            let bytes_count = sector_count.checked_mul(SECTOR_BYTES).ok_or_else(|| {
+                ChunkReadingError::ParsingError(ChunkParsingError::ErrorDeserializingChunk(
+                    format!("Chunk {} byte length overflows", i),
+                ))
+            })?;
 
-            if bytes_offset + bytes_count > raw_file_bytes.len() {
+            let bytes_end = bytes_offset.checked_add(bytes_count).ok_or_else(|| {
+                ChunkReadingError::ParsingError(ChunkParsingError::ErrorDeserializingChunk(
+                    format!("Chunk {} byte range overflows", i),
+                ))
+            })?;
+
+            if bytes_end > raw_file_bytes.len() {
                 return Err(ChunkReadingError::ParsingError(
                     ChunkParsingError::ErrorDeserializingChunk(format!(
                         "Not enough bytes available for the chunk {} ({} vs {})",
@@ -589,9 +657,8 @@ impl<S: SingleChunkDataSerializer + 'static> ChunkSerializer for AnvilChunkFile<
                 ));
             }
 
-            let serialized_data = AnvilChunkData::from_bytes(
-                raw_file_bytes.slice(bytes_offset..bytes_offset + bytes_count),
-            )?;
+            let serialized_data =
+                AnvilChunkData::from_bytes(raw_file_bytes.slice(bytes_offset..bytes_end))?;
 
             chunk_file.chunks_data[i] = Some(AnvilChunkMetadata {
                 serialized_data,
@@ -1326,7 +1393,13 @@ mod tests {
  */
 #[cfg(test)]
 mod tests {
-    use super::{Compression, CompressionError};
+    use super::{AnvilChunkFile, Compression, CompressionError};
+    use crate::chunk::ChunkEntityData;
+    use crate::chunk::io::ChunkSerializer;
+    use bytes::Bytes;
+    use pumpkin_nbt::compound::NbtCompound;
+    use pumpkin_nbt::tag::NbtTag;
+    use pumpkin_util::math::vector2::Vector2;
 
     #[test]
     fn custom_compression_returns_unknown_compression_error() {
@@ -1342,5 +1415,80 @@ mod tests {
             Compression::Custom.decompress_data(b"chunk data"),
             Err(CompressionError::UnknownCompression)
         ));
+    }
+
+    #[test]
+    fn malformed_zero_length_chunk_record_is_rejected_without_panicking() {
+        let result = super::AnvilChunkData::from_bytes(Bytes::from(vec![0; 4096]));
+        assert!(matches!(
+            result,
+            Err(crate::chunk::ChunkReadingError::ParsingError(_))
+        ));
+    }
+
+    #[test]
+    fn malformed_region_entry_pointing_into_header_is_rejected() {
+        let mut region = vec![0_u8; 3 * 4096];
+        // offset 1 overlaps the two-sector location/timestamp header
+        region[0..4].copy_from_slice(&((1_u32 << 8) | 1).to_be_bytes());
+        assert!(matches!(
+            AnvilChunkFile::<ChunkEntityData>::read(Bytes::from(region)),
+            Err(crate::chunk::ChunkReadingError::ParsingError(_))
+        ));
+    }
+
+    /// Build a minimal but genuine Anvil region record: two 4 KiB headers, a
+    /// location entry pointing at sector 2, a big-endian length/compression
+    /// prefix, zlib payload and sector padding.  Keeping this fixture in the
+    /// test makes region-header regressions visible without checking a binary
+    /// world into the repository.
+    #[tokio::test]
+    async fn anvil_region_fixture_loads_entity_chunk_and_preserves_metadata() {
+        let mut entity = NbtCompound::new();
+        entity.put_string("id", "minecraft:item".to_string());
+
+        let mut future = NbtCompound::new();
+        future.put_string("marker", "from-region-fixture".to_string());
+
+        let mut root = NbtCompound::new();
+        root.put_int("DataVersion", super::WORLD_DATA_VERSION);
+        root.put("Position", NbtTag::IntArray(vec![0, 0]));
+        root.put_list("Entities", vec![NbtTag::Compound(entity)]);
+        root.put_compound("FutureEntityData", future);
+
+        let raw_nbt = pumpkin_nbt::Nbt::from(root).write();
+        let compressed = Compression::ZLib
+            .compress_data(&raw_nbt, 6)
+            .expect("compress fixture");
+        let record_len = compressed.len() + 1;
+        assert!(record_len + 4 <= 4096, "fixture unexpectedly spans sectors");
+
+        let mut region = vec![0_u8; 3 * 4096];
+        // location table entry (chunk 0,0): sector offset 2, one sector
+        region[0..4].copy_from_slice(&((2_u32 << 8) | 1).to_be_bytes());
+        // timestamp table entry
+        region[4096..4100].copy_from_slice(&1_u32.to_be_bytes());
+        let record = 2 * 4096;
+        region[record..record + 4].copy_from_slice(&(record_len as u32).to_be_bytes());
+        region[record + 4] = Compression::ZLib as u8;
+        region[record + 5..record + 5 + compressed.len()].copy_from_slice(&compressed);
+
+        let region_file = AnvilChunkFile::<ChunkEntityData>::read(Bytes::from(region))
+            .expect("read region fixture");
+        let metadata = region_file.chunks_data[0].as_ref().expect("chunk 0,0");
+        let loaded: ChunkEntityData = metadata
+            .serialized_data
+            .to_chunk(Vector2::new(0, 0))
+            .expect("decode entity chunk");
+        assert_eq!(loaded.data.lock().await.len(), 1);
+        assert_eq!(
+            loaded
+                .unknown_nbt
+                .lock()
+                .expect("unknown NBT lock")
+                .get_compound("FutureEntityData")
+                .and_then(|value| value.get_string("marker")),
+            Some("from-region-fixture")
+        );
     }
 }

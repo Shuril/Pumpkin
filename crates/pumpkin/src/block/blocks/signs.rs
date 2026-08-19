@@ -35,6 +35,7 @@ use crate::item::items::honeycomb::HoneyCombItem;
 use crate::item::items::ink_sac::InkSacItem;
 use crate::net::ClientPlatform;
 use crate::world::World;
+use pumpkin_util::text::{TextComponent, click::ClickEvent};
 
 #[pumpkin_block_from_tag("minecraft:all_signs")]
 pub struct SignBlock;
@@ -54,6 +55,62 @@ struct SignPlacement {
 }
 
 impl SignBlock {
+    /// Converts a hit's local Y coordinate into the four-line sign index.
+    /// Minecraft's sign text is laid out top-to-bottom, while the hit result
+    /// is measured bottom-to-top in the block-local coordinate system.
+    #[must_use]
+    fn clicked_line(cursor_y: f32) -> usize {
+        let y = cursor_y.clamp(0.0, 0.999_999);
+        (((1.0 - y) * 4.0).floor() as usize).min(3)
+    }
+
+    /// Executes a vanilla `run_command` click event stored in the clicked sign
+    /// line. Sign text is persisted as SNBT strings, so JSON components are
+    /// decoded at interaction time; malformed/legacy plain text simply has no
+    /// command event and falls back to ordinary sign editing.
+    async fn try_run_click_command(
+        args: &NormalUseArgs<'_>,
+        sign_entity: &SignBlockEntity,
+    ) -> bool {
+        let front = is_facing_front_text(args.world, args.position, args.block, args.player);
+        let line = Self::clicked_line(args.hit.cursor_pos.y);
+        let raw = if front {
+            sign_entity
+                .front_text
+                .messages
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)[line]
+                .clone()
+        } else {
+            sign_entity
+                .back_text
+                .messages
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)[line]
+                .clone()
+        };
+
+        let Ok(component) = serde_json::from_str::<TextComponent>(&raw) else {
+            return false;
+        };
+        let Some(ClickEvent::RunCommand { command }) = component.0.style.click_event.as_ref()
+        else {
+            return false;
+        };
+        let Some(server) = args.world.server.upgrade() else {
+            return false;
+        };
+        let source = args.player.get_command_source(&server).await;
+        let command = command.strip_prefix('/').unwrap_or(command.as_ref());
+        server
+            .command_dispatcher
+            .read()
+            .await
+            .handle_command(&source, command)
+            .await;
+        true
+    }
+
     /// Checks if a block can provide support for a sign.
     fn is_valid_support(world: &World, pos: &BlockPos, direction: BlockDirection) -> bool {
         let (block, state) = world.get_block_and_state(pos);
@@ -292,7 +349,6 @@ impl SignBlock {
     }
 }
 
-//TODO: add support for click commands
 impl BlockBehaviour for SignBlock {
     fn on_place<'a>(&'a self, args: OnPlaceArgs<'a>) -> BlockFuture<'a, BlockStateId> {
         Box::pin(async move {
@@ -440,6 +496,10 @@ impl BlockBehaviour for SignBlock {
                 return BlockActionResult::Pass;
             };
 
+            if Self::try_run_click_command(&args, sign_entity).await {
+                return BlockActionResult::SuccessServer;
+            }
+
             if sign_entity.is_waxed.load(Ordering::Relaxed) {
                 args.world.play_block_sound(
                     pumpkin_data::sound::Sound::BlockSignWaxedInteractFail,
@@ -569,6 +629,34 @@ impl BlockBehaviour for SignBlock {
 
             result
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SignBlock;
+    use pumpkin_util::text::{TextComponent, click::ClickEvent};
+
+    #[test]
+    fn sign_click_line_uses_top_to_bottom_order() {
+        assert_eq!(SignBlock::clicked_line(0.99), 0);
+        assert_eq!(SignBlock::clicked_line(0.76), 0);
+        assert_eq!(SignBlock::clicked_line(0.50), 2);
+        assert_eq!(SignBlock::clicked_line(0.01), 3);
+        assert_eq!(SignBlock::clicked_line(-1.0), 3);
+        assert_eq!(SignBlock::clicked_line(2.0), 0);
+    }
+
+    #[test]
+    fn vanilla_camel_case_click_event_is_decoded() {
+        let component: TextComponent = serde_json::from_str(
+            r#"{"text":"warp","clickEvent":{"action":"run_command","value":"/tp @s 0 64 0"}}"#,
+        )
+        .expect("vanilla sign component should decode");
+        assert!(matches!(
+            component.0.style.click_event,
+            Some(ClickEvent::RunCommand { .. })
+        ));
     }
 }
 

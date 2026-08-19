@@ -15,12 +15,15 @@ use pumpkin_data::sound::Sound;
 use pumpkin_data::translation;
 use pumpkin_data::world::WorldEvent;
 use pumpkin_data::{BlockDirection, BlockStateId};
+use pumpkin_inventory::crafting::recipes::RecipeInputInventory;
 use pumpkin_inventory::generic_container_screen_handler::create_crafter_3x3;
 use pumpkin_inventory::player::player_inventory::PlayerInventory;
 use pumpkin_inventory::screen_handler::{
     BoxFuture, InventoryPlayer, ScreenHandlerFactory, SharedScreenHandler,
 };
 use pumpkin_macros::pumpkin_block;
+use pumpkin_util::math::position::BlockPos;
+use pumpkin_util::math::vector3::Vector3;
 use pumpkin_util::text::TextComponent;
 use pumpkin_world::inventory::Inventory;
 use pumpkin_world::tick::TickPriority;
@@ -91,6 +94,7 @@ impl BlockBehaviour for CrafterBlock {
                 BlockDirection::East => Orientation::EastUp,
                 BlockDirection::West => Orientation::WestUp,
             };
+            props.triggered = block_receives_redstone_power(args.world, args.position).await;
             props.to_state_id(args.block)
         })
     }
@@ -99,6 +103,12 @@ impl BlockBehaviour for CrafterBlock {
         Box::pin(async move {
             let crafter_block_entity = CrafterBlockEntity::new(*args.position);
             args.world.add_block_entity(Arc::new(crafter_block_entity));
+            let state = args.world.get_block_state(args.position);
+            let props = CrafterLikeProperties::from_state_id(state.id, args.block);
+            if props.triggered {
+                args.world
+                    .schedule_block_tick(args.block, *args.position, 4, TickPriority::Normal);
+            }
         })
     }
 
@@ -121,8 +131,14 @@ impl BlockBehaviour for CrafterBlock {
                         BlockFlags::NOTIFY_LISTENERS,
                     )
                     .await;
+                if let Some(entity) = args.world.get_block_entity(args.position)
+                    && let Some(crafter) = entity.as_any().downcast_ref::<CrafterBlockEntity>()
+                {
+                    crafter.set_triggered(true);
+                }
             } else if !powered && props.triggered {
                 props.triggered = false;
+                props.crafting = false;
                 args.world
                     .set_block_state(
                         args.position,
@@ -130,6 +146,11 @@ impl BlockBehaviour for CrafterBlock {
                         BlockFlags::NOTIFY_LISTENERS,
                     )
                     .await;
+                if let Some(entity) = args.world.get_block_entity(args.position)
+                    && let Some(crafter) = entity.as_any().downcast_ref::<CrafterBlockEntity>()
+                {
+                    crafter.set_triggered(false);
+                }
             }
         })
     }
@@ -141,52 +162,76 @@ impl BlockBehaviour for CrafterBlock {
                 args.block,
             );
 
-            // Set to crafting state
-            props.crafting = true;
-            args.world
-                .set_block_state(
-                    args.position,
-                    props.to_state_id(args.block),
-                    BlockFlags::NOTIFY_LISTENERS,
-                )
-                .await;
+            let block_entity = args.world.get_block_entity(args.position);
+            let result = if let (Some(entity), Some(server)) =
+                (block_entity.as_ref(), args.world.server.upgrade())
+            {
+                if let Some(crafter) = entity.as_any().downcast_ref::<CrafterBlockEntity>() {
+                    let result = crafter.craft_once(server.recipe_manager.as_ref()).await;
+                    if result.is_some() {
+                        crafter.set_crafting_ticks_remaining(6);
+                    }
+                    result
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
 
-            // Recipes/crafting logic not fully implemented yet - play fail effects
-            args.world.play_sound(
-                Sound::BlockCrafterFail,
-                pumpkin_data::sound::SoundCategory::Blocks,
-                &args.position.to_f64(),
-            );
+            let output_position = CrafterBlock::output_position(args.position, props.orientation);
+            if let Some(stacks) = result {
+                // Java enters the visible crafting state only after a recipe
+                // was selected; failed redstone pulses never set CRAFTING.
+                props.crafting = true;
+                args.world
+                    .set_block_state(
+                        args.position,
+                        props.to_state_id(args.block),
+                        BlockFlags::NOTIFY_LISTENERS,
+                    )
+                    .await;
+                for mut stack in stacks {
+                    if let Some(entity) = args.world.get_block_entity(&output_position)
+                        && let Some(inventory) = entity.get_inventory()
+                    {
+                        Self::insert_output(
+                            inventory.as_ref(),
+                            &mut stack,
+                            Self::output_direction(props.orientation).opposite(),
+                        )
+                        .await;
+                    }
+                    // Vanilla falls back to an item entity when the adjacent
+                    // container cannot accept a stack.  Do this independently
+                    // for the recipe result and every remainder, preserving
+                    // output order and preventing a remainder from being lost.
+                    if !stack.is_empty() {
+                        args.world.drop_stack(&output_position, stack).await;
+                    }
+                }
+                args.world.play_sound(
+                    Sound::BlockCrafterCraft,
+                    pumpkin_data::sound::SoundCategory::Blocks,
+                    &args.position.to_f64(),
+                );
+            } else {
+                args.world.play_sound(
+                    Sound::BlockCrafterFail,
+                    pumpkin_data::sound::SoundCategory::Blocks,
+                    &args.position.to_f64(),
+                );
+                args.world.sync_world_event(
+                    WorldEvent::ParticlesShootSmoke,
+                    *args.position,
+                    CrafterBlock::orientation_data(props.orientation),
+                );
+            }
 
-            // Spawn fail smoke particles
-            args.world.sync_world_event(
-                WorldEvent::ParticlesShootSmoke,
-                *args.position,
-                match props.orientation {
-                    Orientation::DownEast
-                    | Orientation::DownNorth
-                    | Orientation::DownSouth
-                    | Orientation::DownWest => 0,
-                    Orientation::UpEast
-                    | Orientation::UpNorth
-                    | Orientation::UpSouth
-                    | Orientation::UpWest => 1,
-                    Orientation::NorthUp => 2,
-                    Orientation::SouthUp => 3,
-                    Orientation::WestUp => 4,
-                    Orientation::EastUp => 5,
-                },
-            );
-
-            // Set crafting state back to false
-            props.crafting = false;
-            args.world
-                .set_block_state(
-                    args.position,
-                    props.to_state_id(args.block),
-                    BlockFlags::NOTIFY_LISTENERS,
-                )
-                .await;
+            // Keep CRAFTING set for the six-tick CrafterBlockEntity animation.
+            // The entity tick clears it at the exact deadline and refreshes
+            // comparator neighbours; clearing it here would make the visible
+            // state last zero ticks while the persisted timer kept running.
         })
     }
 
@@ -201,7 +246,7 @@ impl BlockBehaviour for CrafterBlock {
                 let mut occupied = 0u8;
                 for i in 0..9 {
                     let stack = crafter.get_stack(i).await;
-                    if !stack.is_empty() {
+                    if !stack.is_empty() || !crafter.is_slot_enabled(i) {
                         occupied += 1;
                     }
                 }
@@ -210,5 +255,93 @@ impl BlockBehaviour for CrafterBlock {
                 None
             }
         })
+    }
+}
+
+impl CrafterBlock {
+    async fn insert_output(
+        inventory: &dyn Inventory,
+        stack: &mut pumpkin_data::item_stack::ItemStack,
+        direction: BlockDirection,
+    ) {
+        for slot in 0..inventory.size() {
+            if stack.is_empty() {
+                break;
+            }
+            let current = inventory.get_stack(slot).await;
+            if !inventory.can_insert_from_hopper(slot, stack, direction) {
+                continue;
+            }
+            if current.is_empty() {
+                inventory.set_stack(slot, stack.clone()).await;
+                *stack = pumpkin_data::item_stack::ItemStack::EMPTY.clone();
+                break;
+            }
+            if !inventory.can_merge_from_hopper(slot, &current, stack, direction) {
+                continue;
+            }
+            if current.are_items_and_components_equal(stack)
+                && current.item_count < current.get_max_stack_size()
+            {
+                let room = current.get_max_stack_size() - current.item_count;
+                let moved = room.min(stack.item_count);
+                let mut updated = current;
+                updated.increment(moved);
+                stack.decrement(moved);
+                inventory.set_stack(slot, updated).await;
+            }
+        }
+    }
+
+    fn orientation_data(orientation: Orientation) -> i32 {
+        match orientation {
+            Orientation::DownEast
+            | Orientation::DownNorth
+            | Orientation::DownSouth
+            | Orientation::DownWest => 0,
+            Orientation::UpEast
+            | Orientation::UpNorth
+            | Orientation::UpSouth
+            | Orientation::UpWest => 1,
+            Orientation::NorthUp => 2,
+            Orientation::SouthUp => 3,
+            Orientation::WestUp => 4,
+            Orientation::EastUp => 5,
+        }
+    }
+
+    fn output_position(position: &BlockPos, orientation: Orientation) -> BlockPos {
+        let offset = match orientation {
+            Orientation::DownEast
+            | Orientation::DownNorth
+            | Orientation::DownSouth
+            | Orientation::DownWest => Vector3::new(0, -1, 0),
+            Orientation::UpEast
+            | Orientation::UpNorth
+            | Orientation::UpSouth
+            | Orientation::UpWest => Vector3::new(0, 1, 0),
+            Orientation::NorthUp => Vector3::new(0, 0, -1),
+            Orientation::SouthUp => Vector3::new(0, 0, 1),
+            Orientation::WestUp => Vector3::new(-1, 0, 0),
+            Orientation::EastUp => Vector3::new(1, 0, 0),
+        };
+        position.offset(offset)
+    }
+
+    const fn output_direction(orientation: Orientation) -> BlockDirection {
+        match orientation {
+            Orientation::DownEast
+            | Orientation::DownNorth
+            | Orientation::DownSouth
+            | Orientation::DownWest => BlockDirection::Down,
+            Orientation::UpEast
+            | Orientation::UpNorth
+            | Orientation::UpSouth
+            | Orientation::UpWest => BlockDirection::Up,
+            Orientation::NorthUp => BlockDirection::North,
+            Orientation::SouthUp => BlockDirection::South,
+            Orientation::WestUp => BlockDirection::West,
+            Orientation::EastUp => BlockDirection::East,
+        }
     }
 }

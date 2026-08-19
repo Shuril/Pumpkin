@@ -5,6 +5,7 @@ use crate::{
 };
 use arc_swap::ArcSwap;
 use bytes::Bytes;
+use pumpkin_util::math::vector2::Vector2;
 use pumpkin_world::level::SyncChunk;
 use std::{
     net::SocketAddr,
@@ -256,7 +257,7 @@ impl ClientPlatform {
         }
     }
 
-    pub async fn send_chunks(&self, chunks: &[SyncChunk]) {
+    pub async fn send_chunks(&self, chunks: &[SyncChunk]) -> Vec<Vector2<i32>> {
         match self {
             Self::Java(java) => java.send_chunks(chunks).await,
             Self::Bedrock(bedrock) => bedrock.send_chunks(chunks).await,

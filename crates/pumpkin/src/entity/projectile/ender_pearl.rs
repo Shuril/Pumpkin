@@ -73,6 +73,10 @@ impl EntityBase for EnderPearlEntity {
         self
     }
 
+    fn projectile_owner_id(&self) -> Option<i32> {
+        self.thrown.owner_id
+    }
+
     fn on_hit(&self, hit: ProjectileHit) -> EntityBaseFuture<'_, ()> {
         Box::pin(async move {
             let entity = self.get_entity();

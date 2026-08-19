@@ -780,6 +780,21 @@ impl Mob for VillagerEntity {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
+    fn wake_from_bed(&self) {
+        if self.get_entity().pose.load() != EntityPose::Sleeping {
+            return;
+        }
+        self.get_entity().set_pose(EntityPose::Standing);
+        self.get_entity().send_meta_data(
+            &[Metadata::new(
+                TrackedData::SLEEPING_POS_ID,
+                MetaDataType::OPTIONAL_BLOCK_POS,
+                None::<BlockPos>,
+            )],
+            None,
+        );
+    }
+
     #[expect(clippy::too_many_lines)]
     fn mob_tick<'a>(
         &'a self,

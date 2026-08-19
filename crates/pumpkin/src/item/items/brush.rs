@@ -75,6 +75,74 @@ fn get_random_archaeology_loot() -> &'static Item {
     loot_table[idx]
 }
 
+/// Applies the special brush behavior to a suspicious sand/gravel block.
+///
+/// This is shared by player use and the dispenser behavior.  The caller owns
+/// the authoritative item stack, so durability is consumed only after a
+/// valid suspicious block was found and the block transition was committed.
+pub async fn brush_suspicious_block(world: &Arc<crate::world::World>, location: BlockPos) -> bool {
+    let block = world.get_block(&location);
+    let is_sand = block == &Block::SUSPICIOUS_SAND;
+    let is_gravel = block == &Block::SUSPICIOUS_GRAVEL;
+    if !is_sand && !is_gravel {
+        return false;
+    }
+
+    let block_center = Vector3::new(
+        f64::from(location.0.x) + 0.5,
+        f64::from(location.0.y) + 0.5,
+        f64::from(location.0.z) + 0.5,
+    );
+    let current_state_id = world.get_block_state_id(&location);
+    let current_stage = get_dusted_stage(block, current_state_id);
+
+    if current_stage < 3 {
+        let next_stage_id = set_dusted_stage(block, current_state_id, current_stage + 1);
+        world
+            .set_block_state(&location, next_stage_id, BlockFlags::NOTIFY_ALL)
+            .await;
+        world.play_sound(
+            if is_sand {
+                Sound::ItemBrushBrushingSand
+            } else {
+                Sound::ItemBrushBrushingGravel
+            },
+            SoundCategory::Blocks,
+            &block_center,
+        );
+    } else {
+        let replacement_state_id = if is_sand {
+            Block::SAND.default_state.id
+        } else {
+            Block::GRAVEL.default_state.id
+        };
+        world
+            .set_block_state(&location, replacement_state_id, BlockFlags::NOTIFY_ALL)
+            .await;
+        world.play_sound(
+            if is_sand {
+                Sound::ItemBrushBrushingSandComplete
+            } else {
+                Sound::ItemBrushBrushingGravelComplete
+            },
+            SoundCategory::Blocks,
+            &block_center,
+        );
+        let spawn_pos = Vector3::new(
+            f64::from(location.0.x) + 0.5,
+            f64::from(location.0.y) + 1.0,
+            f64::from(location.0.z) + 0.5,
+        );
+        let item_entity = Arc::new(ItemEntity::new(
+            Entity::new(world.clone(), spawn_pos, &EntityType::ITEM),
+            ItemStack::new(1, get_random_archaeology_loot()),
+        ));
+        world.spawn_entity(item_entity).await;
+    }
+
+    true
+}
+
 impl ItemBehaviour for BrushItem {
     fn normal_use<'a>(
         &'a self,
@@ -116,60 +184,9 @@ impl ItemBehaviour for BrushItem {
             );
 
             if is_sand || is_gravel {
-                let current_state_id = world.get_block_state_id(&location);
-                let current_stage = get_dusted_stage(block, current_state_id);
-
-                if current_stage < 3 {
-                    let next_stage_id =
-                        set_dusted_stage(block, current_state_id, current_stage + 1);
-                    world
-                        .set_block_state(&location, next_stage_id, BlockFlags::NOTIFY_ALL)
-                        .await;
-
-                    world.play_sound(
-                        if is_sand {
-                            Sound::ItemBrushBrushingSand
-                        } else {
-                            Sound::ItemBrushBrushingGravel
-                        },
-                        SoundCategory::Blocks,
-                        &block_center,
-                    );
-                } else {
-                    let replacement_state_id = if is_sand {
-                        Block::SAND.default_state.id
-                    } else {
-                        Block::GRAVEL.default_state.id
-                    };
-
-                    world
-                        .set_block_state(&location, replacement_state_id, BlockFlags::NOTIFY_ALL)
-                        .await;
-
-                    world.play_sound(
-                        if is_sand {
-                            Sound::ItemBrushBrushingSandComplete
-                        } else {
-                            Sound::ItemBrushBrushingGravelComplete
-                        },
-                        SoundCategory::Blocks,
-                        &block_center,
-                    );
-
-                    let loot_item = get_random_archaeology_loot();
-                    let spawn_pos = Vector3::new(
-                        f64::from(location.0.x) + 0.5,
-                        f64::from(location.0.y) + 1.0,
-                        f64::from(location.0.z) + 0.5,
-                    );
-                    let item_entity = Arc::new(ItemEntity::new(
-                        Entity::new(world.clone(), spawn_pos, &EntityType::ITEM),
-                        ItemStack::new(1, loot_item),
-                    ));
-                    world.spawn_entity(item_entity).await;
+                if brush_suspicious_block(&world, location).await {
+                    player.damage_held_item(1).await;
                 }
-
-                player.damage_held_item(1).await;
             } else {
                 world.play_sound(
                     Sound::ItemBrushBrushingGeneric,
@@ -237,4 +254,25 @@ impl ItemBehaviour for BrushItem {
 
 impl BrushItem {
     pub const USE_DURATION: i32 = 200;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{get_dusted_stage, set_dusted_stage};
+    use pumpkin_data::Block;
+
+    #[test]
+    fn suspicious_block_dusted_stage_round_trips_without_losing_state() {
+        let block = &Block::SUSPICIOUS_SAND;
+        let state = block
+            .states
+            .iter()
+            .find(|state| get_dusted_stage(block, state.id) == 0)
+            .expect("suspicious sand exposes dusted=0");
+        let mut current = state.id;
+        for stage in 1..=3 {
+            current = set_dusted_stage(block, current, stage);
+            assert_eq!(get_dusted_stage(block, current), stage);
+        }
+    }
 }

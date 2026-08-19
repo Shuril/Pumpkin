@@ -275,6 +275,7 @@ impl pumpkin::plugin::command::HostConsumedArgs for PluginHostState {
             OwnedArg::Entities(_)
             | OwnedArg::Entity(_)
             | OwnedArg::GameProfiles(_)
+            | OwnedArg::Nbt(_)
             | OwnedArg::CommandTree(_) => Arg::Simple(String::new()),
         })
     }

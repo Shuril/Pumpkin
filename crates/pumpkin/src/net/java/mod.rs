@@ -1,6 +1,7 @@
 use pumpkin_protocol::java::client::play::{
     CAcknowledgeBlockChange, CChunkBatchEnd, CChunkBatchStart, CChunkData, CPlayDisconnect,
 };
+use pumpkin_util::math::vector2::Vector2;
 use pumpkin_world::level::SyncChunk;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
@@ -20,8 +21,8 @@ use pumpkin_protocol::java::server::play::{
     SPickItemFromBlock, SPlaceRecipe, SPlayPingRequest, SPlayerAbilities, SPlayerAction,
     SPlayerCommand, SPlayerInput, SPlayerLoaded, SPlayerPosition, SPlayerPositionRotation,
     SPlayerRotation, SPlayerSession, SRecipeBookChangeSettings, SRecipeBookSeenRecipe, SRenameItem,
-    SSeenAdvancement, SSelectTrade, SSetCommandBlock, SSetCreativeSlot, SSetHeldItem,
-    SSetJigsawBlock, SSetPlayerGround, SSetTestBlock, SSwingArm, STeleportToEntity,
+    SSeenAdvancement, SSelectTrade, SSetCommandBlock, SSetCommandMinecart, SSetCreativeSlot,
+    SSetHeldItem, SSetJigsawBlock, SSetPlayerGround, SSetTestBlock, SSwingArm, STeleportToEntity,
     STestInstanceBlockAction, SUpdateSign, SUseItem, SUseItemOn,
 };
 use pumpkin_protocol::packet::MultiVersionJavaPacket;
@@ -276,19 +277,20 @@ impl JavaClient {
         }
     }
 
-    pub async fn send_chunks(&self, chunks: &[SyncChunk]) {
+    pub async fn send_chunks(&self, chunks: &[SyncChunk]) -> Vec<Vector2<i32>> {
         let player = self.player.load_full();
         let Some(player) = player.as_ref() else {
             debug!(
                 "send_chunks: player not set yet, dropping {} chunks",
                 chunks.len()
             );
-            return;
+            return Vec::new();
         };
         let Some(server) = player.world().server.upgrade() else {
-            return;
+            return Vec::new();
         };
 
+        let mut delivered = Vec::with_capacity(chunks.len());
         self.send_packet_now(&CChunkBatchStart).await;
         for chunk in chunks {
             let mut event = ChunkSend::new(player.world(), chunk.clone());
@@ -308,9 +310,16 @@ impl JavaClient {
                 continue;
             }
             self.send_packet_now_data(buf.into()).await;
+            delivered.push(Vector2::new(chunk.x, chunk.z));
         }
-        self.send_packet_now(&CChunkBatchEnd::new(chunks.len() as u16))
+        // The batch count is the number of terrain packets that actually
+        // reached the outgoing stream.  Plugin-cancelled chunks are omitted;
+        // reporting the pre-filter length makes the vanilla client keep an
+        // ACK window open for packets it never received and can stall chunk
+        // loading permanently.
+        self.send_packet_now(&CChunkBatchEnd::new(delivered.len() as u16))
             .await;
+        delivered
     }
 
     pub async fn enqueue_packet<P: ClientPacket>(&self, packet: &P) {
@@ -833,6 +842,13 @@ impl JavaClient {
                 self.handle_set_command_block(
                     player,
                     SSetCommandBlock::read(&mut payload, &version)?,
+                )
+                .await;
+            }
+            id if id == SSetCommandMinecart::to_id(version) => {
+                self.handle_set_command_minecart(
+                    player,
+                    SSetCommandMinecart::read(&mut payload, &version)?,
                 )
                 .await;
             }

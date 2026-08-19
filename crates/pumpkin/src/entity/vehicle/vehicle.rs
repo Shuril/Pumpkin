@@ -5,7 +5,7 @@ use crate::entity::Entity;
 use pumpkin_protocol::java::client::play::Metadata;
 
 use crate::entity::EntityBase;
-use crate::world::loot::{LootContextParameters, LootTableExt};
+use crate::world::loot::{LootContextParameters, LootTableExt, derive_loot_seed};
 use pumpkin_data::meta_data_type::MetaDataType;
 use pumpkin_data::tracked_data::TrackedData;
 use pumpkin_protocol::codec::var_int::VarInt;
@@ -115,12 +115,24 @@ impl VehicleEntity {
             let pos = self.entity.block_pos.load();
             let is_raining = world.is_raining().await;
             let is_thundering = world.is_thundering().await;
-            let params = LootContextParameters {
+            let loot_position = self.entity.pos.load();
+            let world_time = world.level_info.load().day_time as u64;
+            let entity_uuid = self.entity.entity_uuid.as_u128();
+            let mut params = LootContextParameters {
+                biome: Some(world.get_biome(&pos).registry_id),
                 is_raining: Some(is_raining),
                 is_thundering: Some(is_thundering),
-                world_time: world.level_info.load().day_time as u64,
+                position: Some(loot_position),
+                world_time,
+                random_seed: Some(derive_loot_seed(
+                    world.level.seed.0,
+                    Some(loot_position),
+                    world_time,
+                    (entity_uuid as u64) ^ ((entity_uuid >> 64) as u64) ^ 0x56454849434c45,
+                )),
                 ..Default::default()
             };
+            params.attach_biome_resolver(&world);
             for stack in loot_table.get_loot(params) {
                 world.drop_stack(&pos, stack).await;
             }

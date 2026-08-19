@@ -23,6 +23,7 @@ uuid.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["net"] }
 bytes.workspace = true
+cesu8.workspace = true
 
 # encryption
 aes.workspace = true

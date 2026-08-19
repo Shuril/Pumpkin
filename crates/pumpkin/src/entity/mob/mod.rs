@@ -4,24 +4,25 @@ use crate::entity::ai::control::MoveControlTrait;
 use crate::entity::ai::control::look_control::LookControl;
 use crate::entity::ai::control::move_control::MoveControl;
 use crate::entity::ai::goal::goal_selector::GoalSelector;
+use crate::entity::mob::equipment::DEFAULT_EQUIPMENT_DROP_CHANCE;
 use crate::entity::player::Player;
 use crate::server::Server;
 use crate::world::World;
 use crossbeam::atomic::AtomicCell;
 use pumpkin_data::attributes::Attributes;
 use pumpkin_data::damage::DamageType;
+use pumpkin_data::data_component_impl::EquipmentSlot;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::meta_data_type::MetaDataType;
 use pumpkin_data::tag::{self, Taggable};
 use pumpkin_data::tracked_data::TrackedData;
 use pumpkin_protocol::java::client::play::{CHeadRot, CUpdateEntityRot, Metadata};
-use pumpkin_util::Difficulty;
 use pumpkin_util::math::boundingbox::BoundingBox;
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector2::Vector2;
 use pumpkin_util::math::vector3::Vector3;
-use pumpkin_util::random::xoroshiro128::Xoroshiro;
-use pumpkin_util::random::{RandomGenerator, get_seed};
+use pumpkin_util::random::{RandomGenerator, RandomImpl};
+use pumpkin_util::{Difficulty, GameMode};
 use rand::RngExt;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -56,6 +57,7 @@ pub mod silverfish;
 pub mod skeleton;
 pub mod slime;
 pub mod spider;
+pub mod sulfur_cube;
 pub mod vex;
 pub mod vindicator;
 pub mod warden;
@@ -119,6 +121,38 @@ impl MobEntity {
             last_sent_pitch: AtomicU8::new(0),
             last_sent_head_yaw: AtomicU8::new(0),
         }
+    }
+
+    /// Applies vanilla distance-despawn rules before running AI. The nearest
+    /// player query uses the current world snapshot and excludes spectators;
+    /// named, persistent, and leashed mobs are retained by the pure helper.
+    async fn should_despawn(&self) -> bool {
+        let entity = &self.living_entity.entity;
+        let world = entity.world.load();
+        // Query the largest vanilla player-search radius first. The pure
+        // helper then applies the mob category's own (possibly smaller)
+        // despawn distance, e.g. water ambient mobs at 64 blocks.
+        let radius = f64::from(pumpkin_data::entity::MobCategory::MONSTER.despawn_distance);
+        let pos = entity.pos.load();
+        let nearest_distance_squared = world
+            .players
+            .load()
+            .iter()
+            .filter(|player| player.gamemode.load() != GameMode::Spectator)
+            .map(|player| player.get_entity().pos.load().squared_distance_to_vec(&pos))
+            .filter(|distance| *distance <= radius * radius)
+            .min_by(|a, b| a.total_cmp(b));
+        let is_leashed = entity.leashed_to.lock().await.is_some();
+        let has_custom_name = entity.custom_name.load().as_ref().is_some();
+        let world_age = world.get_world_age().await;
+        crate::world::natural_spawner::should_despawn_mob(
+            entity.entity_type,
+            entity.persistence_required.load(Relaxed),
+            has_custom_name,
+            is_leashed,
+            nearest_distance_squared,
+            crate::world::natural_spawner::natural_despawn_roll(world_age, entity.entity_id),
+        )
     }
 
     pub fn is_in_position_target_range(&self) -> bool {
@@ -275,9 +309,14 @@ impl MobEntity {
                 .intersects(&target_hitbox)
     }
 
-    pub fn is_dark_enough_to_spawn(world: &World, pos: &BlockPos, is_thundering: bool) -> bool {
+    pub fn is_dark_enough_to_spawn(
+        world: &World,
+        pos: &BlockPos,
+        is_thundering: bool,
+        random: &mut RandomGenerator,
+    ) -> bool {
         let sky_light = world.get_sky_light_level(pos);
-        if sky_light > rand::random_range(0..32) {
+        if sky_light > random.next_bounded_i32(32) as u8 {
             return false;
         }
 
@@ -290,22 +329,27 @@ impl MobEntity {
         }
 
         let current_brightness = if is_thundering {
-            (sky_light - 10).max(block_light)
+            // Level#getMaxLocalRawBrightness(pos, 10) applies both the
+            // dimension's sky darkening and the thunder ambient penalty.
+            world.get_raw_brightness(pos, 10)
         } else {
-            sky_light.max(block_light)
+            world.get_max_local_raw_brightness(pos)
         };
 
-        // TODO
-        let mut random = RandomGenerator::Xoroshiro(Xoroshiro::from_seed(get_seed()));
-        current_brightness <= dimension.monster_spawn_light_level.get(&mut random) as u8
+        current_brightness <= dimension.monster_spawn_light_level.get(random) as u8
     }
 
-    pub fn check_monster_spawn_rules(world: &World, pos: &BlockPos, is_thundering: bool) -> bool {
+    pub fn check_monster_spawn_rules(
+        world: &World,
+        pos: &BlockPos,
+        is_thundering: bool,
+        random: &mut RandomGenerator,
+    ) -> bool {
         if world.level_info.load().difficulty == Difficulty::Peaceful {
             return false;
         }
 
-        if !Self::is_dark_enough_to_spawn(world, pos, is_thundering) {
+        if !Self::is_dark_enough_to_spawn(world, pos, is_thundering, random) {
             return false;
         }
 
@@ -313,9 +357,270 @@ impl MobEntity {
         true
     }
 
-    pub async fn try_attack(&self, caller: &dyn EntityBase, target: &dyn EntityBase) {
+    /// `Monster.checkAnyLightMonsterSpawnRules` plus the guardian-specific
+    /// water and sky predicate. Guardians may spawn in daylight when the
+    /// position cannot see the sky (for example inside an ocean monument).
+    pub fn check_guardian_spawn_rules(
+        world: &World,
+        pos: &BlockPos,
+        random: &mut RandomGenerator,
+    ) -> bool {
+        if world.level_info.load().difficulty == Difficulty::Peaceful {
+            return false;
+        }
+        (random.next_bounded_i32(20) == 0 || !world.can_see_sky(pos))
+            && world.get_fluid(pos).has_tag(&tag::Fluid::MINECRAFT_WATER)
+            && world
+                .get_fluid(&pos.down())
+                .has_tag(&tag::Fluid::MINECRAFT_WATER)
+    }
+
+    /// Ghasts use a light-independent mob predicate and a one-in-twenty
+    /// random gate. Their natural spawn restriction still validates the
+    /// support block before this method is called.
+    pub fn check_ghast_spawn_rules(
+        world: &World,
+        _pos: &BlockPos,
+        random: &mut RandomGenerator,
+    ) -> bool {
+        world.level_info.load().difficulty != Difficulty::Peaceful
+            && random.next_bounded_i32(20) == 0
+    }
+
+    /// Vanilla `Monster.checkAnyLightMonsterSpawnRules`.  The ordinary
+    /// spawn-position check (performed by `natural_spawner` before this
+    /// predicate) still validates the support block and collision box; this
+    /// predicate deliberately does not impose the dark-light test.
+    pub fn check_any_light_monster_spawn_rules(world: &World, _pos: &BlockPos) -> bool {
+        world.level_info.load().difficulty != Difficulty::Peaceful
+    }
+
+    /// Vanilla `Monster.checkSurfaceMonstersSpawnRules` for naturally spawned
+    /// surface variants.  Spawner-specific bypasses are handled by the
+    /// explicit spawner path and must not be applied to natural spawning.
+    pub fn check_surface_monster_spawn_rules(
+        world: &World,
+        pos: &BlockPos,
+        is_thundering: bool,
+        random: &mut RandomGenerator,
+    ) -> bool {
+        Self::check_monster_spawn_rules(world, pos, is_thundering, random) && world.can_see_sky(pos)
+    }
+
+    /// Strays ignore powder-snow columns when checking sky visibility.  This
+    /// matches `Stray.checkStraySpawnRules`: walk upward through powder snow,
+    /// then test the cell immediately below the first non-powder-snow block.
+    pub fn check_stray_spawn_rules(
+        world: &World,
+        pos: &BlockPos,
+        is_thundering: bool,
+        random: &mut RandomGenerator,
+    ) -> bool {
+        if !Self::check_monster_spawn_rules(world, pos, is_thundering, random) {
+            return false;
+        }
+
+        let max_y = world.dimension.min_y + world.dimension.height;
+        let mut check_pos = pos.up();
+        while check_pos.0.y < max_y
+            && world.get_block(&check_pos) == &pumpkin_data::Block::POWDER_SNOW
+        {
+            check_pos = check_pos.up();
+        }
+        world.can_see_sky(&check_pos.down())
+    }
+
+    /// Magma cubes only reject peaceful difficulty in their registered spawn
+    /// predicate; biome and structure spawn lists are selected upstream.
+    pub fn check_magma_cube_spawn_rules(world: &World, _pos: &BlockPos) -> bool {
+        world.level_info.load().difficulty != Difficulty::Peaceful
+    }
+
+    /// Striders search upward through a contiguous lava column and require the
+    /// first non-lava cell to be air. Bound the scan by the dimension height so
+    /// malformed all-lava worlds cannot create an unbounded loop.
+    pub fn check_strider_spawn_rules(world: &World, pos: &BlockPos) -> bool {
+        let max_y = world.dimension.min_y + world.dimension.height;
+        let mut check_pos = pos.up();
+        while check_pos.0.y < max_y
+            && world
+                .get_fluid(&check_pos)
+                .has_tag(&tag::Fluid::MINECRAFT_LAVA)
+        {
+            check_pos = check_pos.up();
+        }
+        check_pos.0.y < max_y && world.get_block(&check_pos).is_air()
+    }
+
+    /// Piglins and hoglins cannot naturally spawn on nether wart blocks.
+    pub fn check_nether_wart_excluded_spawn_rules(world: &World, pos: &BlockPos) -> bool {
+        world.get_block(&pos.down()) != &pumpkin_data::Block::NETHER_WART_BLOCK
+    }
+
+    pub fn check_zombified_piglin_spawn_rules(world: &World, pos: &BlockPos) -> bool {
+        world.level_info.load().difficulty != Difficulty::Peaceful
+            && Self::check_nether_wart_excluded_spawn_rules(world, pos)
+    }
+
+    /// Endermites and silverfish use any-light monster checks but reject a
+    /// natural spawn when a player is within five blocks.
+    pub fn check_hidden_monster_spawn_rules(world: &World, pos: &BlockPos) -> bool {
+        world
+            .get_closest_player(pos.to_centered_f64(), 5.0)
+            .is_none()
+    }
+
+    /// Patrol mobs use the any-light predicate and only reject positions with
+    /// block light above eight.
+    pub fn check_patrolling_monster_spawn_rules(world: &World, pos: &BlockPos) -> bool {
+        world.get_block_light_level(pos).unwrap_or(0) <= 8
+    }
+
+    /// Vanilla `Drowned.checkDrownedSpawnRules` for natural spawning.  The
+    /// caller has already applied the `InWater` placement type; keeping the
+    /// below/current-water checks here mirrors the Java predicate and avoids
+    /// allowing drowned to use the generic land-monster path.
+    pub fn check_drowned_spawn_rules(
+        world: &World,
+        pos: &BlockPos,
+        is_thundering: bool,
+        random: &mut RandomGenerator,
+    ) -> bool {
+        if !world
+            .get_fluid(&pos.down())
+            .has_tag(&tag::Fluid::MINECRAFT_WATER)
+            || !world.get_fluid(pos).has_tag(&tag::Fluid::MINECRAFT_WATER)
+        {
+            return false;
+        }
+        if world.level_info.load().difficulty == Difficulty::Peaceful
+            || !Self::is_dark_enough_to_spawn(world, pos, is_thundering, random)
+        {
+            return false;
+        }
+
+        let frequent = world
+            .get_biome(pos)
+            .has_tag(&tag::WorldgenBiome::MINECRAFT_MORE_FREQUENT_DROWNED_SPAWNS);
+        let chance = if frequent { 15 } else { 40 };
+        if random.next_bounded_i32(chance) != 0 {
+            return false;
+        }
+        frequent || pos.0.y < world.sea_level - 5
+    }
+
+    /// Vanilla `Animal.checkAnimalSpawnRules`: the shared predicate used by
+    /// pigs, cows, sheep, chickens, horses, donkeys, llamas and mules.
+    pub fn check_animal_spawn_rules(world: &World, pos: &BlockPos) -> bool {
+        world
+            .get_block(&pos.down())
+            .has_tag(&tag::Block::MINECRAFT_ANIMALS_SPAWNABLE_ON)
+            && world.get_raw_brightness(pos, 0) > 8
+    }
+
+    /// Vanilla `WaterAnimal.checkSurfaceWaterAnimalSpawnRules`, shared by the
+    /// ordinary surface fish and squid registrations.
+    pub fn check_surface_water_animal_spawn_rules(world: &World, pos: &BlockPos) -> bool {
+        let min_spawn_y = world.sea_level - 13;
+        pos.0.y >= min_spawn_y
+            && pos.0.y <= world.sea_level
+            && world
+                .get_fluid(&pos.down())
+                .has_tag(&tag::Fluid::MINECRAFT_WATER)
+            && world.get_block(&pos.up()) == &pumpkin_data::Block::WATER
+    }
+
+    /// Vanilla `AbstractNautilus.checkNautilusSpawnRules`. Nautiluses occupy
+    /// the lower ocean band (five to twenty-five blocks below sea level), with
+    /// water below and in the block above the candidate position.
+    pub fn check_nautilus_spawn_rules(world: &World, pos: &BlockPos) -> bool {
+        let min_spawn_y = world.sea_level - 25;
+        pos.0.y >= min_spawn_y
+            && pos.0.y <= world.sea_level - 5
+            && world
+                .get_fluid(&pos.down())
+                .has_tag(&tag::Fluid::MINECRAFT_WATER)
+            && world.get_block(&pos.up()) == &pumpkin_data::Block::WATER
+    }
+
+    /// Vanilla turtle spawn restriction: turtles use a sand block below the
+    /// candidate, may spawn up to four blocks above sea level, and still need
+    /// the ordinary animal light threshold.
+    pub fn check_turtle_spawn_rules(world: &World, pos: &BlockPos) -> bool {
+        pos.0.y < world.sea_level + 4
+            && world
+                .get_block(&pos.down())
+                .has_tag(&tag::Block::MINECRAFT_SAND)
+            && world.get_raw_brightness(pos, 0) > 8
+    }
+
+    /// Tropical fish can spawn at any height in lush caves.  Outside that
+    /// biome vanilla uses the regular surface-water interval.
+    pub fn check_tropical_fish_spawn_rules(world: &World, pos: &BlockPos) -> bool {
+        world
+            .get_fluid(&pos.down())
+            .has_tag(&tag::Fluid::MINECRAFT_WATER)
+            && world.get_block(&pos.up()) == &pumpkin_data::Block::WATER
+            && (world
+                .get_biome(pos)
+                .has_tag(&tag::WorldgenBiome::MINECRAFT_ALLOWS_TROPICAL_FISH_SPAWNS_AT_ANY_HEIGHT)
+                || Self::check_surface_water_animal_spawn_rules(world, pos))
+    }
+
+    /// Vanilla `GlowSquid.checkGlowSquidSpawnRules`: glow squids need a fully
+    /// dark water cell at least 33 blocks below sea level.
+    pub fn check_glow_squid_spawn_rules(world: &World, pos: &BlockPos) -> bool {
+        pos.0.y <= world.sea_level - 33
+            && world.get_raw_brightness(pos, 0) == 0
+            && world.get_block(pos) == &pumpkin_data::Block::WATER
+    }
+
+    /// Ocelot's registered spawn predicate is intentionally only a one-in-
+    /// three rejection gate; obstruction/height checks are separate vanilla
+    /// hooks and remain handled by the generic spawn-position validation.
+    pub fn check_ocelot_spawn_rules(
+        _world: &World,
+        _pos: &BlockPos,
+        random: &mut RandomGenerator,
+    ) -> bool {
+        random.next_bounded_i32(3) != 0
+    }
+
+    /// Vanilla `Axolotl.checkAxolotlSpawnRules` (the placement type performs
+    /// the water/clear-above checks separately).
+    pub fn check_axolotl_spawn_rules(world: &World, pos: &BlockPos) -> bool {
+        world
+            .get_block(&pos.down())
+            .has_tag(&tag::Block::MINECRAFT_AXOLOTLS_SPAWNABLE_ON)
+    }
+
+    pub fn check_tagged_animal_spawn_rules(
+        world: &World,
+        pos: &BlockPos,
+        tag: &'static pumpkin_data::tag::Tag,
+    ) -> bool {
+        world.get_block(&pos.down()).has_tag(tag) && world.get_raw_brightness(pos, 0) > 8
+    }
+
+    /// Polar bears use the ordinary animal predicate except in biomes marked
+    /// `polar_bears_spawn_on_alternate_blocks`, where vanilla switches to the
+    /// ice support tag.
+    pub fn check_polar_bear_spawn_rules(world: &World, pos: &BlockPos) -> bool {
+        if world
+            .get_biome(pos)
+            .has_tag(&tag::WorldgenBiome::MINECRAFT_POLAR_BEARS_SPAWN_ON_ALTERNATE_BLOCKS)
+        {
+            return world.get_raw_brightness(pos, 0) > 8
+                && world
+                    .get_block(&pos.down())
+                    .has_tag(&tag::Block::MINECRAFT_POLAR_BEARS_SPAWNABLE_ON_ALTERNATE);
+        }
+        Self::check_animal_spawn_rules(world, pos)
+    }
+
+    pub async fn try_attack(&self, caller: &dyn EntityBase, target: &dyn EntityBase) -> bool {
         if self.living_entity.dead.load(Relaxed) {
-            return;
+            return false;
         }
 
         let attack_damage: f32 =
@@ -341,6 +646,7 @@ impl MobEntity {
                 .last_attack_time
                 .store(self.living_entity.entity.age.load(Relaxed), Relaxed);
         }
+        damaged
     }
 
     async fn get_attack_box(&self, attack_range: f64) -> BoundingBox {
@@ -527,6 +833,25 @@ pub trait Mob: EntityBase + Send + Sync {
         Box::pin(async {})
     }
 
+    /// Adds mob-specific death drops after the registered entity loot table
+    /// has been evaluated.  Vanilla exposes this as
+    /// `Mob#dropCustomDeathLoot`; keeping it as a hook avoids downcasts from
+    /// the shared `LivingEntity` death pipeline and lets entities such as the
+    /// Enderman drop their carried block with the same world context.
+    fn mob_drop_custom_death_loot(&self) -> EntityBaseFuture<'_, ()> {
+        Box::pin(async {})
+    }
+
+    /// Secondary effects for a completed melee transaction. This runs only
+    /// after the common damage pipeline reports success.
+    fn after_attack<'a>(
+        &'a self,
+        _target: &'a dyn EntityBase,
+        _successful: bool,
+    ) -> EntityBaseFuture<'a, ()> {
+        Box::pin(async {})
+    }
+
     fn post_tick(&self) -> EntityBaseFuture<'_, ()> {
         Box::pin(async {})
     }
@@ -623,10 +948,16 @@ pub trait Mob: EntityBase + Send + Sync {
     fn get_sheep(&self) -> Option<&crate::entity::passive::sheep::SheepEntity> {
         None
     }
+
+    fn wake_from_bed(&self) {}
 }
 impl<T: Mob + Send + 'static> EntityBase for T {
     fn get_mob(&self) -> Option<&dyn Mob> {
         Some(self)
+    }
+
+    fn wake_from_bed(&self) {
+        Mob::wake_from_bed(self);
     }
 
     fn get_item_steerable(&self) -> Option<&dyn crate::entity::item_steerable::ItemSteerable> {
@@ -668,6 +999,10 @@ impl<T: Mob + Send + 'static> EntityBase for T {
         Box::pin(async move {
             let mob_entity = self.get_mob_entity();
             mob_entity.living_entity.entity.tick_leash().await;
+            if mob_entity.should_despawn().await {
+                mob_entity.living_entity.entity.remove().await;
+                return;
+            }
             mob_entity.tick_sun_burn().await;
 
             if mob_entity.breeding_cooldown.load(Relaxed) > 0 {
@@ -920,8 +1255,72 @@ impl<T: Mob + Send + 'static> EntityBase for T {
         {
             return 0;
         }
-        // TODO: apply enchantment processing like in vanilla
         Mob::get_base_experience_reward(self)
+    }
+
+    fn get_experience_reward_async<'a>(
+        &'a self,
+        _killer: Option<&'a dyn EntityBase>,
+    ) -> EntityBaseFuture<'a, u32> {
+        Box::pin(async move {
+            let entity = self.get_entity();
+            if entity.age.load(Relaxed) < 0 {
+                return 0;
+            }
+
+            let base = Mob::get_base_experience_reward(self);
+            if base == 0 {
+                return 0;
+            }
+
+            // Vanilla iterates every slot except saddles.  Take both maps as
+            // short snapshots before performing random rolls; no async lock
+            // is held while RNG or later death/orb work runs.
+            let Some(living) = self.get_living_entity() else {
+                return base;
+            };
+            let equipment = living.entity_equipment.lock().await.equipment.clone();
+            let drop_chances = living.equipment_drop_chances.lock().await.clone();
+            let mut reward = base;
+            // `LivingEntity::equipment_slots` is the player-menu mapping and
+            // intentionally omits mob-only body equipment.  Mob.getBaseExperienceReward
+            // iterates EquipmentSlot.VALUES, so add the canonical slots
+            // explicitly before de-duplicating the menu entries.
+            let mut slots: Vec<EquipmentSlot> = living.equipment_slots.values().cloned().collect();
+            slots.extend([
+                EquipmentSlot::MAIN_HAND,
+                EquipmentSlot::OFF_HAND,
+                EquipmentSlot::FEET,
+                EquipmentSlot::LEGS,
+                EquipmentSlot::CHEST,
+                EquipmentSlot::HEAD,
+                EquipmentSlot::BODY,
+            ]);
+            slots.sort_by_key(EquipmentSlot::get_slot_index);
+            slots.dedup();
+
+            for slot in slots {
+                if matches!(slot, EquipmentSlot::Saddle(_)) {
+                    continue;
+                }
+                let Some(item) = equipment.get(&slot) else {
+                    continue;
+                };
+                let drop_chance = drop_chances
+                    .get(&slot)
+                    .copied()
+                    .unwrap_or(DEFAULT_EQUIPMENT_DROP_CHANCE);
+                if experience_bonus_for_equipment(item.is_empty(), drop_chance, 0) == 0 {
+                    continue;
+                }
+                reward = reward.saturating_add(experience_bonus_for_equipment(
+                    false,
+                    drop_chance,
+                    rand::rng().random_range(0..3),
+                ));
+            }
+            reward
+        })
     }
 
     fn get_base_experience_reward(&self) -> u32 {
@@ -931,6 +1330,30 @@ impl<T: Mob + Send + 'static> EntityBase for T {
 
 #[expect(dead_code)]
 const DEFAULT_PATHFINDING_FAVOR: f32 = 0.0;
+
+#[must_use]
+fn experience_bonus_for_equipment(is_empty: bool, drop_chance: f32, random_roll: u32) -> u32 {
+    if is_empty || drop_chance > 1.0 {
+        0
+    } else {
+        1 + random_roll.min(2)
+    }
+}
+
+#[cfg(test)]
+mod experience_tests {
+    use super::experience_bonus_for_equipment;
+
+    #[test]
+    fn equipment_bonus_matches_vanilla_bounds() {
+        assert_eq!(experience_bonus_for_equipment(true, 0.0, 0), 0);
+        assert_eq!(experience_bonus_for_equipment(false, 1.0001, 0), 0);
+        assert_eq!(experience_bonus_for_equipment(false, 1.0, 0), 1);
+        assert_eq!(experience_bonus_for_equipment(false, 0.085, 2), 3);
+        // A malformed RNG result cannot create a bonus larger than 3.
+        assert_eq!(experience_bonus_for_equipment(false, 0.0, u32::MAX), 3);
+    }
+}
 
 pub trait PathAwareEntity: Mob + Send + Sync {
     fn get_pathfinding_favor(&self, _block_pos: BlockPos, _world: Arc<World>) -> f32 {

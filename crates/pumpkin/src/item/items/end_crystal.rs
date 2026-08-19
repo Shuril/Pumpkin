@@ -1,9 +1,9 @@
 use std::pin::Pin;
 use std::sync::Arc;
 
-use crate::entity::Entity;
 use crate::entity::decoration::end_crystal::EndCrystalEntity;
 use crate::entity::player::Player;
+use crate::entity::{Entity, EntityBase};
 use crate::item::{ItemBehaviour, ItemMetadata};
 use crate::server::Server;
 use pumpkin_data::entity::EntityType;
@@ -59,6 +59,14 @@ impl ItemBehaviour for EndCrystalItem {
             world.spawn_entity(end_crystal.clone()).await;
             end_crystal.set_show_bottom(false);
             item.decrement_unless_creative(player.gamemode.load(), 1);
+            world
+                .emit_game_event_from_item(
+                    location,
+                    crate::world::game_event::GameEventKind::EntityPlace,
+                    Some(player.get_entity().entity_uuid),
+                    item,
+                )
+                .await;
         })
     }
 

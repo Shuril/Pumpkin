@@ -7,15 +7,14 @@ use crate::block::entities::BlockEntity;
 use crate::block::entities::sign::SignBlockEntity;
 use crate::block::registry::BlockActionResult;
 use crate::entity::player::Player;
+use crate::item::items::state_with_properties_of;
 use crate::item::{ItemBehaviour, ItemMetadata};
 use crate::server::Server;
-use pumpkin_data::block_properties::BlockProperties;
-use pumpkin_data::block_properties::OakDoorLikeProperties;
+use crate::world::World;
+use pumpkin_data::Block;
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
-use pumpkin_data::tag::Taggable;
 use pumpkin_data::world::WorldEvent;
-use pumpkin_data::{Block, tag};
 use pumpkin_data::{BlockDirection, BlockId};
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector3::Vector3;
@@ -32,7 +31,7 @@ impl ItemMetadata for HoneyCombItem {
 impl ItemBehaviour for HoneyCombItem {
     fn use_on_block<'a>(
         &'a self,
-        _item: &'a mut ItemStack,
+        item: &'a mut ItemStack,
         player: &'a Player,
         location: BlockPos,
         _face: BlockDirection,
@@ -42,40 +41,8 @@ impl ItemBehaviour for HoneyCombItem {
     ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
         Box::pin(async move {
             let world = player.world();
-
-            // First we try to strip the block. by getting his equivalent and applying it the axis.
-            let replacement = get_waxed_equivalent(block.id);
-            // If there is a strip equivalent.
-            if let Some(replacement) = replacement {
-                // get block state of the old log.
-                // get the log properties
-                // create new properties for the new log.
-                let new_block = replacement.to_block();
-
-                let new_state_id = if block.has_tag(&tag::Block::MINECRAFT_DOORS)
-                    && block.has_tag(&tag::Block::MINECRAFT_DOORS)
-                {
-                    // get block state of the old log.
-                    let door_information = world.get_block_state_id(&location);
-                    // get the log properties
-                    let door_props = OakDoorLikeProperties::from_state_id(door_information, block);
-                    // create new properties for the new log.
-                    let mut new_door_properties = OakDoorLikeProperties::default(new_block);
-                    // Set old axis to the new log.
-                    new_door_properties.facing = door_props.facing;
-                    new_door_properties.open = door_props.open;
-                    new_door_properties.half = door_props.half;
-                    new_door_properties.hinge = door_props.hinge;
-                    new_door_properties.powered = door_props.powered;
-                    new_door_properties.to_state_id(new_block)
-                } else {
-                    new_block.default_state.id
-                };
-
-                // TODO Implements trapdoors
-                world
-                    .set_block_state(&location, new_state_id, BlockFlags::NOTIFY_ALL)
-                    .await;
+            if try_wax_block(&world, location, block).await {
+                item.decrement_unless_creative(player.gamemode.load(), 1);
             }
         })
     }
@@ -83,6 +50,24 @@ impl ItemBehaviour for HoneyCombItem {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
+}
+
+/// Waxes the block at `location` if it has a waxed equivalent, emitting the wax
+/// particles and sound on success.
+pub(crate) async fn try_wax_block(world: &Arc<World>, location: BlockPos, block: &Block) -> bool {
+    let Some(replacement) = get_waxed_equivalent(block.id) else {
+        return false;
+    };
+    let new_block = replacement.to_block();
+
+    let old_state_id = world.get_block_state_id(&location);
+    let new_state_id = state_with_properties_of(block, old_state_id, new_block);
+
+    world
+        .set_block_state(&location, new_state_id, BlockFlags::NOTIFY_ALL)
+        .await;
+    world.sync_world_event(WorldEvent::ParticlesAndSoundWaxOn, location, 0);
+    true
 }
 
 impl HoneyCombItem {
@@ -140,6 +125,68 @@ const fn get_waxed_equivalent(id: BlockId) -> Option<BlockId> {
         BlockId::WEATHERED_COPPER_TRAPDOOR => Some(BlockId::WAXED_WEATHERED_COPPER_TRAPDOOR),
         BlockId::EXPOSED_COPPER_TRAPDOOR => Some(BlockId::WAXED_EXPOSED_COPPER_TRAPDOOR),
         BlockId::COPPER_TRAPDOOR => Some(BlockId::WAXED_COPPER_TRAPDOOR),
+        BlockId::OXIDIZED_COPPER_BARS => Some(BlockId::WAXED_OXIDIZED_COPPER_BARS),
+        BlockId::WEATHERED_COPPER_BARS => Some(BlockId::WAXED_WEATHERED_COPPER_BARS),
+        BlockId::EXPOSED_COPPER_BARS => Some(BlockId::WAXED_EXPOSED_COPPER_BARS),
+        BlockId::COPPER_BARS => Some(BlockId::WAXED_COPPER_BARS),
+        BlockId::OXIDIZED_COPPER_CHAIN => Some(BlockId::WAXED_OXIDIZED_COPPER_CHAIN),
+        BlockId::WEATHERED_COPPER_CHAIN => Some(BlockId::WAXED_WEATHERED_COPPER_CHAIN),
+        BlockId::EXPOSED_COPPER_CHAIN => Some(BlockId::WAXED_EXPOSED_COPPER_CHAIN),
+        BlockId::COPPER_CHAIN => Some(BlockId::WAXED_COPPER_CHAIN),
+        BlockId::OXIDIZED_COPPER_CHEST => Some(BlockId::WAXED_OXIDIZED_COPPER_CHEST),
+        BlockId::WEATHERED_COPPER_CHEST => Some(BlockId::WAXED_WEATHERED_COPPER_CHEST),
+        BlockId::EXPOSED_COPPER_CHEST => Some(BlockId::WAXED_EXPOSED_COPPER_CHEST),
+        BlockId::COPPER_CHEST => Some(BlockId::WAXED_COPPER_CHEST),
+        BlockId::OXIDIZED_COPPER_GOLEM_STATUE => Some(BlockId::WAXED_OXIDIZED_COPPER_GOLEM_STATUE),
+        BlockId::WEATHERED_COPPER_GOLEM_STATUE => {
+            Some(BlockId::WAXED_WEATHERED_COPPER_GOLEM_STATUE)
+        }
+        BlockId::EXPOSED_COPPER_GOLEM_STATUE => Some(BlockId::WAXED_EXPOSED_COPPER_GOLEM_STATUE),
+        BlockId::COPPER_GOLEM_STATUE => Some(BlockId::WAXED_COPPER_GOLEM_STATUE),
+        BlockId::OXIDIZED_COPPER_LANTERN => Some(BlockId::WAXED_OXIDIZED_COPPER_LANTERN),
+        BlockId::WEATHERED_COPPER_LANTERN => Some(BlockId::WAXED_WEATHERED_COPPER_LANTERN),
+        BlockId::EXPOSED_COPPER_LANTERN => Some(BlockId::WAXED_EXPOSED_COPPER_LANTERN),
+        BlockId::COPPER_LANTERN => Some(BlockId::WAXED_COPPER_LANTERN),
+        BlockId::OXIDIZED_LIGHTNING_ROD => Some(BlockId::WAXED_OXIDIZED_LIGHTNING_ROD),
+        BlockId::WEATHERED_LIGHTNING_ROD => Some(BlockId::WAXED_WEATHERED_LIGHTNING_ROD),
+        BlockId::EXPOSED_LIGHTNING_ROD => Some(BlockId::WAXED_EXPOSED_LIGHTNING_ROD),
+        BlockId::LIGHTNING_ROD => Some(BlockId::WAXED_LIGHTNING_ROD),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::get_waxed_equivalent;
+    use pumpkin_data::BlockId;
+
+    #[test]
+    fn every_copper_collection_has_a_waxed_equivalent() {
+        let pairs = [
+            (BlockId::COPPER_BARS, BlockId::WAXED_COPPER_BARS),
+            (BlockId::COPPER_CHAIN, BlockId::WAXED_COPPER_CHAIN),
+            (BlockId::COPPER_CHEST, BlockId::WAXED_COPPER_CHEST),
+            (
+                BlockId::COPPER_GOLEM_STATUE,
+                BlockId::WAXED_COPPER_GOLEM_STATUE,
+            ),
+            (BlockId::COPPER_LANTERN, BlockId::WAXED_COPPER_LANTERN),
+            (BlockId::LIGHTNING_ROD, BlockId::WAXED_LIGHTNING_ROD),
+            (
+                BlockId::EXPOSED_COPPER_BARS,
+                BlockId::WAXED_EXPOSED_COPPER_BARS,
+            ),
+            (
+                BlockId::WEATHERED_COPPER_CHEST,
+                BlockId::WAXED_WEATHERED_COPPER_CHEST,
+            ),
+            (
+                BlockId::OXIDIZED_LIGHTNING_ROD,
+                BlockId::WAXED_OXIDIZED_LIGHTNING_ROD,
+            ),
+        ];
+        for (unwaxed, waxed) in pairs {
+            assert_eq!(get_waxed_equivalent(unwaxed), Some(waxed));
+        }
     }
 }

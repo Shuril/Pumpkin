@@ -6,7 +6,9 @@ use crate::entity::{
 use crossbeam::atomic::AtomicCell;
 use pumpkin_data::BlockDirection;
 use pumpkin_data::damage::DamageType;
+use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
+use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_util::math::vector3::Vector3;
 use tokio::sync::Mutex;
@@ -128,15 +130,121 @@ impl EntityBase for ItemFrameEntity {
         &'a self,
         _caller: &'a dyn EntityBase,
         _amount: f32,
-        _damage_type: DamageType,
+        damage_type: DamageType,
         _position: Option<Vector3<f64>>,
-        _source: Option<&'a dyn EntityBase>,
-        _cause: Option<&'a dyn EntityBase>,
+        source: Option<&'a dyn EntityBase>,
+        cause: Option<&'a dyn EntityBase>,
     ) -> EntityBaseFuture<'a, bool> {
-        Box::pin(async {
-            // TODO: vanilla pops the displayed item first and only removes the
-            // frame itself when hit while empty; both should drop their items.
+        Box::pin(async move {
+            if self.entity.is_removed() {
+                return false;
+            }
+
+            let world = self.entity.world.load();
+            let player = cause.or(source).and_then(EntityBase::get_player);
+            let is_creative = player.is_some_and(|player| player.is_creative());
+            let bypasses_fixed = matches!(
+                damage_type,
+                DamageType::GENERIC_KILL | DamageType::OUT_OF_WORLD
+            );
+            if self.fixed.load(Ordering::Relaxed) && !bypasses_fixed && !is_creative {
+                return false;
+            }
+
+            let is_explosion = matches!(
+                damage_type,
+                DamageType::EXPLOSION
+                    | DamageType::PLAYER_EXPLOSION
+                    | DamageType::FIREWORKS
+                    | DamageType::BAD_RESPAWN_POINT
+            );
+            if !self.fixed.load(Ordering::Relaxed) && !is_explosion {
+                let removed_item = {
+                    let mut item = self.item_stack.lock().await;
+                    if item.is_empty() {
+                        None
+                    } else {
+                        Some(std::mem::replace(&mut *item, ItemStack::EMPTY.clone()))
+                    }
+                };
+                if let Some(item) = removed_item {
+                    self.init_data_tracker().await;
+                    world
+                        .update_neighbors(&self.entity.block_pos.load(), None)
+                        .await;
+                    world.play_sound_fine(
+                        if self.entity.entity_type.id
+                            == pumpkin_data::entity::EntityType::GLOW_ITEM_FRAME.id
+                        {
+                            Sound::EntityGlowItemFrameRemoveItem
+                        } else {
+                            Sound::EntityItemFrameRemoveItem
+                        },
+                        SoundCategory::Neutral,
+                        &self.entity.pos.load(),
+                        1.0,
+                        1.0,
+                    );
+                    world
+                        .emit_game_event(
+                            self.entity.block_pos.load(),
+                            crate::world::game_event::GameEventKind::BlockChange,
+                        )
+                        .await;
+                    if world.level_info.load().game_rules.entity_drops && !is_creative {
+                        world.drop_stack(&self.entity.block_pos.load(), item).await;
+                    }
+                    return true;
+                }
+            }
+
+            let displayed_item = {
+                let mut item = self.item_stack.lock().await;
+                std::mem::replace(&mut *item, ItemStack::EMPTY.clone())
+            };
+            let drops = world.level_info.load().game_rules.entity_drops
+                && !is_creative
+                && !self.fixed.load(Ordering::Relaxed);
+            world.play_sound_fine(
+                if self.entity.entity_type.id
+                    == pumpkin_data::entity::EntityType::GLOW_ITEM_FRAME.id
+                {
+                    Sound::EntityGlowItemFrameBreak
+                } else {
+                    Sound::EntityItemFrameBreak
+                },
+                SoundCategory::Neutral,
+                &self.entity.pos.load(),
+                1.0,
+                1.0,
+            );
+            world
+                .emit_game_event(
+                    self.entity.block_pos.load(),
+                    crate::world::game_event::GameEventKind::BlockChange,
+                )
+                .await;
             self.entity.remove().await;
+
+            if drops {
+                let frame_item: &'static Item = if self.entity.entity_type.id
+                    == pumpkin_data::entity::EntityType::GLOW_ITEM_FRAME.id
+                {
+                    &Item::GLOW_ITEM_FRAME
+                } else {
+                    &Item::ITEM_FRAME
+                };
+                world
+                    .drop_stack(&self.entity.block_pos.load(), ItemStack::new(1, frame_item))
+                    .await;
+                if !displayed_item.is_empty()
+                    && rand::random::<f32>() < self.item_drop_chance.load()
+                {
+                    world
+                        .drop_stack(&self.entity.block_pos.load(), displayed_item)
+                        .await;
+                }
+            }
             true
         })
     }

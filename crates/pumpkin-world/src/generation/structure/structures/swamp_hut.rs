@@ -1,9 +1,13 @@
 use std::sync::Arc;
 
-use pumpkin_data::Block;
+use pumpkin_data::{
+    Block, BlockState,
+    block_properties::{BlockProperties, HorizontalFacing, OakStairsLikeProperties, StairsShape},
+};
+use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
 use pumpkin_util::{
     BlockDirection,
-    math::{block_box::BlockBox, position::BlockPos},
+    math::{block_box::BlockBox, position::BlockPos, vector3::Vector3},
     random::RandomGenerator,
 };
 use serde::Deserialize;
@@ -46,6 +50,8 @@ impl StructureGenerator for SwampHutGenerator {
                 9,
                 BlockDirection::get_random_horizontal_direction(&mut context.random).get_axis(),
             ),
+            spawned_witch: false,
+            spawned_cat: false,
         }));
 
         Some(StructurePosition {
@@ -57,6 +63,8 @@ impl StructureGenerator for SwampHutGenerator {
 
 pub struct SwampHutPiece {
     shiftable_structure_piece: ShiftableStructurePiece,
+    spawned_witch: bool,
+    spawned_cat: bool,
 }
 
 impl StructurePieceBase for SwampHutPiece {
@@ -210,20 +218,54 @@ impl StructurePieceBase for SwampHutPiece {
         p.add_block(chunk, oak_fence, 1, 2, 1, &box_limit);
         p.add_block(chunk, oak_fence, 5, 2, 1, &box_limit);
 
-        // let stairs_n = Block::SPRUCE_STAIRS.default_state.with("facing", "north");
-        // let stairs_e = Block::SPRUCE_STAIRS.default_state.with("facing", "east");
-        // let stairs_w = Block::SPRUCE_STAIRS.default_state.with("facing", "west");
-        // let stairs_s = Block::SPRUCE_STAIRS.default_state.with("facing", "south");
-
-        // p.fill_with_outline(chunk, &box_limit, false, 0, 4, 1, 6, 4, 1, &stairs_n, &stairs_n);
-        // p.fill_with_outline(chunk, &box_limit, false, 0, 4, 2, 0, 4, 7, &stairs_e, &stairs_e);
-        // p.fill_with_outline(chunk, &box_limit, false, 6, 4, 2, 6, 4, 7, &stairs_w, &stairs_w);
-        // p.fill_with_outline(chunk, &box_limit, false, 0, 4, 8, 6, 4, 8, &stairs_s, &stairs_s);
-
-        // p.add_block(chunk, &stairs_n.with("shape", "outer_right"), 0, 4, 1, &box_limit);
-        // p.add_block(chunk, &stairs_n.with("shape", "outer_left"), 6, 4, 1, &box_limit);
-        // p.add_block(chunk, &stairs_s.with("shape", "outer_left"), 0, 4, 8, &box_limit);
-        // p.add_block(chunk, &stairs_s.with("shape", "outer_right"), 6, 4, 8, &box_limit);
+        let stairs_n = Self::spruce_stairs(HorizontalFacing::North, StairsShape::Straight);
+        let stairs_e = Self::spruce_stairs(HorizontalFacing::East, StairsShape::Straight);
+        let stairs_w = Self::spruce_stairs(HorizontalFacing::West, StairsShape::Straight);
+        let stairs_s = Self::spruce_stairs(HorizontalFacing::South, StairsShape::Straight);
+        p.fill_with_outline(
+            chunk, &box_limit, false, 0, 4, 1, 6, 4, 1, stairs_n, stairs_n,
+        );
+        p.fill_with_outline(
+            chunk, &box_limit, false, 0, 4, 2, 0, 4, 7, stairs_e, stairs_e,
+        );
+        p.fill_with_outline(
+            chunk, &box_limit, false, 6, 4, 2, 6, 4, 7, stairs_w, stairs_w,
+        );
+        p.fill_with_outline(
+            chunk, &box_limit, false, 0, 4, 8, 6, 4, 8, stairs_s, stairs_s,
+        );
+        p.add_block(
+            chunk,
+            Self::spruce_stairs(HorizontalFacing::North, StairsShape::OuterRight),
+            0,
+            4,
+            1,
+            &box_limit,
+        );
+        p.add_block(
+            chunk,
+            Self::spruce_stairs(HorizontalFacing::North, StairsShape::OuterLeft),
+            6,
+            4,
+            1,
+            &box_limit,
+        );
+        p.add_block(
+            chunk,
+            Self::spruce_stairs(HorizontalFacing::South, StairsShape::OuterLeft),
+            0,
+            4,
+            8,
+            &box_limit,
+        );
+        p.add_block(
+            chunk,
+            Self::spruce_stairs(HorizontalFacing::South, StairsShape::OuterRight),
+            6,
+            4,
+            8,
+            &box_limit,
+        );
 
         for i in [2, 7] {
             for j in [1, 5] {
@@ -231,14 +273,20 @@ impl StructurePieceBase for SwampHutPiece {
             }
         }
 
-        // if !self.has_witch {
-        //     let world_coords = p.get_world_coords(2, 2, 5);
-        //     if box_limit.contains(world_coords.0, world_coords.1, world_coords.2) {
-        //         self.has_witch = true;
-        //         // TODO: chunk.add_entity(Witch, world_coords)
-        //     }
-        // }
-        // TODO: self.spawn_cat(chunk, &box_limit);
+        // Vanilla creates one persistent witch and one persistent black cat at
+        // this marker.  The flags matter because a structure can be generated
+        // through several chunk passes.
+        let entity_pos = p.offset_pos(2, 2, 5);
+        if box_limit.contains_pos(&entity_pos) {
+            if !self.spawned_witch {
+                chunk.add_structure_entity(Self::structure_entity("minecraft:witch", entity_pos));
+                self.spawned_witch = true;
+            }
+            if !self.spawned_cat {
+                chunk.add_structure_entity(Self::structure_entity("minecraft:cat", entity_pos));
+                self.spawned_cat = true;
+            }
+        }
     }
     fn get_structure_piece(&self) -> &super::StructurePiece {
         &self.shiftable_structure_piece.piece
@@ -246,5 +294,34 @@ impl StructurePieceBase for SwampHutPiece {
 
     fn get_structure_piece_mut(&mut self) -> &mut super::StructurePiece {
         &mut self.shiftable_structure_piece.piece
+    }
+}
+
+impl SwampHutPiece {
+    fn spruce_stairs(facing: HorizontalFacing, shape: StairsShape) -> &'static BlockState {
+        let mut props = OakStairsLikeProperties::default(&Block::SPRUCE_STAIRS);
+        props.facing = facing;
+        props.shape = shape;
+        BlockState::from_id(props.to_state_id(&Block::SPRUCE_STAIRS))
+    }
+
+    fn structure_entity(id: &str, position: Vector3<i32>) -> NbtCompound {
+        let mut nbt = NbtCompound::new();
+        nbt.put_string("id", id.to_string());
+        nbt.put(
+            "Pos",
+            NbtTag::List(vec![
+                (f64::from(position.x) + 0.5).into(),
+                f64::from(position.y).into(),
+                (f64::from(position.z) + 0.5).into(),
+            ]),
+        );
+        nbt.put(
+            "Motion",
+            NbtTag::List(vec![0.0.into(), 0.0.into(), 0.0.into()]),
+        );
+        nbt.put("Rotation", NbtTag::List(vec![0.0f32.into(), 0.0f32.into()]));
+        nbt.put_bool("PersistenceRequired", true);
+        nbt
     }
 }

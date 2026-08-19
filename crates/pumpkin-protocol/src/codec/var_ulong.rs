@@ -1,5 +1,5 @@
 use std::{
-    io::{Error, Read, Write},
+    io::{Error, ErrorKind, Read, Write},
     num::NonZeroUsize,
     ops::Deref,
 };
@@ -56,13 +56,16 @@ impl VarULong {
         Ok(())
     }
 
-    // TODO: Validate that the first byte will not overflow a i64
     #[inline]
     pub fn decode(read: &mut impl Read) -> Result<Self, ReadingError> {
         let mut val = 0;
         for i in 0..Self::MAX_SIZE.get() {
             let byte = read.get_u8()?;
-            val |= (u64::from(byte) & 0b0111_1111) << (i * 7);
+            let payload = u64::from(byte & 0x7F);
+            if i == Self::MAX_SIZE.get() - 1 && payload > 0x01 {
+                return Err(ReadingError::TooLarge("VarULong".to_string()));
+            }
+            val |= payload << (i * 7);
             if byte & 0b1000_0000 == 0 {
                 return Ok(Self(val));
             }
@@ -142,7 +145,14 @@ impl PacketRead for VarULong {
         let mut val = 0;
         for i in 0..Self::MAX_SIZE.get() {
             let byte = u8::read(reader)?;
-            val |= (u64::from(byte) & 0b0111_1111) << (i * 7);
+            let payload = u64::from(byte & 0x7F);
+            if i == Self::MAX_SIZE.get() - 1 && payload > 0x01 {
+                return Err(Error::new(
+                    ErrorKind::InvalidData,
+                    "VarULong payload overflows u64",
+                ));
+            }
+            val |= payload << (i * 7);
             if byte & 0b1000_0000 == 0 {
                 return Ok(Self(val));
             }

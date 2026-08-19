@@ -9,10 +9,12 @@ use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::{
     Block,
     block_properties::{BlockProperties, NoteBlockLikeProperties},
+    tag::{self, Taggable},
 };
 use pumpkin_macros::pumpkin_block;
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::world::BlockFlags;
+use std::sync::Arc;
 
 use crate::{
     block::{BlockBehaviour, OnSyncedBlockEventArgs},
@@ -25,9 +27,12 @@ use super::redstone::block_receives_redstone_power;
 pub struct NoteBlock;
 
 impl NoteBlock {
-    pub async fn play_note(props: &NoteBlockLikeProperties, world: &World, pos: &BlockPos) {
+    pub async fn play_note(props: &NoteBlockLikeProperties, world: &Arc<World>, pos: &BlockPos) {
         if !is_base_block(props.instrument) || world.get_block_state(&pos.up()).is_air() {
             world.add_synced_block_event(*pos, 0, 0).await;
+            world
+                .emit_game_event(*pos, crate::world::game_event::GameEventKind::NoteBlockPlay)
+                .await;
         }
     }
     fn get_note_pitch(note: u16) -> f32 {
@@ -109,11 +114,22 @@ impl BlockBehaviour for NoteBlock {
 
     fn use_with_item<'a>(
         &'a self,
-        _args: UseWithItemArgs<'a>,
+        args: UseWithItemArgs<'a>,
     ) -> BlockFuture<'a, BlockActionResult> {
         Box::pin(async move {
-            // TODO
-            BlockActionResult::PassToDefaultBlockAction
+            // Vanilla reserves the top face for skull/head instruments.  The
+            // item action must be allowed to place those items above the note
+            // block instead of invoking the block's normal use path.
+            if args
+                .item_stack
+                .item
+                .has_tag(&tag::Item::MINECRAFT_NOTEBLOCK_TOP_INSTRUMENTS)
+                && *args.hit.face == pumpkin_data::BlockDirection::Up
+            {
+                BlockActionResult::Pass
+            } else {
+                BlockActionResult::PassToDefaultBlockAction
+            }
         })
     }
 

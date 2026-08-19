@@ -20,7 +20,7 @@ pub struct TrappedChestBlockEntity {
     /// Pending loot-table key. Set during generation; cleared on first open.
     pub loot_table: StdMutex<Option<String>>,
     /// Seed used for deterministic loot generation.
-    pub loot_table_seed: i64,
+    pub loot_table_seed: StdMutex<i64>,
 }
 
 impl TrappedChestBlockEntity {

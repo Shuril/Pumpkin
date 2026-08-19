@@ -4,7 +4,7 @@ use std::{
 };
 
 use legacy_rand::{LegacyRand, LegacySplitter};
-use xoroshiro128::{Xoroshiro, XoroshiroSplitter};
+use xoroshiro128::{WorldgenXoroshiro, Xoroshiro, XoroshiroSplitter};
 
 mod gaussian;
 pub mod legacy_rand;
@@ -34,6 +34,8 @@ pub enum RandomGenerator {
     Xoroshiro(Xoroshiro),
     /// Legacy random number generator (compatible with older Minecraft versions).
     Legacy(LegacyRand),
+    /// Xoroshiro source accessed through Vanilla's `WorldgenRandom` bit API.
+    WorldgenXoroshiro(WorldgenXoroshiro),
 }
 
 /// Unified random number deriver enum for creating child RNGs.
@@ -216,6 +218,7 @@ impl RandomImpl for RandomGenerator {
         match self {
             Self::Xoroshiro(x) => Self::Xoroshiro(x.split()),
             Self::Legacy(l) => Self::Legacy(l.split()),
+            Self::WorldgenXoroshiro(x) => Self::WorldgenXoroshiro(x.split()),
         }
     }
 
@@ -224,6 +227,7 @@ impl RandomImpl for RandomGenerator {
         match self {
             Self::Xoroshiro(x) => RandomDeriver::Xoroshiro(x.next_splitter()),
             Self::Legacy(l) => l.next_splitter(),
+            Self::WorldgenXoroshiro(x) => x.next_splitter(),
         }
     }
 
@@ -232,6 +236,7 @@ impl RandomImpl for RandomGenerator {
         match self {
             Self::Xoroshiro(x) => x.next_i32(),
             Self::Legacy(l) => l.next_i32(),
+            Self::WorldgenXoroshiro(x) => x.next_i32(),
         }
     }
 
@@ -240,6 +245,7 @@ impl RandomImpl for RandomGenerator {
         match self {
             Self::Xoroshiro(x) => x.next_bounded_i32(bound),
             Self::Legacy(l) => l.next_bounded_i32(bound),
+            Self::WorldgenXoroshiro(x) => x.next_bounded_i32(bound),
         }
     }
 
@@ -248,6 +254,7 @@ impl RandomImpl for RandomGenerator {
         match self {
             Self::Xoroshiro(x) => x.next_i64(),
             Self::Legacy(l) => l.next_i64(),
+            Self::WorldgenXoroshiro(x) => x.next_i64(),
         }
     }
 
@@ -256,6 +263,7 @@ impl RandomImpl for RandomGenerator {
         match self {
             Self::Xoroshiro(x) => x.next_bool(),
             Self::Legacy(l) => l.next_bool(),
+            Self::WorldgenXoroshiro(x) => x.next_bool(),
         }
     }
 
@@ -264,6 +272,7 @@ impl RandomImpl for RandomGenerator {
         match self {
             Self::Xoroshiro(x) => x.next_f32(),
             Self::Legacy(l) => l.next_f32(),
+            Self::WorldgenXoroshiro(x) => x.next_f32(),
         }
     }
 
@@ -272,6 +281,7 @@ impl RandomImpl for RandomGenerator {
         match self {
             Self::Xoroshiro(x) => x.next_f64(),
             Self::Legacy(l) => l.next_f64(),
+            Self::WorldgenXoroshiro(x) => x.next_f64(),
         }
     }
 
@@ -280,6 +290,7 @@ impl RandomImpl for RandomGenerator {
         match self {
             Self::Xoroshiro(x) => x.next_gaussian(),
             Self::Legacy(l) => l.next_gaussian(),
+            Self::WorldgenXoroshiro(x) => x.next_gaussian(),
         }
     }
 
@@ -288,6 +299,7 @@ impl RandomImpl for RandomGenerator {
         match self {
             Self::Xoroshiro(x) => x.skip(count),
             Self::Legacy(l) => l.skip(count),
+            Self::WorldgenXoroshiro(x) => x.skip(count),
         }
     }
 }

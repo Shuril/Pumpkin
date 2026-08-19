@@ -185,4 +185,8 @@ impl EntityBase for EggEntity {
     fn cast_any(&self) -> &dyn std::any::Any {
         self
     }
+
+    fn projectile_owner_id(&self) -> Option<i32> {
+        self.thrown.owner_id
+    }
 }

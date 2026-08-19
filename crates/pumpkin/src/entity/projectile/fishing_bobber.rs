@@ -7,14 +7,15 @@ use crate::{
         Entity, EntityBase, EntityBaseFuture, NBTStorage, living::LivingEntity, player::Player,
     },
     server::Server,
+    world::World,
 };
-use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::meta_data_type::MetaDataType;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::tracked_data::TrackedData;
+use pumpkin_data::{Block, fluid::Fluid};
 use pumpkin_protocol::java::client::play::Metadata;
-use pumpkin_util::math::boundingbox::BoundingBox;
 use pumpkin_util::math::vector3::Vector3;
+use pumpkin_util::math::{boundingbox::BoundingBox, position::BlockPos};
 
 pub struct FishingBobberEntity {
     pub entity: Entity,
@@ -24,6 +25,33 @@ pub struct FishingBobberEntity {
     pub has_hit: AtomicBool,
     pub wait_countdown: AtomicI32,
     pub bite_countdown: AtomicI32,
+    pub open_water: AtomicBool,
+}
+
+/// Vanilla's `FishingHook#retrieve` damage table.
+///
+/// A hooked item entity costs three durability, every other hooked entity costs
+/// five, a successful loot roll costs one, and a bobber that is stuck in a
+/// block costs two.  The on-ground cost is applied last by vanilla and thus
+/// overrides the other outcomes.
+#[must_use]
+pub const fn retrieval_damage(
+    hooked: bool,
+    hooked_item_entity: bool,
+    has_catch: bool,
+    on_ground: bool,
+) -> i32 {
+    let mut damage = if hooked {
+        if hooked_item_entity { 3 } else { 5 }
+    } else if has_catch {
+        1
+    } else {
+        0
+    };
+    if on_ground {
+        damage = 2;
+    }
+    damage
 }
 
 impl FishingBobberEntity {
@@ -34,7 +62,7 @@ impl FishingBobberEntity {
     pub fn new(entity: Entity, owner: &Player) -> Self {
         let mut owner_pos = owner.living_entity.entity.pos.load();
         owner_pos.y += owner.living_entity.entity.get_eye_height() - 0.1;
-        entity.pos.store(owner_pos);
+        entity.set_pos(owner_pos);
 
         Self {
             entity,
@@ -44,7 +72,57 @@ impl FishingBobberEntity {
             has_hit: AtomicBool::new(false),
             wait_countdown: AtomicI32::new(rand::random::<i32>().abs() % 600 + 100),
             bite_countdown: AtomicI32::new(0),
+            open_water: AtomicBool::new(false),
         }
+    }
+
+    /// Mirrors `FishingHook#calculateOpenWater`: every 5×5 layer from one
+    /// block below through two blocks above must be uniformly above-water or
+    /// source-water, with no solid collision blocks or mixed layers.
+    fn calculate_open_water(world: &World, center: BlockPos) -> bool {
+        #[derive(Clone, Copy, PartialEq, Eq)]
+        enum Layer {
+            AboveWater,
+            InsideWater,
+        }
+
+        let mut previous = None;
+        for y in -1..=2 {
+            let mut layer = None;
+            for x in -2..=2 {
+                for z in -2..=2 {
+                    let position = BlockPos::new(center.0.x + x, center.0.y + y, center.0.z + z);
+                    let state_id = world.get_block_state_id(&position);
+                    let state = world.get_block_state(&position);
+                    let block = Block::from_state_id(state_id);
+                    let current = if state.is_air() || block.id == Block::LILY_PAD.id {
+                        Layer::AboveWater
+                    } else if !state.is_solid()
+                        && Fluid::from_state_id(state_id).is_some_and(|fluid| {
+                            fluid.matches_type(&Fluid::WATER) && fluid.is_source(state_id)
+                        })
+                    {
+                        Layer::InsideWater
+                    } else {
+                        return false;
+                    };
+                    if layer.is_some_and(|existing| existing != current) {
+                        return false;
+                    }
+                    layer = Some(current);
+                }
+            }
+            let Some(layer) = layer else {
+                return false;
+            };
+            if (previous.is_none() && layer == Layer::AboveWater)
+                || (previous == Some(Layer::AboveWater) && layer == Layer::InsideWater)
+            {
+                return false;
+            }
+            previous = Some(layer);
+        }
+        true
     }
 
     pub async fn reel_in(&self, player: &Player) -> i32 {
@@ -63,40 +141,107 @@ impl FishingBobberEntity {
                     .multiply(0.1, 0.1, 0.1)
                     .add_raw(0.0, delta.length().sqrt() * 0.08, 0.0);
             hooked.get_entity().add_velocity(motion);
-            return 1;
+            return retrieval_damage(
+                true,
+                hooked.get_item_entity().is_some(),
+                false,
+                self.entity.on_ground.load(Ordering::Relaxed),
+            );
         }
 
         if self.bite_countdown.load(Ordering::Relaxed) > 0 {
             // Caught something!
-            player
-                .increment_stat(
-                    pumpkin_data::statistic::StatisticCategory::Custom,
-                    pumpkin_data::statistic::CustomStatistic::FishCaught as i32,
-                    1,
-                )
-                .await;
+            let world_time = world.level_info.load().day_time as u64;
+            let seed = crate::world::loot::derive_loot_seed(
+                world.level.seed.0,
+                Some(self.entity.pos.load()),
+                world_time,
+                self.entity.entity_id as u64 ^ 0x4649_5348,
+            ) as i64;
+            let resources = world
+                .server
+                .upgrade()
+                .map(|server| async move { server.recipe_manager.datapack_resources().await });
+            let resources = match resources {
+                Some(future) => Some(future.await),
+                None => None,
+            };
+            let dynamic = resources.as_ref().and_then(|resources| {
+                resources
+                    .loot_tables
+                    .contains_key("minecraft:gameplay/fishing")
+                    .then(|| {
+                        crate::world::loot::generate_datapack_chest_loot(
+                            resources,
+                            "minecraft:gameplay/fishing",
+                            seed,
+                        )
+                    })
+            });
+            let items = match dynamic {
+                Some(Ok(items)) => items,
+                Some(Err(error)) => {
+                    tracing::warn!("Could not evaluate datapack fishing loot table: {error}");
+                    crate::world::loot::generate_builtin_fishing_loot(
+                        seed,
+                        self.open_water.load(Ordering::Relaxed),
+                    )
+                }
+                None => crate::world::loot::generate_builtin_fishing_loot(
+                    seed,
+                    self.open_water.load(Ordering::Relaxed),
+                ),
+            };
 
-            // TODO: Use actual loot tables. For now, just give a raw cod.
-            let item_stack = ItemStack::new(1, &Item::COD);
-            // player.inventory().add_item(item_stack).await; // Need public add_item
-
-            player
-                .trigger_advancement(
-                    crate::entity::player::advancement::trigger::AdvancementTrigger::FishedItem {
-                        item_id: format!("minecraft:{}", item_stack.item.registry_key),
-                    },
-                )
-                .await;
+            for item_stack in items {
+                if [
+                    Item::COD.id,
+                    Item::SALMON.id,
+                    Item::TROPICAL_FISH.id,
+                    Item::PUFFERFISH.id,
+                ]
+                .contains(&item_stack.item.id)
+                {
+                    player
+                        .increment_stat(
+                            pumpkin_data::statistic::StatisticCategory::Custom,
+                            pumpkin_data::statistic::CustomStatistic::FishCaught as i32,
+                            1,
+                        )
+                        .await;
+                }
+                player
+                    .inventory
+                    .offer_or_drop_stack(item_stack.clone(), player)
+                    .await;
+                player
+                    .trigger_advancement(
+                        crate::entity::player::advancement::trigger::AdvancementTrigger::FishedItem {
+                            item_id: format!("minecraft:{}", item_stack.item.registry_key),
+                        },
+                    )
+                    .await;
+            }
 
             world.play_sound(
                 Sound::EntityExperienceOrbPickup,
                 SoundCategory::Neutral,
                 &player.position(),
             );
-            return 1;
+            return retrieval_damage(
+                false,
+                false,
+                true,
+                self.entity.on_ground.load(Ordering::Relaxed),
+            );
         }
 
-        0
+        retrieval_damage(
+            false,
+            false,
+            false,
+            self.entity.on_ground.load(Ordering::Relaxed),
+        )
     }
 
     #[expect(clippy::too_many_lines)]
@@ -128,6 +273,10 @@ impl FishingBobberEntity {
         let start_pos = entity.pos.load();
 
         if entity.touching_water.load(Ordering::Relaxed) {
+            self.open_water.store(
+                Self::calculate_open_water(&world, entity.block_pos.load()),
+                Ordering::Relaxed,
+            );
             velocity.y += 0.02; // Buoyancy
 
             let bite = self.bite_countdown.load(Ordering::Relaxed);
@@ -262,5 +411,20 @@ impl EntityBase for FishingBobberEntity {
         Box::pin(async move {
             self.process_tick(caller, server).await;
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::retrieval_damage;
+
+    #[test]
+    fn fishing_retrieval_damage_matches_vanilla_outcomes() {
+        assert_eq!(retrieval_damage(true, true, false, false), 3);
+        assert_eq!(retrieval_damage(true, false, false, false), 5);
+        assert_eq!(retrieval_damage(false, false, true, false), 1);
+        assert_eq!(retrieval_damage(false, false, false, true), 2);
+        assert_eq!(retrieval_damage(true, false, true, true), 2);
+        assert_eq!(retrieval_damage(false, false, false, false), 0);
     }
 }

@@ -103,6 +103,7 @@ pub struct CommandSource {
     pub silent: bool,
     pub command_result_taker: ResultValueTaker,
     pub entity_anchor: EntityAnchor,
+    pub(crate) function_depth: u8,
 }
 
 impl CommandSource {
@@ -130,6 +131,7 @@ impl CommandSource {
             silent: false,
             command_result_taker: ResultValueTaker::new(),
             entity_anchor: EntityAnchor::Feet,
+            function_depth: 0,
         }
     }
 
@@ -157,6 +159,7 @@ impl CommandSource {
             silent: false,
             command_result_taker: ResultValueTaker(Vec::new()),
             entity_anchor: EntityAnchor::Feet,
+            function_depth: 0,
         }
     }
 
@@ -176,6 +179,7 @@ impl CommandSource {
             silent: self.silent,
             command_result_taker: self.command_result_taker,
             entity_anchor: self.entity_anchor,
+            function_depth: self.function_depth,
         }
     }
 
@@ -195,6 +199,7 @@ impl CommandSource {
             silent: true,
             command_result_taker: self.command_result_taker,
             entity_anchor: self.entity_anchor,
+            function_depth: self.function_depth,
         }
     }
 
@@ -216,6 +221,7 @@ impl CommandSource {
             silent: self.silent,
             command_result_taker: self.command_result_taker,
             entity_anchor: self.entity_anchor,
+            function_depth: self.function_depth,
         }
     }
 
@@ -235,6 +241,7 @@ impl CommandSource {
             silent: self.silent,
             command_result_taker: self.command_result_taker,
             entity_anchor: self.entity_anchor,
+            function_depth: self.function_depth,
         }
     }
 
@@ -254,6 +261,7 @@ impl CommandSource {
             silent: self.silent,
             command_result_taker: self.command_result_taker,
             entity_anchor: self.entity_anchor,
+            function_depth: self.function_depth,
         }
     }
 
@@ -281,6 +289,7 @@ impl CommandSource {
             silent: true,
             command_result_taker: self.command_result_taker,
             entity_anchor: self.entity_anchor,
+            function_depth: self.function_depth,
         }
     }
 
@@ -300,6 +309,7 @@ impl CommandSource {
             silent: self.silent,
             command_result_taker,
             entity_anchor: self.entity_anchor,
+            function_depth: self.function_depth,
         }
     }
 
@@ -319,7 +329,14 @@ impl CommandSource {
             silent: true,
             command_result_taker: self.command_result_taker,
             entity_anchor,
+            function_depth: self.function_depth,
         }
+    }
+
+    #[must_use]
+    pub(crate) fn with_function_depth(mut self, depth: u8) -> Self {
+        self.function_depth = depth;
+        self
     }
 
     /// Returns a new [`CommandSource`] with the rotation changed in such

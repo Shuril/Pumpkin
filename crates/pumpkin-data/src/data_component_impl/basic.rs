@@ -1,4 +1,5 @@
 use crate::data_component_impl::{DataComponentImpl, get_i32_hash, get_str_hash};
+use crate::item::Item;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
 use pumpkin_util::text::TextComponent;
@@ -330,12 +331,55 @@ impl DataComponentImpl for BannerPatternsImpl {
     default_impl!(BannerPatterns);
 }
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct PotDecorationsImpl;
+/// The four sides of a decorated pot, in vanilla order: back, left, right,
+/// front.  A missing side is represented by the brick item in the wire/NBT
+/// format, but is kept as `None` in the runtime representation just like
+/// Mojang's `Optional<Item>` fields.
+#[derive(Clone, PartialEq, Eq)]
+pub struct PotDecorationsImpl {
+    pub decorations: [Option<&'static Item>; 4],
+}
+impl PotDecorationsImpl {
+    pub fn read_data(data: &NbtTag) -> Option<Self> {
+        let values = data.extract_list()?;
+        let mut decorations = [None; 4];
+        for (index, value) in values.iter().take(4).enumerate() {
+            let name = value.extract_string()?;
+            let item = Item::from_registry_key(name.strip_prefix("minecraft:").unwrap_or(name))?;
+            if item != &Item::BRICK {
+                decorations[index] = Some(item);
+            }
+        }
+        Some(Self { decorations })
+    }
+}
 impl DataComponentImpl for PotDecorationsImpl {
+    fn write_data(&self) -> NbtTag {
+        NbtTag::List(
+            self.decorations
+                .iter()
+                .map(|item| {
+                    NbtTag::String(
+                        format!(
+                            "minecraft:{}",
+                            item.map_or(Item::BRICK.registry_key, |value| value.registry_key)
+                        )
+                        .into_boxed_str(),
+                    )
+                })
+                .collect(),
+        )
+    }
+
+    fn get_hash(&self) -> i32 {
+        self.decorations.iter().fold(0i32, |hash, item| {
+            hash.wrapping_mul(31)
+                .wrapping_add(item.map_or(Item::BRICK.id, |value| value.id) as i32)
+        })
+    }
+
     default_impl!(PotDecorations);
 }
-
 /// The lock's item predicate, kept as its raw NBT compound since Pumpkin does
 /// not yet model item predicates.
 // TODO: replace `predicate` with a typed item predicate once item predicates are modelled.

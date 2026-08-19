@@ -42,22 +42,22 @@ impl BlockBehaviour for SeaPickleBlock {
                 return BlockActionResult::Pass;
             }
 
-            //1:1 vanilla algorithm
-            //TODO use pumpkin random
-
-            //let mut j = 1;
+            // Vanilla searches a five-column diamond with widths
+            // 1, 3, 5, 3, 1.  The old implementation accidentally kept the
+            // inner range at `0..1`, so only five positions were ever tested.
+            // Keep the same offset update as SeaPickleBlock.performBonemeal.
             let mut count = 0;
+            let mut z_span = 1;
             let base_x = args.position.0.x - 2;
-            let mut removed_z = 0;
+            let mut z_offset = 0;
             for added_x in 0..5 {
-                for added_z in 0..1 {
+                for added_z in 0..z_span {
                     let temp_y = 2 + args.position.0.y - 1;
                     for y in (temp_y - 2)..temp_y {
-                        //let mut lv2: BlockState;
                         let lv = BlockPos::new(
                             base_x + added_x,
                             y,
-                            args.position.0.z - removed_z + added_z,
+                            args.position.0.z - z_offset + added_z,
                         );
                         if &lv == args.position
                             || rand::rng().random_range(0..6) != 0
@@ -82,11 +82,11 @@ impl BlockBehaviour for SeaPickleBlock {
                     }
                 }
                 if count < 2 {
-                    //j += 2;
-                    removed_z += 1;
+                    z_span += 2;
+                    z_offset += 1;
                 } else {
-                    //j -= 2;
-                    removed_z -= 1;
+                    z_span -= 2;
+                    z_offset -= 1;
                 }
                 count += 1;
             }

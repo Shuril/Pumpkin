@@ -61,6 +61,7 @@ use crate::block::blocks::plant::cactus::CactusBlock;
 use crate::block::blocks::plant::cactus_flower::CactusFlowerBlock;
 use crate::block::blocks::plant::chorus_flower::ChorusFlowerBlock;
 use crate::block::blocks::plant::chorus_plant::ChorusPlantBlock;
+use crate::block::blocks::plant::cocoa::CocoaBlock;
 use crate::block::blocks::plant::crop::beetroot::BeetrootBlock;
 use crate::block::blocks::plant::crop::carrot::CarrotBlock;
 use crate::block::blocks::plant::crop::nether_wart::NetherWartBlock;
@@ -206,6 +207,7 @@ pub fn default_registry() -> Arc<BlockRegistry> {
     manager.register(ChorusPlantBlock);
     manager.register(CarpetBlock);
     manager.register(CarvedPumpkinBlock);
+    manager.register(CocoaBlock);
     manager.register(WitherSkeletonSkullBlock);
     manager.register(CampfireBlock);
     manager.register(MossCarpetBlock);
@@ -469,6 +471,7 @@ impl BlockRegistry {
         placed_block: &'static Block,
         server: &Arc<Server>,
         use_item_on: &SUseItemOn,
+        item: &ItemStack,
         location: BlockPos,
         face: BlockDirection,
     ) -> Result<Option<(BlockPos, BlockStateId)>, BlockPlacingError> {
@@ -649,6 +652,14 @@ impl BlockRegistry {
 
         let _replaced_id = world
             .set_block_state(&final_block_pos, new_state, BlockFlags::NOTIFY_ALL)
+            .await;
+        world
+            .emit_game_event_from_item(
+                final_block_pos,
+                crate::world::game_event::GameEventKind::BlockPlace,
+                Some(player.get_entity().entity_uuid),
+                item,
+            )
             .await;
 
         self.player_placed(
@@ -1058,10 +1069,16 @@ impl BlockRegistry {
     ) {
         let pumpkin_block = self.get_pumpkin_block(block.id);
         if let Some(pumpkin_block) = pumpkin_block {
+            // Resolve the authoritative held stack once, before invoking the
+            // block callback.  This mirrors ServerLevel.spawnAfterBreak's
+            // `tool` parameter and prevents a callback from observing a
+            // different stack after an inventory mutation.
+            let tool = player.inventory().held_item().await;
             pumpkin_block
                 .broken(BrokenArgs {
                     block,
                     player,
+                    tool: &tool,
                     position,
                     server,
                     world,
@@ -1180,16 +1197,7 @@ impl BlockRegistry {
         _block: &Block,
         flags: BlockFlags,
     ) {
-        for direction in BlockDirection::abstract_block_update_order() {
-            let pos = position.offset(direction.to_offset());
-
-            Box::pin(world.replace_with_state_for_neighbor_update(
-                &pos,
-                direction.opposite(),
-                flags,
-            ))
-            .await;
-        }
+        world.enqueue_shape_updates(position, flags).await;
     }
 
     pub async fn on_neighbor_update(

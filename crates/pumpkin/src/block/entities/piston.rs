@@ -1,8 +1,8 @@
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::{pin::Pin, sync::Arc};
 
 use crossbeam::atomic::AtomicCell;
-use pumpkin_data::{Block, BlockDirection, BlockState};
+use pumpkin_data::{Block, BlockDirection, BlockState, BlockStateId};
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_util::math::{boundingbox::BoundingBox, position::BlockPos, vector3::Vector3};
 
@@ -16,12 +16,25 @@ pub struct PistonBlockEntity {
     pub facing: BlockDirection,
     pub current_progress: AtomicCell<f32>,
     pub last_progress: AtomicCell<f32>,
+    /// Game time at which vanilla's moving-piston tick last ran.
+    ///
+    /// `PistonBaseBlock` consults this value when a retraction is queued in
+    /// the same game tick as the moving piston.  It is intentionally runtime
+    /// state: Mojang's `lastTicked` field is not serialized in block-entity
+    /// NBT, and a chunk reload must not make an old tick look current.
+    pub last_ticked: AtomicI64,
     pub extending: bool,
     pub source: bool,
 }
 
 impl PistonBlockEntity {
     pub const ID: &'static str = "minecraft:piston";
+
+    #[inline]
+    #[must_use]
+    pub(crate) fn should_use_final_tick(progress: f32, game_time: i64, last_ticked: i64) -> bool {
+        progress < 0.5 || game_time == last_ticked
+    }
 
     const fn movement_direction(&self) -> BlockDirection {
         if self.extending {
@@ -105,6 +118,63 @@ impl PistonBlockEntity {
             // block position (it replaces the piston during animation).
             if !self.extending && self.source {
                 Self::push_out_of_piston_body(e, &self.position, motion_dir, delta);
+            }
+        }
+    }
+
+    /// Vanilla's honey-block conveyor behavior. Entities standing on top of a
+    /// horizontally moving honey block travel with it even when they do not
+    /// intersect the block's swept collision volume.
+    fn move_stuck_entities(&self, world: &Arc<World>, new_progress: f32) {
+        if Block::from_state_id(self.pushed_block_state.id) != &Block::HONEY_BLOCK {
+            return;
+        }
+        let movement = self.movement_direction();
+        if matches!(movement, BlockDirection::Up | BlockDirection::Down) {
+            return;
+        }
+
+        let delta = f64::from(new_progress - self.last_progress.load());
+        if delta <= 0.0 {
+            return;
+        }
+
+        let pos = self.position;
+        // Vanilla's moveStuckEntities builds the sticky AABB from the
+        // progress at the beginning of this tick.  `new_progress` is only
+        // the delta endpoint; using it here moves riders one half-step early
+        // and makes a chain of honey pistons visibly diverge.
+        let current_progress = self.last_progress.load();
+        let mut sticky_box = BoundingBox::new(
+            Vector3::new(
+                f64::from(pos.0.x),
+                f64::from(pos.0.y) + 1.0,
+                f64::from(pos.0.z),
+            ),
+            Vector3::new(
+                f64::from(pos.0.x) + 1.0,
+                f64::from(pos.0.y) + 1.500_001,
+                f64::from(pos.0.z) + 1.0,
+            ),
+        );
+        sticky_box = sticky_box.shift(Self::dir_vec(
+            self.facing,
+            f64::from(self.amount_extended(current_progress)),
+        ));
+
+        for entity in world.get_entities_at_box(&sticky_box) {
+            let base = entity.get_entity();
+            if !entity.is_pushable() || !base.on_ground.load(Ordering::Relaxed) {
+                continue;
+            }
+            let entity_pos = base.pos.load();
+            let supported_by_honey = base.get_supporting_block_pos() == Some(pos)
+                || (entity_pos.x >= sticky_box.min.x
+                    && entity_pos.x <= sticky_box.max.x
+                    && entity_pos.z >= sticky_box.min.z
+                    && entity_pos.z <= sticky_box.max.z);
+            if supported_by_honey {
+                Self::move_entity(base, movement, delta);
             }
         }
     }
@@ -214,10 +284,46 @@ impl PistonBlockEntity {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::PistonBlockEntity;
+    use crossbeam::atomic::AtomicCell;
+    use pumpkin_data::{Block, BlockDirection};
+    use pumpkin_util::math::position::BlockPos;
+    use std::sync::atomic::AtomicI64;
+
+    #[test]
+    fn same_tick_moving_piston_uses_final_retraction_event() {
+        assert!(PistonBlockEntity::should_use_final_tick(0.75, 42, 42));
+        assert!(PistonBlockEntity::should_use_final_tick(0.25, 42, 7));
+        assert!(!PistonBlockEntity::should_use_final_tick(0.75, 42, 7));
+    }
+
+    #[test]
+    fn honey_sticky_offset_uses_start_of_tick_progress() {
+        let piston = PistonBlockEntity {
+            position: BlockPos::new(0, 0, 0),
+            pushed_block_state: Block::HONEY_BLOCK.default_state,
+            facing: BlockDirection::East,
+            current_progress: AtomicCell::new(0.5),
+            last_progress: AtomicCell::new(0.0),
+            last_ticked: AtomicI64::new(-1),
+            extending: true,
+            source: false,
+        };
+        let start_offset = piston.amount_extended(piston.last_progress.load());
+        let end_offset = piston.amount_extended(piston.current_progress.load());
+        assert_eq!(start_offset, -1.0);
+        assert_eq!(end_offset, -0.5);
+        assert_ne!(start_offset, end_offset);
+    }
+}
+
 const FACING: &str = "facing";
 const LAST_PROGRESS: &str = "progress";
 const EXTENDING: &str = "extending";
 const SOURCE: &str = "source";
+const PUSHED_BLOCK_STATE: &str = "blockState";
 
 impl BlockEntity for PistonBlockEntity {
     fn resource_location(&self) -> &'static str {
@@ -230,6 +336,11 @@ impl BlockEntity for PistonBlockEntity {
 
     fn tick<'a>(&'a self, world: &'a Arc<World>) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
         Box::pin(async move {
+            // Matches PistonMovingBlockEntity.tick: this is set before the
+            // progress update so a nested neighbour update in the same world
+            // tick can observe the exact game-time value.
+            self.last_ticked
+                .store(world.get_world_age().await, Ordering::Relaxed);
             let current_progress = self.current_progress.load();
             self.last_progress.store(current_progress);
             if current_progress >= 1.0 {
@@ -265,6 +376,7 @@ impl BlockEntity for PistonBlockEntity {
             }
             let new_progress = (current_progress + 0.5).min(1.0);
             self.push_entities(world, new_progress);
+            self.move_stuck_entities(world, new_progress);
             self.current_progress.store(new_progress);
         })
     }
@@ -273,8 +385,14 @@ impl BlockEntity for PistonBlockEntity {
     where
         Self: Sized,
     {
-        // TODO
-        let pushed_block_state = Block::AIR.default_state;
+        // Pumpkin persists the validated global state id. This keeps moving
+        // blocks intact across chunk unload/reload instead of turning them into
+        // air. Invalid or older data safely falls back to air.
+        let pushed_block_state = nbt
+            .get_int(PUSHED_BLOCK_STATE)
+            .and_then(|id| u16::try_from(id).ok())
+            .and_then(BlockStateId::new)
+            .map_or(Block::AIR.default_state, BlockState::from_id);
         let facing = nbt.get_byte(FACING).unwrap_or(0);
         let last_progress = nbt.get_float(LAST_PROGRESS).unwrap_or(0.0);
         let extending = nbt.get_bool(EXTENDING).unwrap_or(false);
@@ -285,6 +403,7 @@ impl BlockEntity for PistonBlockEntity {
             facing: BlockDirection::from_index(facing as u8).unwrap_or(BlockDirection::Down),
             current_progress: last_progress.into(),
             last_progress: last_progress.into(),
+            last_ticked: AtomicI64::new(-1),
             extending,
             source,
         }
@@ -295,7 +414,10 @@ impl BlockEntity for PistonBlockEntity {
         nbt: &'a mut NbtCompound,
     ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
         Box::pin(async move {
-            // TODO: pushed_block_state
+            nbt.put_int(
+                PUSHED_BLOCK_STATE,
+                i32::from(self.pushed_block_state.id.as_u16()),
+            );
             nbt.put_byte(FACING, self.facing.to_index() as i8);
             nbt.put_float(LAST_PROGRESS, self.last_progress.load());
             nbt.put_bool(EXTENDING, self.extending);
@@ -305,7 +427,10 @@ impl BlockEntity for PistonBlockEntity {
 
     fn chunk_data_nbt(&self) -> Option<NbtCompound> {
         let mut nbt = NbtCompound::new();
-        // TODO: pushed_block_state
+        nbt.put_int(
+            PUSHED_BLOCK_STATE,
+            i32::from(self.pushed_block_state.id.as_u16()),
+        );
         nbt.put_byte(FACING, self.facing.to_index() as i8);
         nbt.put_float(LAST_PROGRESS, self.last_progress.load());
         nbt.put_bool(EXTENDING, self.extending);

@@ -10,6 +10,8 @@ use crate::command::args::ConsumedArgs;
 use crate::command::tree::CommandTree;
 use crate::command::tree::builder::{argument, literal};
 use crate::command::{CommandExecutor, CommandResult, CommandSender};
+use crate::net::ClientPlatform;
+use pumpkin_protocol::java::client::play::{CEntityStatus, CGameEvent, GameEvent};
 
 const NAMES: [&str; 1] = ["gamerule"];
 
@@ -90,7 +92,52 @@ impl CommandExecutor for SetExecutor {
                 }
             }
 
-            server.level_info.store(std::sync::Arc::new(new_info));
+            server
+                .level_info
+                .store(std::sync::Arc::new(new_info.clone()));
+
+            // These rules have client-visible state in Java's play protocol.
+            // Broadcast the corresponding packet when changed so an already-
+            // connected player is updated without reconnecting.
+            if matches!(
+                self.0,
+                GameRule::ReducedDebugInfo | GameRule::ImmediateRespawn | GameRule::LimitedCrafting
+            ) && let GameRuleValue::Bool(value) = new_info.game_rules.get(&self.0)
+            {
+                for player in server.get_all_players() {
+                    if let ClientPlatform::Java(client) = player.client.as_ref() {
+                        match self.0 {
+                            // Vanilla uses entity-event 22/23 to toggle the
+                            // reduced-debug client flag for that player.
+                            GameRule::ReducedDebugInfo => {
+                                client
+                                    .send_packet_now(&CEntityStatus::new(
+                                        player.entity_id(),
+                                        if *value { 22 } else { 23 },
+                                    ))
+                                    .await;
+                            }
+                            GameRule::ImmediateRespawn => {
+                                client
+                                    .send_packet_now(&CGameEvent::new(
+                                        GameEvent::EnabledRespawnScreen,
+                                        f32::from(*value),
+                                    ))
+                                    .await;
+                            }
+                            GameRule::LimitedCrafting => {
+                                client
+                                    .send_packet_now(&CGameEvent::new(
+                                        GameEvent::LimitedCrafting,
+                                        f32::from(*value),
+                                    ))
+                                    .await;
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+                }
+            }
 
             let value_component = TextComponent::text(output_value);
             sender

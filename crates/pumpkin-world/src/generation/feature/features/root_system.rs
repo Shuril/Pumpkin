@@ -1,3 +1,4 @@
+use pumpkin_data::{BlockDirection, fluid::Fluid};
 use pumpkin_util::{
     math::position::BlockPos,
     random::{RandomGenerator, RandomImpl},
@@ -77,11 +78,14 @@ impl RootSystemFeature {
         pos: BlockPos,
         vertical_space: i32,
     ) -> bool {
-        if chunk.is_air(&pos.0) {
-            return true;
-        }
-        // TODO: check for water.
-        vertical_space <= self.allowed_vertical_water_for_tree
+        let state_is_air = chunk.is_air(&pos.0);
+        let (fluid, _) = GenerationCache::get_fluid_and_fluid_state(chunk, &pos.0);
+        tree_space_allowed(
+            state_is_air,
+            fluid == Fluid::WATER,
+            vertical_space,
+            self.allowed_vertical_water_for_tree,
+        )
     }
 
     fn place_roots<T: GenerationCache>(
@@ -172,13 +176,44 @@ impl RootSystemFeature {
                     random,
                     mutable_pos,
                 );
-                // In vanilla, it checks if it can survive and if the block above is sturdy.
-                // For now, let's just check if the block above is NOT air.
                 let above = mutable_pos.add(0, 1, 0);
-                if !chunk.is_air(&above.0) {
+                let above_state = GenerationCache::get_block_state(chunk, &above.0).to_state();
+                // Rooted/hanging roots use the same survival contract as the
+                // vanilla block: the supporting block must expose a sturdy
+                // downward face, not merely be non-air (water, plants and
+                // panes are not valid supports).
+                if above_state.is_side_solid(BlockDirection::Down) {
                     chunk.set_block_state(&mutable_pos.0, state);
                 }
             }
         }
+    }
+}
+
+/// Vanilla `RootSystemFeature.isAllowedTreeSpace`.
+///
+/// `vertical_space` is one-based (`1` is the first block above the origin),
+/// while the water allowance is expressed as the number of blocks above the
+/// ground.  Therefore the comparison intentionally uses `+ 1`.
+#[inline]
+const fn tree_space_allowed(
+    state_is_air: bool,
+    fluid_is_water: bool,
+    vertical_space: i32,
+    allowed_vertical_water: i32,
+) -> bool {
+    state_is_air || (vertical_space + 1 <= allowed_vertical_water && fluid_is_water)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::tree_space_allowed;
+
+    #[test]
+    fn root_tree_water_allowance_uses_vanilla_one_based_height() {
+        assert!(tree_space_allowed(false, true, 1, 2));
+        assert!(!tree_space_allowed(false, true, 2, 2));
+        assert!(!tree_space_allowed(false, false, 1, 2));
+        assert!(tree_space_allowed(true, false, 99, 0));
     }
 }

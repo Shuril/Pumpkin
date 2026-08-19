@@ -7,9 +7,13 @@ use pumpkin_data::recipes::{
     RecipeIngredientTypes, RecipeResultStruct,
 };
 use pumpkin_macros::java_packet;
+use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_util::version::JavaMinecraftVersion;
 use std::borrow::Cow;
-use std::{collections::HashMap, io::Write};
+use std::{
+    collections::{HashMap, HashSet},
+    io::Write,
+};
 
 use crate::codec::item_stack_seralizer::ItemStackTemplateSerializer;
 use crate::{ClientPacket, VarInt, WritingError, ser::NetworkWriteExt};
@@ -55,6 +59,13 @@ use crate::codec::recipe::DynamicRecipe;
 pub struct CRecipeBookAdd<'a> {
     pub replace: bool,
     pub dynamic_recipes: &'a [DynamicRecipe],
+    /// Optional allow-list for generated vanilla recipe display entries.
+    ///
+    /// Recipe display IDs are global and must remain stable even when a
+    /// limited-crafting player does not know a recipe, so filtered entries are
+    /// omitted from the packet but still consume their canonical display ID.
+    /// `None` keeps the legacy behaviour and emits every generated recipe.
+    pub allowed_builtin_recipe_ids: Option<&'a HashSet<String>>,
 }
 
 impl<'a> CRecipeBookAdd<'a> {
@@ -63,7 +74,54 @@ impl<'a> CRecipeBookAdd<'a> {
         Self {
             replace,
             dynamic_recipes,
+            allowed_builtin_recipe_ids: None,
         }
+    }
+
+    /// Creates a packet containing only the selected generated vanilla
+    /// recipes. Dynamic recipes are supplied separately and are always
+    /// emitted, allowing `/recipe give` to add one datapack recipe without
+    /// resending the entire generated registry.
+    #[must_use]
+    pub const fn new_filtered(
+        replace: bool,
+        dynamic_recipes: &'a [DynamicRecipe],
+        allowed_builtin_recipe_ids: &'a HashSet<String>,
+    ) -> Self {
+        Self {
+            replace,
+            dynamic_recipes,
+            allowed_builtin_recipe_ids: Some(allowed_builtin_recipe_ids),
+        }
+    }
+}
+
+fn recipe_id_allowed(allowed: Option<&HashSet<String>>, recipe_id: &str) -> bool {
+    let Some(allowed) = allowed else {
+        return true;
+    };
+    allowed.contains(recipe_id)
+        || allowed.contains(recipe_id.strip_prefix("minecraft:").unwrap_or(recipe_id))
+        || (!recipe_id.contains(':') && allowed.contains(&format!("minecraft:{recipe_id}")))
+}
+
+fn builtin_crafting_recipe_id(recipe: &CraftingRecipeTypes) -> Option<&'static str> {
+    match recipe {
+        CraftingRecipeTypes::CraftingShaped { recipe_id, .. }
+        | CraftingRecipeTypes::CraftingShapeless { recipe_id, .. }
+        | CraftingRecipeTypes::CraftingTransmute { recipe_id, .. } => Some(*recipe_id),
+        CraftingRecipeTypes::CraftingDecoratedPot { .. } | CraftingRecipeTypes::CraftingSpecial => {
+            None
+        }
+    }
+}
+
+fn builtin_cooking_recipe_id(recipe: &CookingRecipeType) -> &'static str {
+    match recipe {
+        CookingRecipeType::Smelting(recipe)
+        | CookingRecipeType::Blasting(recipe)
+        | CookingRecipeType::Smoking(recipe)
+        | CookingRecipeType::CampfireCooking(recipe) => recipe.recipe_id,
     }
 }
 
@@ -116,6 +174,15 @@ fn write_item_stack_slot_display(
         .ok_or_else(|| WritingError::Message(format!("item id {} must exist", item.id)))?;
     ItemStackTemplateSerializer::from(ItemStack::new(count, static_item))
         .write_with_version(write, &version)
+}
+
+fn write_item_stack_slot_display_stack(
+    write: &mut impl Write,
+    stack: ItemStack,
+    version: JavaMinecraftVersion,
+) -> Result<(), WritingError> {
+    write.write_var_int(&VarInt(slot_display_item_stack_type(version)))?;
+    ItemStackTemplateSerializer::from(stack).write_with_version(write, &version)
 }
 
 fn write_empty_slot_display(write: &mut impl Write) -> Result<(), WritingError> {
@@ -478,15 +545,21 @@ impl ClientPacket for CRecipeBookAdd<'_> {
         let crafting_count: usize = RECIPES_CRAFTING
             .iter()
             .filter(|r| {
-                !matches!(
-                    r,
-                    CraftingRecipeTypes::CraftingSpecial
-                        | CraftingRecipeTypes::CraftingDecoratedPot { .. }
+                builtin_crafting_recipe_id(r)
+                    .is_some_and(|id| recipe_id_allowed(self.allowed_builtin_recipe_ids, id))
+            })
+            .count();
+        let cooking_count = RECIPES_COOKING
+            .iter()
+            .filter(|r| {
+                recipe_id_allowed(
+                    self.allowed_builtin_recipe_ids,
+                    builtin_cooking_recipe_id(r),
                 )
             })
             .count();
         let dynamic_count = self.dynamic_recipes.len();
-        let total = crafting_count + RECIPES_COOKING.len() + dynamic_count;
+        let total = crafting_count + cooking_count + dynamic_count;
 
         // Entry count (VarInt)
         write.write_var_int(&VarInt(total as i32))?;
@@ -498,6 +571,10 @@ impl ClientPacket for CRecipeBookAdd<'_> {
 
         // Write crafting recipes
         for recipe in RECIPES_CRAFTING {
+            let Some(recipe_id) = builtin_crafting_recipe_id(recipe) else {
+                continue;
+            };
+            let should_write = recipe_id_allowed(self.allowed_builtin_recipe_ids, recipe_id);
             let (group, notification) = match recipe {
                 CraftingRecipeTypes::CraftingShaped {
                     group,
@@ -512,28 +589,35 @@ impl ClientPacket for CRecipeBookAdd<'_> {
                 | CraftingRecipeTypes::CraftingSpecial => (None, true),
             };
             let group_id = resolve_group_id_owned(&mut group_ids, &mut next_group_id, group);
-            let flags = entry_flags(self.replace, notification, highlight);
-            let written = write_entry(
-                &mut write,
-                display_id,
-                *version,
-                group_id,
-                flags,
-                crafting_table,
-                furnace,
-                blast_furnace,
-                smoker,
-                campfire,
-                Some(recipe),
-                None,
-            )?;
-            if written {
-                display_id += 1;
+            if should_write {
+                let flags = entry_flags(self.replace, notification, highlight);
+                let written = write_entry(
+                    &mut write,
+                    display_id,
+                    *version,
+                    group_id,
+                    flags,
+                    crafting_table,
+                    furnace,
+                    blast_furnace,
+                    smoker,
+                    campfire,
+                    Some(recipe),
+                    None,
+                )?;
+                debug_assert!(written);
             }
+            // Keep the global display ID sequence stable for clients that
+            // later send PlaceRecipe/SeenRecipe for a filtered registry.
+            display_id += 1;
         }
 
         // Write cooking recipes
         for recipe in RECIPES_COOKING {
+            let should_write = recipe_id_allowed(
+                self.allowed_builtin_recipe_ids,
+                builtin_cooking_recipe_id(recipe),
+            );
             let (book_category, group) = match recipe {
                 CookingRecipeType::Smelting(r) => (
                     match r.category {
@@ -558,21 +642,23 @@ impl ClientPacket for CRecipeBookAdd<'_> {
                 &mut next_group_id,
                 group.map(Cow::Borrowed),
             );
-            let flags = entry_flags(self.replace, true, highlight);
-            write_entry(
-                &mut write,
-                display_id,
-                *version,
-                group_id,
-                flags,
-                crafting_table,
-                furnace,
-                blast_furnace,
-                smoker,
-                campfire,
-                None,
-                Some((recipe, book_category)),
-            )?;
+            if should_write {
+                let flags = entry_flags(self.replace, true, highlight);
+                write_entry(
+                    &mut write,
+                    display_id,
+                    *version,
+                    group_id,
+                    flags,
+                    crafting_table,
+                    furnace,
+                    blast_furnace,
+                    smoker,
+                    campfire,
+                    None,
+                    Some((recipe, book_category)),
+                )?;
+            }
             display_id += 1;
         }
 
@@ -770,7 +856,17 @@ fn write_dynamic_result_slot_display(
         .strip_prefix("minecraft:")
         .unwrap_or(&result.item_id);
     if let Some(item) = Item::from_registry_key(key) {
-        write_item_stack_slot_display(write, item, result.count, version)?;
+        let stack = if let Some(components) = &result.components {
+            let mut compound = NbtCompound::new();
+            compound.put_string("id", format!("minecraft:{key}"));
+            compound.put_int("count", i32::from(result.count));
+            compound.put_compound("components", components.clone());
+            ItemStack::read_item_stack(&compound)
+                .unwrap_or_else(|| ItemStack::new(result.count, item))
+        } else {
+            ItemStack::new(result.count, item)
+        };
+        write_item_stack_slot_display_stack(write, stack, version)?;
     } else {
         write_empty_slot_display(write)?;
     }
@@ -890,4 +986,37 @@ fn write_dynamic_cooking_entry(
     write_dynamic_ingredient_holderset(write, Some(&cooking.ingredient), version)?;
     write.write_u8(flags)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{builtin_cooking_recipe_id, builtin_crafting_recipe_id, recipe_id_allowed};
+    use pumpkin_data::recipes::{RECIPES_COOKING, RECIPES_CRAFTING};
+    use std::collections::HashSet;
+
+    #[test]
+    fn filtered_recipe_book_keeps_canonical_display_ids() {
+        let first = RECIPES_CRAFTING
+            .iter()
+            .find_map(builtin_crafting_recipe_id)
+            .expect("generated recipes must contain a crafting entry");
+        let mut allowed = HashSet::new();
+        allowed.insert(first.to_owned());
+        assert!(recipe_id_allowed(Some(&allowed), first));
+        assert!(recipe_id_allowed(
+            Some(&allowed),
+            first.strip_prefix("minecraft:").unwrap_or(first)
+        ));
+        assert!(!recipe_id_allowed(
+            Some(&allowed),
+            "minecraft:recipe-that-is-not-known"
+        ));
+
+        let cooking = RECIPES_COOKING
+            .first()
+            .map(builtin_cooking_recipe_id)
+            .expect("generated recipes must contain a cooking entry");
+        assert!(!recipe_id_allowed(Some(&allowed), cooking));
+        assert!(recipe_id_allowed(None, cooking));
+    }
 }

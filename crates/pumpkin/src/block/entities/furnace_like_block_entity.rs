@@ -356,6 +356,83 @@ macro_rules! impl_inventory_for_cooking {
                 self.dirty.store(true, Ordering::Relaxed);
             }
 
+            // Hopper extraction is side-aware in vanilla.  A furnace-like
+            // inventory exposes only its output slot to a hopper pulling from
+            // below; exposing input/fuel here would let a hopper steal items
+            // from the processing slots and is also what caused duplicated
+            // fuel/input transfers in the old generic implementation.
+            fn can_transfer_to(
+                &self,
+                _hopper_inventory: &dyn pumpkin_world::inventory::Inventory,
+                slot: usize,
+                _stack: &ItemStack,
+            ) -> bool {
+                slot == 2
+            }
+
+            fn can_extract_to_hopper(
+                &self,
+                hopper_inventory: &dyn pumpkin_world::inventory::Inventory,
+                slot: usize,
+                stack: &ItemStack,
+                direction: pumpkin_data::BlockDirection,
+            ) -> bool {
+                if direction != pumpkin_data::BlockDirection::Down {
+                    return self.can_transfer_to(hopper_inventory, slot, stack);
+                }
+
+                // The bottom face exposes the cooked result and permits the
+                // empty/water bucket returned by the fuel slot.  Other fuel
+                // items must remain in the furnace.
+                slot == 2
+                    || (slot == 1
+                        && (stack.get_item().id == pumpkin_data::item::Item::BUCKET.id
+                            || stack.get_item().id == pumpkin_data::item::Item::WATER_BUCKET.id))
+            }
+
+            // Do not allow a hopper to insert into the result slot.  The
+            // remaining slots are validated by the furnace's recipe/fuel
+            // logic when the stack is written; fuel is rejected from the
+            // ingredient slot to preserve the vanilla top/side distinction
+            // even for inventories that do not expose a side API yet.
+            fn is_valid_slot_for(&self, slot: usize, stack: &ItemStack) -> bool {
+                if stack.is_empty() {
+                    return true;
+                }
+                match slot {
+                    0 => !pumpkin_data::fuels::is_fuel(stack.get_item().id),
+                    1 => pumpkin_data::fuels::is_fuel(stack.get_item().id),
+                    2 => false,
+                    _ => false,
+                }
+            }
+
+            // Hopper insertion follows FurnaceBlock's WorldlyContainer
+            // contract: the top face accepts ingredients, horizontal faces
+            // accept fuel, and the bottom face is extraction-only.
+            fn can_insert_from_hopper(
+                &self,
+                slot: usize,
+                stack: &ItemStack,
+                direction: pumpkin_data::BlockDirection,
+            ) -> bool {
+                if stack.is_empty() {
+                    return true;
+                }
+                match direction {
+                    pumpkin_data::BlockDirection::Up => {
+                        slot == 0 && !pumpkin_data::fuels::is_fuel(stack.get_item().id)
+                    }
+                    pumpkin_data::BlockDirection::Down => false,
+                    pumpkin_data::BlockDirection::North
+                    | pumpkin_data::BlockDirection::South
+                    | pumpkin_data::BlockDirection::West
+                    | pumpkin_data::BlockDirection::East => {
+                        slot == 1 && pumpkin_data::fuels::is_fuel(stack.get_item().id)
+                    }
+                }
+            }
+
             fn as_any(&self) -> &dyn std::any::Any {
                 self
             }

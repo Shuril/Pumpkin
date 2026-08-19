@@ -2,6 +2,7 @@ use std::pin::Pin;
 
 use crate::block::entities::mob_spawner::MobSpawnerBlockEntity;
 use crate::entity::EntityBase;
+use crate::entity::passive::tropical_fish::TropicalFishEntity;
 use crate::entity::player::Player;
 use crate::entity::r#type::from_type;
 use crate::item::{ItemBehaviour, ItemMetadata};
@@ -9,7 +10,8 @@ use crate::server::Server;
 use pumpkin_data::data_component_impl::{
     AxolotlVariantImpl, CatVariantImpl, ChickenVariantImpl, CowVariantImpl, FoxVariantImpl,
     FrogVariantImpl, HorseVariantImpl, LlamaVariantImpl, MooshroomVariantImpl, PigVariantImpl,
-    RabbitVariantImpl, SheepColorImpl, ShulkerColorImpl, VillagerVariantImpl, WolfVariantImpl,
+    RabbitVariantImpl, SheepColorImpl, ShulkerColorImpl, TropicalFishBaseColorImpl,
+    TropicalFishPatternColorImpl, TropicalFishPatternImpl, VillagerVariantImpl, WolfVariantImpl,
 };
 use pumpkin_data::entity::entity_from_egg;
 use pumpkin_data::item_stack::ItemStack;
@@ -59,6 +61,19 @@ pub(crate) fn apply_entity_variant(item: &ItemStack, mob: &dyn EntityBase) {
     } else if let Some(comp) = item.get_data_component::<ShulkerColorImpl>() {
         mob.set_variant_name(&comp.value);
     }
+
+    if let Some(fish) = mob.cast_any().downcast_ref::<TropicalFishEntity>() {
+        let pattern = item
+            .get_data_component::<TropicalFishPatternImpl>()
+            .map_or("kob", |value| value.value.as_ref());
+        let base_color = item
+            .get_data_component::<TropicalFishBaseColorImpl>()
+            .map_or("white", |value| value.value.as_ref());
+        let pattern_color = item
+            .get_data_component::<TropicalFishPatternColorImpl>()
+            .map_or("white", |value| value.value.as_ref());
+        fish.set_variant_components(pattern, base_color, pattern_color);
+    }
 }
 
 impl ItemBehaviour for SpawnEggItem {
@@ -105,6 +120,14 @@ impl ItemBehaviour for SpawnEggItem {
                 // Broadcast the new mob to all players
                 world.spawn_entity(mob).await;
                 item.decrement_unless_creative(player.gamemode.load(), 1);
+                world
+                    .emit_game_event_from_item(
+                        location,
+                        crate::world::game_event::GameEventKind::EntityPlace,
+                        Some(player.get_entity().entity_uuid),
+                        item,
+                    )
+                    .await;
             }
         })
     }

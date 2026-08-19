@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use pumpkin_data::Enchantment;
 use pumpkin_data::entity::EntityType;
 use pumpkin_macros::pumpkin_block_from_tag;
 use pumpkin_util::GameMode;
@@ -14,8 +15,14 @@ pub struct InfestedBlock;
 impl BlockBehaviour for InfestedBlock {
     fn broken<'a>(&'a self, args: BrokenArgs<'a>) -> BlockFuture<'a, ()> {
         Box::pin(async {
-            // TODO: ugly fix, use onStacksDropped
-            if args.player.gamemode.load() == GameMode::Creative {
+            // Vanilla InfestedBlock.spawnAfterBreak only runs when normal
+            // block drops are enabled and the tool does not carry the
+            // `prevents_infested_spawns` tag (currently Silk Touch). Creative
+            // breaks do not call this side effect in the vanilla path.
+            if args.player.gamemode.load() == GameMode::Creative
+                || !args.world.level_info.load().game_rules.block_drops
+                || args.tool.get_enchantment_level(&Enchantment::SILK_TOUCH) > 0
+            {
                 return;
             }
             let entity = Entity::new(

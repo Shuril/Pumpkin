@@ -116,19 +116,16 @@ impl ItemBehaviour for BoatItem {
                 true
             };
 
-            let Some((hit_pos, _direction)) = world.raycast(start_pos, end_pos, checker).await
+            let Some((hit_pos, _direction, hit_vec)) =
+                world.raycast_with_hit(start_pos, end_pos, checker).await
             else {
                 return;
             };
 
-            // Calculate hit position - center of the block top or water surface
-            // TODO: Vanilla uses exact raycast intersection point (hitResult.getPos()),
-            // Pumpkin's raycast only returns block positions.
-            let hit_vec = Vector3::new(
-                f64::from(hit_pos.0.x) + 0.5,
-                f64::from(hit_pos.0.y) + 1.0,
-                f64::from(hit_pos.0.z) + 0.5,
-            );
+            // Vanilla uses the exact `BlockHitResult` location.  Keeping the
+            // intersection point matters for boats placed against a side or
+            // on a partial-height fluid/block shape; using the block centre
+            // could put the entity one block too high or inside an obstacle.
 
             // Vanilla: Check for entities in the path that would block placement
             // Get player's rotation vector stretched by 5.0 and expanded by 1.0
@@ -184,10 +181,23 @@ impl ItemBehaviour for BoatItem {
             // Decrement item unless in creative mode
             let mut stack = player.inventory.held_item().await;
             stack.decrement_unless_creative(player.gamemode.load(), 1);
-            player.inventory.set_held_item(stack).await;
+            player.inventory.set_held_item(stack.clone()).await;
 
-            // TODO: world.emitGameEvent(user, GameEvent.ENTITY_PLACE, hitResult.getPos())
-            // TODO: user.incrementStat(Stats.USED.getOrCreateStat(this))
+            world
+                .emit_game_event_from_item(
+                    hit_pos,
+                    crate::world::game_event::GameEventKind::EntityPlace,
+                    Some(player.get_entity().entity_uuid),
+                    &stack,
+                )
+                .await;
+            player
+                .increment_stat(
+                    pumpkin_data::statistic::StatisticCategory::Custom,
+                    pumpkin_data::statistic::CustomStatistic::BoatOneCm as i32,
+                    1,
+                )
+                .await;
         })
     }
 

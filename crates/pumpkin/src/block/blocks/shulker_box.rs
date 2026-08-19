@@ -66,8 +66,9 @@ impl BlockBehaviour for ShulkerBoxBlock {
         args: OnSyncedBlockEventArgs<'a>,
     ) -> BlockFuture<'a, bool> {
         Box::pin(async move {
-            // On the server, we don't need the Animation steps for now, because the client is responsible for that.
-            // TODO: Do not open the shulker box when it is currently closing
+            // The client owns the interpolation; server-side block events only
+            // need to acknowledge the vanilla animation event. Vanilla allows
+            // an interaction while a box is closing (the animation reverses).
             args.r#type == Self::OPEN_ANIMATION_EVENT_TYPE
         })
     }

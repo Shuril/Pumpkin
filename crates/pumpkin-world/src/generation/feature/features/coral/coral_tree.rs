@@ -32,8 +32,15 @@ impl CoralTreeFeature {
         }
         let i = random.next_bounded_i32(3) + 2;
 
-        // TODO: Shuffle
-        let directions = BlockDirection::horizontal().into_iter().take(i as usize);
+        // `Plane.HORIZONTAL.shuffledCopy(random)` is an in-place Fisher–Yates over
+        // [NORTH, EAST, SOUTH, WEST]. The shuffle itself consumes random draws even when
+        // only the first i branches are used.
+        let mut directions = BlockDirection::horizontal_worldgen();
+        for index in (1..directions.len()).rev() {
+            let swap = random.next_bounded_i32(index as i32 + 1) as usize;
+            directions.swap(index, swap);
+        }
+        let directions = directions.into_iter().take(i as usize);
         for dir in directions {
             pos = pos.offset(dir.to_offset());
             let times = random.next_bounded_i32(5) + 2;

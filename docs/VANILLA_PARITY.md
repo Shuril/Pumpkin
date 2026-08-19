@@ -1,0 +1,113 @@
+# Vanilla parity и сравнение с Mojang server
+
+## Как читать таблицу
+
+- **complete** — основной contract реализован и есть тест/проверка.
+- **mostly** — рабочее поведение есть, но остались edge cases или edition gap.
+- **partial** — код/регистрация есть, но vanilla-путь ещё неполный.
+- **missing** — в runtime отсутствует существенная часть поведения.
+
+Основной reference — локальный decompile `Minecraft/decompiled_src/sources` или
+версия `Minecraft/26.1/decompiled_src/sources`; при несовпадении версии сначала
+проверьте номер protocol/data version. Имена ниже — Mojang class/method, а не
+Pumpkin API.
+
+## Runtime и protocol
+
+| Область | Pumpkin | Vanilla reference | Статус / что сделать |
+|---|---|---|---|
+| Java connection state | `pumpkin/src/net/java/` | `net.minecraft.server.network.ServerGamePacketListenerImpl` | mostly; пройти все login/config/play state transitions и malformed packet cases |
+| Bedrock/RakNet | `pumpkin/src/net/bedrock/` | Bedrock protocol/RakNet behavior | partial; edition-specific gameplay still differs in forms, tracking and inventory |
+| Packet serialization | `pumpkin-protocol/src/{serial,ser,codec}` | `net.minecraft.network.codec.StreamCodec` | mostly; maintain per-version packet gates and round-trip tests |
+| Java encryption | `pumpkin-protocol/src/lib.rs`, `net/authentication.rs` | `ServerLoginPacketListenerImpl`, `CipherBase` | mostly; verify rekey/large packet and auth failure behavior |
+| Main/off-hand IDs | `net/java/play.rs` | `ServerboundSwingPacket`, `ServerboundUseItemOnPacket` | complete for fixed mapping; keep regression tests |
+| Commands packet | `pumpkin-protocol/src/java/client/play/commands.rs` | `ClientboundCommandsPacket` | mostly; update with each protocol version |
+| Sign click commands | `pumpkin/src/block/blocks/signs.rs`, `pumpkin-util/src/text/{mod,style,click}.rs` | `SignBlockEntity`, `TextColor`/`ClickEvent` | mostly; root `run_command` line events and vanilla JSON aliases work; nested events, command criteria and full client fixtures remain |
+| Worldborder commands | `pumpkin/src/command/commands/worldborder.rs`, `command/mod.rs` | `WorldBorderCommand`, `CommandSourceStack#getLevel` | mostly; player/command-block senders mutate the border in their current dimension and console/RCON fall back to the overworld; multi-dimension command fixtures and client packet captures remain |
+| Shared player spawn finder | `pumpkin/src/world/mod.rs` | `PlayerSpawnFinder`, `ServerPlayer#findRespawnPositionAndUseSpawnBlock` | mostly; bounded `respawn_radius` search, border/heightmap/fluid/full-collision checks and height fixup are wired for Java/Bedrock login and fallback respawn; randomized candidate permutation and real-client respawn fixtures remain |
+| Plugins | `pumpkin-plugin-api`, `pumpkin/src/plugin` | no direct vanilla equivalent | separate contract; preserve WIT/API version compatibility |
+
+## World, chunks and persistence
+
+| Область | Pumpkin | Vanilla reference | Статус / что сделать |
+|---|---|---|---|
+| Chunk holder/DAG | `pumpkin-world/src/chunk_system` | `ChunkMap`, `ChunkHolder`, `ChunkStatus` | mostly; test cancellation, unload races and ticket priority under load |
+| Anvil palettes | `chunk/format/{mod,anvil}.rs` | `LevelChunk`, `PalettedContainer` | mostly; preserve every unknown root tag and block entity/tick list |
+| Entity-region NBT | `chunk/mod.rs`, `chunk/format/mod.rs`, `world/mod.rs` | `EntityStorage`, `SerializableChunkData` | mostly; entity root metadata and opaque live block-entity fields survive save, but real `.mca` and crash-recovery fixtures remain |
+| Pump/Linear formats | `chunk/format/{pump,linear}.rs` | no vanilla equivalent | Pumpkin extension; document migration/backup guarantees |
+| Lighting | `lighting/{engine,runtime,storage}.rs`, `world/mod.rs` | `LevelLightEngine`, `LayerLightEngine` | mostly; dimension-derived bounds, no-skylight handling, changed-section masks and Java update path are wired; Bedrock subchunks and real-client fixtures remain |
+| Worldgen noise/features | `generation/noise`, `proto_chunk.rs`, `generation/block_state_provider.rs`, `generation/feature/features/{simple_block,pointed_dripstone,blue_ice,iceberg,basalt_columns,freeze_top_layer,twisting_vines,weeping_vines,vines}.rs`, `generation/feature/features/tree/decorator/{alter_ground,attached_to_leaves,attached_to_logs,beehive,cocoa,creaking_heart,pale_moss,place_on_ground}.rs` | `NoiseBasedChunkGenerator`, `NoiseRouter`, `SimpleBlockFeature`, `PointedDripstoneFeature`, `SpeleothemUtils`, `BlueIceFeature`, `IcebergFeature`, `BasaltColumnsFeature`, `SnowAndFreezeFeature`, `RandomizedIntStateProvider`, `RotatedBlockProvider`, `TwistingVinesFeature`, `WeepingVinesFeature`, `VinesFeature`, `AlterGroundDecorator`, `AttachedToLeavesDecorator`, `AttachedToLogsDecorator`, `BeehiveDecorator`, `CocoaDecorator`, `CreakingHeartDecorator`, `PaleMossDecorator`, `PlaceOnGroundDecorator` | mostly; SimpleBlock now handles double plants and pale-moss carpet layers, feature sea level comes from the generator context (63 Overworld/32 Nether), while fixed-seed comparison is still needed for every dimension/version and feature |
+| Carvers | `generation/carver` | `CaveWorldCarver`, `CanyonWorldCarver` | mostly; compare RNG consumption and fluid aquifers |
+| Placed features | `generation/feature/placed_features.rs`, `generation/feature/features/tree/decorator/attached_to_logs.rs` | `PlacedFeature`, `PlacementModifier`, `AttachedToLogsDecorator` | mostly; preserve lazy per-position modifier ordering and seeded shuffled-log/direction RNG; fixed-seed snapshots still needed |
+| Sapling growth | `block/blocks/plant/sapling.rs`, `item/items/bone_meal.rs` | `SaplingBlock`, `AbstractMegaTreeGrower` | partial; support/neighbor rules and the vanilla one-in-seven stage gate are enforced, while stage-one configured tree selection/generation and species-specific mega-tree checks remain |
+| Structures | `generation/structure` | `Structure`, `StructurePiece`, templates | mostly; mineshaft and ocean monument are ported; exact loot/processor parity remains |
+| Datapack functions, schedules and resource snapshot | `server/datapack.rs`, `server/recipe.rs`, `server/function_scheduler.rs`, `command/commands/{function,schedule}.rs`, `server/mod.rs`, `world/loot.rs`, `block/blocks/chests.rs`, `entity/vehicle/minecart/container.rs` | `ReloadableServerResources`, `CommandFunctionManager`, `FunctionCommand`, `ScheduleCommand`, `TimerQueue`, `StructureTemplateManager`, `LootTable` | mostly; directory/ZIP functions, ordered `load`/`tick` tags, bounded nested execution, replace/append/clear timers and lossless scheduled callback NBT are wired. Loot-table/predicate/advancement JSON and named/gzip structure NBT share canonical IDs, pack-priority override and atomic validation; deferred chests and storage minecarts now execute supported datapack item/empty/tag/nested tables with deterministic rolls and preserve unknown/unsupported tables. Typed loot consumers beyond this subset, predicates/advancements/structures, full command return semantics and save-crash fixtures remain |
+| Saved level metadata | `world_info` | `LevelStorageSource`, `PrimaryLevelData`, `CustomBossEvents` | mostly; `level.dat` and `data/minecraft/*.dat` merge unknown root/data tags, live custom boss bars round-trip through the server manager, but nested component and crash-recovery fixtures remain |
+| POI | `poi` | `PoiManager` | partial; validate villager pathfinding/claim/release across reload |
+
+## Blocks, redstone and fluids
+
+| Область | Pumpkin | Vanilla reference | Статус / что сделать |
+|---|---|---|---|
+| Generic block states | `pumpkin-data` + `block/mod.rs` | `BlockBehaviour`, `StateDefinition` | mostly; never hand-edit generated state tables |
+| Neighbor updates | `world/mod.rs`, block traits | `Level#setBlock`, `NeighborUpdater` | mostly; bounded iterative updater still needs stress tests for `/fill` + redstone |
+| Random tick sampling | `pumpkin-world/src/level.rs`, `pumpkin/src/world/mod.rs` | `ServerLevel` random tick loop | mostly; gamerule zero is honored and non-zero sample positions use independent reproducible `(seed, world age, chunk)` streams; block-specific random-tick effects and fixed-seed world fixtures still need differential coverage |
+| Piston | `blocks/piston`, `entities/piston.rs` | `PistonBaseBlock`, `PistonMovingBlockEntity` | mostly; same-tick retraction and start-of-tick honey rider movement are covered; compare quasi-connectivity, full push rules and event ordering |
+| Repeater/comparator | `blocks/redstone/{repeater,comparator}.rs`, `world/mod.rs` | `RepeaterBlock`, `ComparatorBlock/Entity`, `Level#updateNeighbourForOutputSignal` | mostly; block mutation, hopper/dropper/dispenser, jukebox and inventory block-entity changes now notify comparators; verify locking, delay, side power |
+| Redstone wire | `blocks/redstone/redstone_wire.rs` | `RedStoneWireBlock` | mostly; exact update order and coral RNG are separate parity concerns |
+| Rails/minecart signal | `blocks/redstone/rails`, `entity/vehicle/minecart` | `DetectorRailBlock`, `PoweredRailBlock`, `AbstractMinecart` | mostly; command/spawner activation, persistence, display metadata, command success comparator and Java editor packet are implemented; exact entity events, Bedrock editor/UI and collision edge cases remain |
+| Hopper | `block/entities/hopper.rs`, `entity/vehicle/minecart/hopper.rs`, `world/inventory` | `HopperBlockEntity`, `WorldlyContainer` | mostly; face-aware extraction/insertion and the full-collision/`does_not_block_hoppers` entity-pickup gate are wired for furnace, brewing stand, shulker and storage minecarts; remaining-item and full fixture coverage remain |
+| Fluids | `block/fluid`, `flowing_trait.rs` | `FlowingFluid`, `LiquidBlockContainer` | mostly; waterlogged replacement preserves state and schedules ticks; lava-water interactions and full fluid fixture coverage remain |
+| Daylight detector | `block/entities/daylight_detector.rs` | `DaylightDetectorBlock` | mostly; effective sky brightness, dimension darkening, weather attenuation and the vanilla sun-angle curve are implemented; packet/weather fixtures remain |
+| Conduit | `block/entities/conduit.rs` | `ConduitBlockEntity` | mostly; axial frame validation, active/inactive lifecycle, conduit power, wet-player range and hostile hunting/attack are server-ticked and persisted; exact `Enemy` marker selection, client rotation/particles and differential water-frame fixtures remain |
+| Campfire projectile ignition | `block/blocks/campfire.rs`, `block/mod.rs`, `world/mod.rs` | `CampfireBlock#onProjectileHit`, `Projectile#onHitBlock` | mostly; fire/lit/waterlogged and player-owner `mayInteract` gates are implemented; mob-griefing/permission and client event fixtures remain |
+| Fire rain probes | `block/blocks/fire/fire.rs`, `world/mod.rs` | `FireBlock#isNearRain`, `Level#isRainingAt` | mostly; extinguish/spread checks probe the fire column plus all four horizontal neighbours exactly like vanilla; weather/light integration fixtures remain |
+| Mushroom survival and spread | `block/blocks/plant/mushroom_plant.rs`, `world/mod.rs` | `MushroomBlock#canSurvive`, `MushroomBlock#randomTick` | mostly; solid-render support, raw-brightness `< 13`, override tag, 1/25 gate, five-mushroom cap and sequential four-offset spread are implemented; generated-light integration fixture remains |
+| Dispenser | `blocks/redstone/dispenser.rs` | `DispenserBlock`, `DispenseItemBehavior`, `SpawnUtil`, `RespawnAnchorBlock` | partial; equipment, projectile families (including experience bottles), armadillo brush/scute, sheep/beehive shears, shulker placement/container transfer, mob buckets, collision-checked centered spawn eggs and Nether respawn-anchor charging (including variant/custom bucket NBT) are implemented; exact bottle edge cases, entity-specific persistence flags and all-item behavior remain |
+| Crafter | `block/entities/crafter.rs` | `CrafterBlock`, `CrafterBlockEntity` | partial; shaped/shapeless matching, disabled slots, Java NBT, visible six-tick `CRAFTING` lifecycle, comparator refresh, component-preserving output, atomic snapshot-validated input consumption, vanilla result-then-remainder emission, and sided hopper insertion/lower-count slot ordering work; world boundary fixtures and advancement/stat hooks still need differential evidence |
+| Sculk sensor | `block/entities/sculk_sensor.rs` | `SculkSensorBlockEntity`, `VibrationSystem` | partial; Mojang frequencies, falloff, occlusion/dampening, delayed delivery, resonance and persisted pending state are implemented; source context and listener selection still need end-to-end fixtures |
+| Calibrated sensor | `calibrated_sculk_sensor.rs` | `CalibratedSculkSensorBlock` | partial; back-face frequency filter, radius/delay, comparator output and persisted queues are implemented; every game-event source and particle/selection semantics need end-to-end tests |
+| Sculk shrieker | `sculk_shrieker.rs` | `SculkShriekerBlock`, warden spawn path | partial; delayed player-owned vibrations, shared warning tracker, cooldown/decay, darkness and spawn-rule gates are implemented; Warden placement now follows `SpawnUtil.ON_TOP_OF_COLLIDER` (20 attempts, ±5 X/Z, vertical ±6 search); warning sounds/particles and real-client fixtures remain |
+
+## Entities, vehicles and combat
+
+| Область | Pumpkin | Vanilla reference | Статус / что сделать |
+|---|---|---|---|
+| Entity base/NBT | `entity/mod.rs` | `Entity`, `EntityType`, `SynchedEntityData` | mostly; test every entity type's NBT and unknown-field retention |
+| Player | `entity/player.rs` | `ServerPlayer` | mostly; swimming entry now uses the Mojang block-fluid predicate; cross-dimension respawn and some client edge cases remain |
+| Bed/villager sleep | `block/blocks/bed.rs`, `entity/passive/villager` | `BedBlock#kickVillagerOutOfBed` | mostly; occupied-bed villager wake-up and sleeping metadata are wired; full sleep/POI timing fixtures remain |
+| Damage/death | `entity/living.rs`, `entity/mob/mod.rs`, `entity/experience_orb.rs` | `LivingEntity`, `Mob`, `CombatTracker`, `ExperienceOrb` | mostly; fall/death messages, hurt/death state, mob equipment XP bonuses and award-time orb coalescing are wired; killer enchantment bonuses, full merge/concurrency fixtures, damage-source edge cases and gamerule/client fixtures remain |
+| Hunger/food bounds | `entity/hunger.rs`, `entity/living.rs` | `FoodData`, `MobEffect` | mostly; food additions saturate at 20 and malformed saturation/exhaustion data is bounded; starvation/regen timing and food-component fixtures remain |
+| AI goals | `entity/ai` and `entity/mob` | `GoalSelector`, mob goal classes | partial; melee LOS, climbing, target predicates and many mob goals differ |
+| Natural spawning RNG | `world/natural_spawner.rs`, `entity/type.rs`, `entity/mob/{mod,bat,slime}.rs` | `NaturalSpawner`, `SpawnPlacements`, `ServerLevel.random` | mostly; each world-age/chunk pass supplies one isolated stream to group selection, random placement predicates and distance-despawn rolls, avoiding JoinSet races; exact vanilla `ServerLevel.random` consumption and special structure lists remain |
+| Block/entity spawners | `block/entities/mob_spawner.rs`, `entity/vehicle/minecart/spawner.rs` | `BaseSpawner`, `SpawnerBlockEntity`, `SpawnUtil` | mostly; zero/negative delay handling, weighted SpawnPotentials, inflated nearby cap and Java's half-open delay interval are preserved; each requested mob now uses SpawnUtil-style three X/Z attempts, vertical support, world-border, placement-rule and collision checks; display-entity particles, exact world RNG stream and subtype/client fixtures remain |
+| Minecarts | `entity/vehicle/minecart` | `AbstractMinecart`, `MinecartBehavior`, `MinecartCommandBlock`, `MinecartSpawner` | mostly; all seven subtypes have distinct state, command carts execute every four powered activator ticks and accept the Java editor packet, spawner carts reuse the full weighted/NBT spawner state, and rail/projectile movement keeps position, block position and chunk tracking synchronized; Bedrock editor/UI, entity events and collision edge cases remain |
+| Boats | `entity/vehicle` | `Boat`, `AbstractBoat` | mostly; water physics and passenger dismount edge cases need client tests |
+| Projectiles | `entity/projectile` | `Projectile`, `AbstractArrow`, thrown item classes | mostly; firework hand launches preserve the held `Fireworks` component, boat/raft placement uses the exact raycast hit point, and special hit effects still need coverage |
+| Melee target filtering | `entity/predicate/mod.rs`, `entity/ai/goal/melee_attack.rs` | `MeleeAttackGoal`, `NearestAttackableTargetGoal` | mostly; ordinary/survival/adventure targets remain valid while creative/spectator players are rejected; wall-occlusion, mob-specific target predicates and full AI goal scheduling remain |
+| Fishing rod retrieval | `entity/projectile/fishing_bobber.rs`, `item/items/fishing_rod.rs`, `world/loot.rs` | `FishingRodItem#use`, `FishingHook#retrieve`, `LootTable` (FISHING) | mostly; retrieval applies vanilla durability costs and active-hand damage, evaluates deterministic fish/junk/treasure pools with the 5×5×4 open-water gate, and honors supported datapack overrides while rejecting unsupported conditions/functions. Luck/enchantment-aware typed loot functions, XP orbs and complete bobber timing/collision parity remain |
+| Entity tracking | `world/mod.rs`, `entity/player.rs`, `entity/mod.rs`, net handlers | `ChunkMap.TrackedEntity`, `ServerEntity` | mostly; chunk delivery barrier, replay, boundary remove/spawn and paired-ID-gated movement/rotation/head-yaw/velocity/metadata deltas are implemented. Java batch counts now exclude cancelled/expired terrain packets; full client ACK timing, dirty attribute/equipment snapshots and minecart unload/reload certification remain |
+| Passengers | `entity/mod.rs`, `player.rs` | `Entity#startRiding`, `stopRiding` | mostly; cross-dimension and disconnected root vehicle cases need stress tests |
+
+## Inventories, recipes and items
+
+| Область | Pumpkin | Vanilla reference | Статус / что сделать |
+|---|---|---|---|
+| Slots/clicks | `pumpkin-inventory/src/{slot,container_click,screen_handler}` | `AbstractContainerMenu`, `Slot` | mostly; stale-slot safety, quick-craft state/distribution, directional pickup-all and number-key swaps are covered; client transaction/disconnect and full component/max-stack fixtures remain |
+| Menu distance | `entity/player.rs`, `screen_handler.rs` | `AbstractContainerMenu#stillValid`, `Player#isWithinBlockInteractionRange` | mostly; block-backed clicks use the eye-to-block-AABB interaction range, the vanilla menu buffer and the original block-id check, resynchronizing when invalid; live reconnect and container-removal fixtures remain |
+| Player inventory | `player/player_inventory.rs` | `Inventory`, `InventoryMenu` | mostly; Mojang slot numbering, legacy compatibility and replacement-style NBT loading are implemented; disconnect cleanup, full click-drag matrix and limited-crafting enforcement remain |
+| Crafting | `crafting/` + `server/recipe.rs` + `entity/player.rs` + `protocol/.../recipe_book_add.rs` | `RecipeManager`, `RecipeBook`, `CraftingMenu`, `ClientboundRecipeBookAddPacket` | mostly; built-in/dynamic namespaced keys, settings/highlights, `/recipe give/take`, remainders and limited-crafting result checks are wired; recipe-book packets filter by discovered keys while retaining stable display IDs; component-preserving transactions and reconnect/differential fixtures remain |
+| Furnace/brewing | `furnace_like/`, `brewing/` | `AbstractFurnaceMenu`, `BrewingStandBlockEntity` | mostly; close callbacks now reach the owned block inventories (viewer/dirty lifecycle); remainder components and fuel edge cases remain |
+| Stonecutter menu lifecycle | `stonecutter_screen_handler.rs` | `StonecutterMenu#removed` | mostly; virtual output is cleared and the real input is returned on close; recipe-selection and component fixtures remain |
+| Equipment | `entity_equipment.rs`, `slot.rs`, `living.rs`, `screen_handler.rs` | `LivingEntity#onEquipItem`, `LivingEntity#hurtCurrentlyUsedShield`, `EntityEquipment`, `InventoryMenu` | mostly; canonical equipment/drop-chance NBT, armor-stand drops, authoritative player-menu callbacks and active-shield durability/client break updates work; dispenser edge cases, general equipment tick, binding curse and mob pickup persistence remain |
+| Item components | `pumpkin-data/data_component_impl` | `DataComponentMap` | mostly; several generated item component TODOs remain |
+| Honeycomb waxing | `item/items/honeycomb.rs`, `item/items/mod.rs` | `HoneycombItem`, `WeatheringCopper` | mostly; all generated copper collections and oxidation stages map to waxed states with shared properties and item consumption; copper-chest block-entity and advancement fixtures remain |
+| Name tags | `item/items/name_tag.rs`, `entity/mod.rs` | `NameTagItem#interactLivingEntity`, `Mob#setPersistenceRequired` | mostly; live serializable living-target gate, mob `PersistenceRequired` NBT and custom-name metadata/consumption are implemented; despawn fixture remains |
+| Loot RNG/context | `world/loot.rs`, `block/mod.rs`, `command/commands/loot.rs` | `LootTable`, `LootPool`, `LootContext`, `Block.dropResources` | mostly; an explicit context seed now drives all rolls, conditions, tag expansion, number providers and nested tables through one stream; guardian fish references use the fish-only built-in pool, world-bound block/explosion/entity/command sources derive replay-stable seeds, deferred containers retain theirs, and the shared drop path suppresses XP with Silk Touch; full condition/function codecs and differential fixtures remain |
+
+## How to close a parity row
+
+For each row, compare: state transitions, random sequence, event/game-event
+emission, sounds/particles, drops/XP, client packets, NBT, unloaded chunks,
+dimension changes and gamerules. A unit test for a helper is necessary but not
+sufficient; add a behavior test that crosses the same boundary as vanilla.

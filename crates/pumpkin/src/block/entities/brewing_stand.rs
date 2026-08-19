@@ -35,6 +35,25 @@ impl BrewingStandBlockEntity {
     pub const INVENTORY_SIZE: usize = 5; // 3 potion slots + 1 ingredient + 1 fuel
     pub const ID: &'static str = "minecraft:brewing_stand";
 
+    /// Vanilla `PotionBrewing#isIngredient`: an item is accepted in the
+    /// ingredient slot iff it occurs in one of the registered item or potion
+    /// recipe ingredient lists.  Keeping this derived from generated recipe
+    /// data prevents the hopper and menu paths from drifting apart.
+    #[must_use]
+    fn is_brewing_ingredient(item: &'static Item) -> bool {
+        ITEM_RECIPES.iter().any(|recipe| {
+            recipe
+                .ingredient()
+                .iter()
+                .any(|ingredient| ingredient.id == item.id)
+        }) || POTION_RECIPES.iter().any(|recipe| {
+            recipe
+                .ingredient()
+                .iter()
+                .any(|ingredient| ingredient.id == item.id)
+        })
+    }
+
     #[must_use]
     pub fn new(position: BlockPos) -> Self {
         use std::array::from_fn;
@@ -194,8 +213,21 @@ impl BrewingStandBlockEntity {
         // Mark dirty to trigger update
         self.mark_dirty();
 
-        // Handle crafting remainder (like glass bottles from honey bottles)
-        // TODO: Implement remainder handling when item lookup by ID is available
+        // Brewing ingredients use the same recipe-remainder table as furnace
+        // fuel/crafting ingredients.  Put the remainder back into the
+        // ingredient slot only when the consumed stack became empty; if a
+        // stack remains, vanilla keeps the remainder implicit and consumes it
+        // on the next use instead of creating an extra item.
+        if let Some(remainder_id) =
+            pumpkin_data::recipe_remainder::get_recipe_remainder_id(ingredient.item.id)
+            && let Some(remainder_item) = pumpkin_data::item::Item::from_id(remainder_id)
+        {
+            let mut items = self.items.write().await;
+            if items[3].is_empty() {
+                items[3] = ItemStack::new(1, remainder_item);
+                self.mark_dirty();
+            }
+        }
     }
 }
 
@@ -290,22 +322,85 @@ impl pumpkin_world::inventory::Inventory for BrewingStandBlockEntity {
 
         match slot {
             // Slots 0-2 - potion bottles
-            0..=2 => stack
-                .get_data_component::<pumpkin_data::data_component_impl::PotionContentsImpl>()
-                .is_some(),
-            // Slot 3 - ingredient (must be tagged as brewable)
-            3 => {
-                // Check if item is a valid brewing ingredient
-                if stack.get_item().has_tag(&tag::Item::MINECRAFT_BREWING_FUEL) {
-                    return false; // Fuel should not go in ingredient slot
-                }
-                // Allow any item that's not fuel (ingredient validation happens during brewing)
-                true
+            0..=2 => {
+                stack
+                    .get_data_component::<pumpkin_data::data_component_impl::PotionContentsImpl>()
+                    .is_some()
+                    || matches!(
+                        stack.get_item().id,
+                        id if id == pumpkin_data::item::Item::GLASS_BOTTLE.id
+                            || id == pumpkin_data::item::Item::POTION.id
+                            || id == pumpkin_data::item::Item::SPLASH_POTION.id
+                            || id == pumpkin_data::item::Item::LINGERING_POTION.id
+                    )
             }
+            // Slot 3 - ingredient (must be tagged as brewable)
+            3 => Self::is_brewing_ingredient(stack.get_item()),
             // Slot 4 - fuel
             4 => stack.get_item().has_tag(&tag::Item::MINECRAFT_BREWING_FUEL),
             _ => false,
         }
+    }
+
+    fn can_insert_from_hopper(
+        &self,
+        slot: usize,
+        stack: &ItemStack,
+        direction: pumpkin_data::BlockDirection,
+    ) -> bool {
+        if stack.is_empty() {
+            return true;
+        }
+        let face_allows_slot = match direction {
+            // Vanilla SLOTS_FOR_UP = { INGREDIENT_SLOT }.
+            pumpkin_data::BlockDirection::Up => slot == 3,
+            // Vanilla SLOTS_FOR_DOWN = { 0, 1, 2, 3 }.
+            pumpkin_data::BlockDirection::Down => slot <= 3,
+            // Vanilla SLOTS_FOR_SIDES = { 0, 1, 2, FUEL_SLOT }.
+            pumpkin_data::BlockDirection::North
+            | pumpkin_data::BlockDirection::South
+            | pumpkin_data::BlockDirection::West
+            | pumpkin_data::BlockDirection::East => (slot <= 2) || slot == 4,
+        };
+        if !face_allows_slot || !self.is_valid_slot_for(slot, stack) {
+            return false;
+        }
+
+        true
+    }
+
+    fn can_extract_to_hopper(
+        &self,
+        _hopper_inventory: &dyn pumpkin_world::inventory::Inventory,
+        slot: usize,
+        stack: &ItemStack,
+        direction: pumpkin_data::BlockDirection,
+    ) -> bool {
+        let face_allows_slot = match direction {
+            // A hopper pulling from this stand's top sees DOWN.  Vanilla's
+            // bottom slot list excludes fuel and permits bottle outputs plus
+            // the ingredient slot when it contains a glass bottle.
+            pumpkin_data::BlockDirection::Down => slot <= 3,
+            pumpkin_data::BlockDirection::Up => slot == 3,
+            pumpkin_data::BlockDirection::North
+            | pumpkin_data::BlockDirection::South
+            | pumpkin_data::BlockDirection::West
+            | pumpkin_data::BlockDirection::East => (slot <= 2) || slot == 4,
+        };
+        face_allows_slot
+            && (slot != 3 || stack.get_item().id == pumpkin_data::item::Item::GLASS_BOTTLE.id)
+    }
+
+    fn can_merge_from_hopper(
+        &self,
+        slot: usize,
+        _current: &ItemStack,
+        _incoming: &ItemStack,
+        _direction: pumpkin_data::BlockDirection,
+    ) -> bool {
+        // Potion/bottle slots must be empty; fuel and the ingredient slot may
+        // receive additional matching items.
+        slot >= 3
     }
 }
 
@@ -541,5 +636,22 @@ impl PropertyDelegate for BrewingStandBlockEntity {
 
     fn get_properties_size(&self) -> i32 {
         2
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::BrewingStandBlockEntity;
+    use pumpkin_data::item::Item;
+
+    #[test]
+    fn brewing_ingredient_comes_from_generated_recipe_tables() {
+        assert!(BrewingStandBlockEntity::is_brewing_ingredient(
+            &Item::NETHER_WART
+        ));
+        assert!(BrewingStandBlockEntity::is_brewing_ingredient(
+            &Item::GUNPOWDER
+        ));
+        assert!(!BrewingStandBlockEntity::is_brewing_ingredient(&Item::DIRT));
     }
 }

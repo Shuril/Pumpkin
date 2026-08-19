@@ -137,6 +137,7 @@ uuid = { version = "1.24", default-features = false, features = ["serde", "v3", 
 serde = { version = "1.0", default-features = false, features = ["derive", "std"] }
 serde_repr = { version = "0.1", default-features = false }
 serde_json = { version = "1.0", default-features = false, features = ["std"] }
+zip = { version = "2.4", default-features = false, features = ["deflate"] }
 
 tempfile = { version = "3.27.0", default-features = false }
 proc-macro-error2 = { version = "2", default-features = false }

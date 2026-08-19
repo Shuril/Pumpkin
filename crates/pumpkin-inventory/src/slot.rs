@@ -182,7 +182,7 @@ pub trait Slot: Send + Sync {
     /// Checks if the player can take items from this slot.
     ///
     /// Mojang name: `mayPickup`
-    fn can_take_items(&self, _player: &dyn InventoryPlayer) -> BoxFuture<'_, bool> {
+    fn can_take_items<'a>(&'a self, _player: &'a dyn InventoryPlayer) -> BoxFuture<'a, bool> {
         // Default implementation logic:
         Box::pin(async move { true })
     }
@@ -431,11 +431,17 @@ impl Slot for ArmorSlot {
         Box::pin(async move { 1 })
     }
 
-    /// TODO: Check for curse of binding enchantment.
-    fn can_take_items(&self, _player: &dyn InventoryPlayer) -> BoxFuture<'_, bool> {
+    /// Binding Curse prevents taking equipped armour in survival/adventure.
+    /// Creative players bypass the curse exactly like vanilla.
+    fn can_take_items<'a>(&'a self, player: &'a dyn InventoryPlayer) -> BoxFuture<'a, bool> {
         Box::pin(async move {
-            // TODO: Check enchantments
-            true
+            if player.is_creative() {
+                return true;
+            }
+            self.get_stack()
+                .await
+                .get_enchantment_level(&pumpkin_data::Enchantment::BINDING_CURSE)
+                <= 0
         })
     }
 }

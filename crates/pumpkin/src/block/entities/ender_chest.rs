@@ -68,20 +68,32 @@ impl ViewerCountListener for EnderChestBlockEntity {
     fn on_container_open<'a>(
         &'a self,
         world: &'a Arc<World>,
-        _position: &'a BlockPos,
+        position: &'a BlockPos,
     ) -> ViewerFuture<'a, ()> {
         Box::pin(async move {
             self.play_sound(world, Sound::BlockEnderChestOpen);
+            world
+                .emit_game_event(
+                    *position,
+                    crate::world::game_event::GameEventKind::ContainerOpen,
+                )
+                .await;
         })
     }
 
     fn on_container_close<'a>(
         &'a self,
         world: &'a Arc<World>,
-        _position: &'a BlockPos,
+        position: &'a BlockPos,
     ) -> ViewerFuture<'a, ()> {
         Box::pin(async move {
             self.play_sound(world, Sound::BlockEnderChestClose);
+            world
+                .emit_game_event(
+                    *position,
+                    crate::world::game_event::GameEventKind::ContainerClose,
+                )
+                .await;
         })
     }
 

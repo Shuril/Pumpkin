@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 
 use crate::block::entities::hopper::HopperBlockEntity;
 use crate::entity::{Entity, player::Player};
@@ -14,6 +14,7 @@ use super::container::{self, MinecartInventory};
 
 pub(super) struct HopperMinecart {
     enabled: AtomicBool,
+    transfer_cooldown: AtomicI32,
     inventory: Arc<MinecartInventory>,
 }
 
@@ -21,6 +22,7 @@ impl HopperMinecart {
     pub(super) fn new() -> Self {
         Self {
             enabled: AtomicBool::new(true),
+            transfer_cooldown: AtomicI32::new(-1),
             inventory: Arc::new(MinecartInventory::new(5)),
         }
     }
@@ -38,6 +40,14 @@ impl HopperMinecart {
             return;
         }
 
+        // Hopper minecarts use the same eight-tick transfer cadence as a
+        // stationary hopper.  The decrement and gate are one atomic update so
+        // an entity tick cannot accidentally run twice after a reload.
+        if self.transfer_cooldown.fetch_sub(1, Ordering::Relaxed) > 0 {
+            return;
+        }
+        self.transfer_cooldown.store(0, Ordering::Relaxed);
+
         let world = entity.world.load();
         let pos = entity.pos.load();
         let source_pos = BlockPos::floored(pos.x, pos.y + 1.5, pos.z);
@@ -47,18 +57,28 @@ impl HopperMinecart {
             for slot in 0..source.size() {
                 let stack = source.get_stack(slot).await;
                 if stack.is_empty()
-                    || !source.can_transfer_to(self.inventory.as_ref(), slot, &stack)
+                    || !source.can_extract_to_hopper(
+                        self.inventory.as_ref(),
+                        slot,
+                        &stack,
+                        pumpkin_data::BlockDirection::Down,
+                    )
                 {
                     continue;
                 }
-                let backup = stack.clone();
-                let one = source.remove_stack_specific(slot, 1).await;
-                if HopperBlockEntity::add_one_item(source.as_ref(), self.inventory.as_ref(), one)
-                    .await
+                let one = stack.copy_with_count(1);
+                if HopperBlockEntity::add_one_item(
+                    source.as_ref(),
+                    self.inventory.as_ref(),
+                    one,
+                    pumpkin_data::BlockDirection::Down,
+                )
+                .await
                 {
+                    source.remove_stack_specific(slot, 1).await;
+                    self.transfer_cooldown.store(8, Ordering::Relaxed);
                     return;
                 }
-                source.set_stack(slot, backup).await;
             }
             return;
         }
@@ -68,10 +88,13 @@ impl HopperMinecart {
             Vector3::new(pos.x + 0.5, pos.y + 2.0, pos.z + 0.5),
         );
         if self.pick_up_item(entity, &suction_box).await {
+            self.transfer_cooldown.store(8, Ordering::Relaxed);
             return;
         }
         let cart_box = entity.bounding_box.load().expand(0.25, 0.0, 0.25);
-        self.pick_up_item(entity, &cart_box).await;
+        if self.pick_up_item(entity, &cart_box).await {
+            self.transfer_cooldown.store(8, Ordering::Relaxed);
+        }
     }
 
     async fn pick_up_item(&self, entity: &Entity, search_box: &BoundingBox) -> bool {
@@ -90,6 +113,7 @@ impl HopperMinecart {
                 self.inventory.as_ref(),
                 self.inventory.as_ref(),
                 one,
+                pumpkin_data::BlockDirection::Down,
             )
             .await
             {
@@ -121,12 +145,20 @@ impl HopperMinecart {
     pub(super) async fn write_nbt(&self, nbt: &mut NbtCompound) {
         self.inventory.write_nbt(nbt).await;
         nbt.put_bool("Enabled", self.enabled.load(Ordering::Relaxed));
+        nbt.put_int(
+            "TransferCooldown",
+            self.transfer_cooldown.load(Ordering::Relaxed),
+        );
     }
 
     pub(super) async fn read_nbt(&self, nbt: &NbtCompound) {
         self.inventory.read_nbt(nbt).await;
         self.enabled
             .store(nbt.get_bool("Enabled").unwrap_or(true), Ordering::Relaxed);
+        self.transfer_cooldown.store(
+            nbt.get_int("TransferCooldown").unwrap_or(-1),
+            Ordering::Relaxed,
+        );
     }
 }
 

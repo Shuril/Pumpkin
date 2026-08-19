@@ -13,6 +13,7 @@ use pumpkin_data::Block;
 use pumpkin_data::BlockDirection;
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
+use pumpkin_util::Hand;
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector3::Vector3;
 
@@ -27,6 +28,20 @@ pub trait ItemBehaviour: Send + Sync {
         _player: &'a Player,
     ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
         Box::pin(async {})
+    }
+
+    /// Hand-aware variant used by items whose state mutation depends on the
+    /// active hand (for example fishing-rod durability). Existing behaviours
+    /// keep their `normal_use` implementation through this compatibility
+    /// default.
+    fn normal_use_with_hand<'a>(
+        &'a self,
+        item: &'a Item,
+        player: &'a Player,
+        hand: Hand,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+        let _ = hand;
+        self.normal_use(item, player)
     }
 
     #[expect(clippy::too_many_arguments)]

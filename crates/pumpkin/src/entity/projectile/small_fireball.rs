@@ -44,7 +44,13 @@ impl EntityBase for SmallFireballEntity {
         caller: &'a Arc<dyn EntityBase>,
         server: &'a Server,
     ) -> EntityBaseFuture<'a, ()> {
-        Box::pin(async move { self.thrown.process_tick(caller, server).await })
+        Box::pin(async move {
+            // AbstractHurtingProjectile keeps fireballs incendiary for their
+            // whole flight. This also makes CampfireBlock's onProjectileHit
+            // gate observe small fireballs exactly like vanilla.
+            self.set_on_fire_for(1.0);
+            self.thrown.process_tick(caller, server).await;
+        })
     }
 
     fn get_entity(&self) -> &Entity {
@@ -61,6 +67,10 @@ impl EntityBase for SmallFireballEntity {
 
     fn cast_any(&self) -> &dyn std::any::Any {
         self
+    }
+
+    fn projectile_owner_id(&self) -> Option<i32> {
+        self.thrown.owner_id
     }
 
     fn on_hit(&self, hit: ProjectileHit) -> EntityBaseFuture<'_, ()> {

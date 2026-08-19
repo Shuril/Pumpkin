@@ -40,7 +40,7 @@ impl BlockStateProvider {
             Self::Simple(provider) => provider.get(pos),
             Self::Weighted(provider) => provider.get(random),
             Self::DualNoise(provider) => provider.get(pos),
-            Self::Pillar(provider) => provider.get(pos),
+            Self::Pillar(provider) => provider.get(random, pos),
             Self::RandomizedInt(provider) => provider.get(random, pos, chunk, block_registry),
             Self::Rule(provider) => provider.get(block_registry, chunk, random, pos),
         }
@@ -131,8 +131,9 @@ impl RandomizedIntBlockStateProvider {
         chunk: &T,
         block_registry: &dyn WorldPortalExt,
     ) -> &'static BlockState {
-        // TODO
-        self.source.get(random, pos, chunk, block_registry)
+        let source = self.source.get(random, pos, chunk, block_registry);
+        let value = self.values.get(random);
+        with_integer_property(source, &self.property, value).unwrap_or(source)
     }
 }
 
@@ -141,9 +142,78 @@ pub struct PillarBlockStateProvider {
 }
 
 impl PillarBlockStateProvider {
-    pub const fn get(&self, _pos: BlockPos) -> &'static BlockState {
-        // TODO: random axis
-        self.state
+    pub fn get(&self, random: &mut RandomGenerator, _pos: BlockPos) -> &'static BlockState {
+        // RotatedBlockProvider chooses one of the three axis values using the
+        // feature RNG.  Blocks without an `axis` property are left untouched,
+        // which is the safe equivalent for malformed/custom data packs.
+        let axis = match random.next_bounded_i32(3) {
+            0 => "x",
+            1 => "y",
+            _ => "z",
+        };
+        with_integer_property(self.state, "axis", axis).unwrap_or(self.state)
+    }
+}
+
+/// Return a state with one string-valued property replaced while retaining all
+/// other properties from the input state.  Generated block property types are
+/// intentionally hidden behind `BlockProperties`; using their canonical
+/// `to_props`/`from_props` bridge keeps this provider valid for every generated
+/// block family instead of special-casing age/axis implementations.
+fn with_integer_property(
+    state: &'static BlockState,
+    property: &str,
+    value: impl std::fmt::Display,
+) -> Option<&'static BlockState> {
+    let block = Block::from_state_id(state.id);
+    let props = block.properties(state.id)?.to_props();
+    let value = value.to_string();
+    if !props.iter().any(|(key, _)| *key == property) {
+        return None;
+    }
+    // `to_props` returns static values, so construct a temporary pair list and
+    // pass borrowed strings to the generated parser.
+    let mut owned = props
+        .into_iter()
+        .map(|(key, current)| (key, current.to_string()))
+        .collect::<Vec<_>>();
+    if let Some((_, current)) = owned.iter_mut().find(|(key, _)| *key == property) {
+        *current = value;
+    }
+    let borrowed = owned
+        .iter()
+        .map(|(key, value)| (*key, value.as_str()))
+        .collect::<Vec<_>>();
+    Some(BlockState::from_id(
+        block.from_properties(&borrowed).to_state_id(block),
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use pumpkin_data::{Block, BlockState};
+
+    use super::with_integer_property;
+
+    #[test]
+    fn randomized_property_preserves_unmodified_properties() {
+        let source = BlockState::from_id(
+            Block::CAVE_VINES
+                .from_properties(&[("berries", "false"), ("age", "0")])
+                .to_state_id(&Block::CAVE_VINES),
+        );
+        let changed = with_integer_property(source, "age", 17).expect("age property");
+        let props = Block::CAVE_VINES
+            .properties(changed.id)
+            .expect("cave vines properties")
+            .to_props();
+        assert!(props.contains(&("age", "17")));
+        assert!(props.contains(&("berries", "false")));
+    }
+
+    #[test]
+    fn randomized_property_rejects_unknown_property() {
+        assert!(with_integer_property(Block::CAVE_VINES.default_state, "missing", 1).is_none());
     }
 }
 

@@ -1,7 +1,12 @@
+use std::sync::atomic::Ordering::Relaxed;
 use std::sync::{Arc, Weak};
 
 use pumpkin_data::entity::EntityType;
+use pumpkin_data::meta_data_type::MetaDataType;
+use pumpkin_data::tracked_data::TrackedData;
+use pumpkin_protocol::java::client::play::Metadata;
 
+use crate::entity::EntityBaseFuture;
 use crate::entity::{
     Entity, NBTStorage,
     ai::goal::{
@@ -68,5 +73,44 @@ impl NBTStorage for SpiderEntity {}
 impl Mob for SpiderEntity {
     fn get_mob_entity(&self) -> &MobEntity {
         &self.mob_entity
+    }
+
+    /// Spider.tick updates its climbing flag after movement, from the
+    /// horizontal-collision result.  Doing this in `post_tick` is important:
+    /// `Mob::tick` invokes it after `LivingEntity::tick`, so the generic
+    /// climbing cleanup cannot erase the spider's wall-climbing state.
+    fn post_tick(&self) -> EntityBaseFuture<'_, ()> {
+        let entity = &self.mob_entity.living_entity.entity;
+        let climbing = entity.horizontal_collision.load(Relaxed);
+        let was_climbing = self
+            .mob_entity
+            .living_entity
+            .climbing
+            .swap(climbing, Relaxed);
+
+        if climbing {
+            self.mob_entity
+                .living_entity
+                .climbing_pos
+                .store(Some(entity.block_pos.load()));
+        } else if entity.on_ground.load(Relaxed) {
+            self.mob_entity.living_entity.climbing_pos.store(None);
+        }
+
+        if was_climbing != climbing {
+            // The generated tracker marks this field as absent for 26.x, so
+            // Metadata::write safely elides it there while retaining 1.21.x
+            // compatibility (where Spider flags use index 16).
+            entity.send_meta_data(
+                &[Metadata::new(
+                    TrackedData::SPIDER_FLAGS,
+                    MetaDataType::BYTE,
+                    if climbing { 1u8 } else { 0u8 },
+                )],
+                None,
+            );
+        }
+
+        Box::pin(async {})
     }
 }

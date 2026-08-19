@@ -6,7 +6,7 @@ use crate::command::context::command_context::CommandContext;
 use crate::command::errors::error_types::CommandErrorType;
 use crate::command::node::dispatcher::CommandDispatcher;
 use crate::command::node::{CommandExecutor, CommandExecutorResult};
-use crate::world::loot::LootTableExt;
+use crate::world::loot::{LootTableExt, derive_loot_seed};
 use pumpkin_data::translation;
 use pumpkin_util::PermissionLvl;
 use pumpkin_util::permission::{Permission, PermissionDefault, PermissionRegistry};
@@ -59,9 +59,9 @@ async fn insert_into_inventory(
             break;
         }
         let mut slot_stack = inventory.get_stack(i).await;
-        if !slot_stack.is_empty() && slot_stack.get_item().id == stack.get_item().id {
-            let max_stack_size = 64;
-            let space = max_stack_size - slot_stack.item_count;
+        if slot_stack.are_items_and_components_equal(&stack) && slot_stack.is_stackable() {
+            let max_stack_size = slot_stack.get_max_stack_size();
+            let space = max_stack_size.saturating_sub(slot_stack.item_count);
             if space > 0 {
                 let to_add = stack.item_count.min(space);
                 slot_stack.item_count += to_add;
@@ -77,9 +77,9 @@ async fn insert_into_inventory(
         }
         let slot_stack = inventory.get_stack(i).await;
         if slot_stack.is_empty() {
-            inventory.set_stack(i, stack.clone()).await;
-            stack.item_count = 0;
-            break;
+            let to_add = stack.item_count.min(stack.get_max_stack_size());
+            inventory.set_stack(i, stack.copy_with_count(to_add)).await;
+            stack.item_count -= to_add;
         }
     }
 
@@ -100,16 +100,48 @@ impl CommandExecutor for LootExecutor {
                     } else {
                         format!("minecraft:{loot_table_str}")
                     };
+                    let world = context.world();
+                    let world_time = world.level_info.load().day_time as u64;
+                    let seed =
+                        derive_loot_seed(world.level.seed.0, None, world_time, 0x434f4d4d414e44)
+                            as i64;
 
-                    let chest_table =
-                        pumpkin_data::chest_loot_table::get_chest_loot_table(&formatted_key);
-                    if let Some(table) = chest_table {
-                        let seed: i64 = rand::random();
-                        stacks = crate::world::loot::generate_chest_loot(table, seed);
+                    // A datapack override wins over the generated vanilla
+                    // chest registry.  Invalid runtime shapes are reported
+                    // as an invalid table instead of silently falling back to
+                    // a different table with the same key.
+                    let datapack_result = if let Some(server) = world.server.upgrade() {
+                        let resources = server.recipe_manager.datapack_resources().await;
+                        resources.loot_tables.contains_key(&formatted_key).then(|| {
+                            crate::world::loot::generate_datapack_chest_loot(
+                                &resources,
+                                &formatted_key,
+                                seed,
+                            )
+                        })
                     } else {
-                        return Err(ERROR_INVALID_LOOT_TABLE.create_without_context(
-                            TextComponent::text(loot_table_str.to_string()),
-                        ));
+                        None
+                    };
+                    match datapack_result {
+                        Some(Ok(items)) => stacks = items,
+                        Some(Err(error)) => {
+                            tracing::warn!(
+                                "Could not evaluate datapack loot table {formatted_key}: {error}"
+                            );
+                            return Err(ERROR_INVALID_LOOT_TABLE.create_without_context(
+                                TextComponent::text(loot_table_str.to_string()),
+                            ));
+                        }
+                        None => {
+                            let Some(table) = pumpkin_data::chest_loot_table::get_chest_loot_table(
+                                &formatted_key,
+                            ) else {
+                                return Err(ERROR_INVALID_LOOT_TABLE.create_without_context(
+                                    TextComponent::text(loot_table_str.to_string()),
+                                ));
+                            };
+                            stacks = crate::world::loot::generate_chest_loot(table, seed);
+                        }
                     }
                 }
                 Source::Kill => {
@@ -119,10 +151,29 @@ impl CommandExecutor for LootExecutor {
                     for entity in target_entities {
                         if let Some(loot_table) = &entity.get_entity().entity_type.loot_table {
                             has_loot = true;
-                            let params = crate::world::loot::LootContextParameters {
-                                world_time: context.world().level_info.load().day_time as u64,
+                            let entity_position = entity.get_entity().pos.load();
+                            let entity_uuid = entity.get_entity().entity_uuid.as_u128();
+                            let world = context.world();
+                            let world_time = world.level_info.load().day_time as u64;
+                            let mut params = crate::world::loot::LootContextParameters {
+                                biome: Some(
+                                    world
+                                        .get_biome(&entity.get_entity().block_pos.load())
+                                        .registry_id,
+                                ),
+                                position: Some(entity_position),
+                                world_time,
+                                random_seed: Some(derive_loot_seed(
+                                    world.level.seed.0,
+                                    Some(entity_position),
+                                    world_time,
+                                    (entity_uuid as u64)
+                                        ^ ((entity_uuid >> 64) as u64)
+                                        ^ 0x434d444b494c4c,
+                                )),
                                 ..Default::default()
                             };
+                            params.attach_biome_resolver(&world);
                             stacks.extend(loot_table.get_loot(params));
                         }
                     }
@@ -150,12 +201,21 @@ impl CommandExecutor for LootExecutor {
                         let tool_stack =
                             tool_item.map(|item| pumpkin_data::item_stack::ItemStack::new(1, item));
 
-                        let params = crate::world::loot::LootContextParameters {
+                        let mut params = crate::world::loot::LootContextParameters {
                             block_state: Some(world.get_block_state(&pos)),
+                            biome: Some(world.get_biome(&pos).registry_id),
                             tool: tool_stack,
+                            position: Some(pos.to_centered_f64()),
                             world_time: world.level_info.load().day_time as u64,
+                            random_seed: Some(derive_loot_seed(
+                                world.level.seed.0,
+                                Some(pos.to_centered_f64()),
+                                world.level_info.load().day_time as u64,
+                                0x434d444d494e45,
+                            )),
                             ..Default::default()
                         };
+                        params.attach_biome_resolver(&world);
 
                         stacks.extend(loot_table.get_loot(params));
                     }

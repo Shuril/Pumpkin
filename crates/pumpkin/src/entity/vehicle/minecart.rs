@@ -6,12 +6,16 @@ mod rideable;
 mod tnt;
 
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, Ordering};
 
 use pumpkin_protocol::java::server::play::SPlayerInput;
 use rand::RngExt;
 
 use crate::{
+    block::entities::{
+        BlockEntity, command_block::CommandBlockEntity, mob_spawner::MobSpawnerBlockEntity,
+    },
+    command::{CommandSender, context::command_source::CommandSource},
     entity::{
         Entity, EntityBase, EntityBaseFuture, NBTStorage, NbtFuture, living::LivingEntity,
         player::Player,
@@ -24,12 +28,20 @@ use pumpkin_data::damage::DamageType;
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
+use pumpkin_data::meta_data_type::MetaDataType;
 use pumpkin_data::tag::{self, Taggable};
+use pumpkin_data::tracked_data::TrackedData;
 use pumpkin_nbt::compound::NbtCompound;
+use pumpkin_protocol::codec::var_int::VarInt;
+use pumpkin_protocol::java::client::play::Metadata;
 use pumpkin_util::GameMode;
 use pumpkin_util::math::position::BlockPos;
+use pumpkin_util::math::vector2::Vector2;
 use pumpkin_util::math::vector3::Vector3;
+use pumpkin_util::permission::PermissionLvl;
+use pumpkin_util::text::TextComponent;
 use pumpkin_world::inventory::Inventory;
+use tokio::sync::Mutex;
 
 use crate::entity::vehicle::vehicle::VehicleEntity;
 use chest::ChestMinecart;
@@ -38,6 +50,163 @@ use furnace::FurnaceMinecart;
 use hopper::HopperMinecart;
 use rideable::RideableMinecart;
 use tnt::TntMinecart;
+
+/// State held by a command-block minecart.  The command is intentionally
+/// independent of a block entity: the cart moves, while command execution
+/// still needs a stable, serializable command source.
+struct CommandMinecart {
+    command: Mutex<String>,
+    last_output: Mutex<String>,
+    track_output: AtomicBool,
+    success_count: AtomicU32,
+    activation_cooldown: AtomicI32,
+}
+
+impl CommandMinecart {
+    const ACTIVATION_DELAY: i32 = 4;
+
+    fn new() -> Self {
+        Self {
+            command: Mutex::new(String::new()),
+            last_output: Mutex::new(String::new()),
+            track_output: AtomicBool::new(true),
+            success_count: AtomicU32::new(0),
+            activation_cooldown: AtomicI32::new(0),
+        }
+    }
+
+    fn tick(&self) {
+        let _ =
+            self.activation_cooldown
+                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
+                    (value > 0).then_some(value - 1)
+                });
+    }
+
+    async fn activate(&self, entity: &Entity) {
+        if self.activation_cooldown.load(Ordering::Relaxed) > 0
+            || self
+                .activation_cooldown
+                .compare_exchange(
+                    0,
+                    Self::ACTIVATION_DELAY,
+                    Ordering::AcqRel,
+                    Ordering::Relaxed,
+                )
+                .is_err()
+        {
+            return;
+        }
+
+        let command = self.command.lock().await.trim().to_owned();
+        if command.is_empty() {
+            self.success_count.store(0, Ordering::Release);
+            return;
+        }
+
+        let world = entity.world.load();
+        let Some(server) = world.server.upgrade() else {
+            self.success_count.store(0, Ordering::Release);
+            return;
+        };
+        // Reuse the command-block sender semantics (permission level 2,
+        // success count and LastOutput) while supplying the moving cart's
+        // current position explicitly.  We do not register this temporary
+        // object as a world block entity; it is only the command source state.
+        let command_entity = Arc::new(CommandBlockEntity::new(
+            entity.block_pos.load(),
+            self.track_output.load(Ordering::Acquire),
+            false,
+        ));
+        *command_entity.command.lock().await = command.clone();
+        let source = CommandSource::new(
+            CommandSender::CommandBlock(command_entity.clone(), world.clone()),
+            world.clone(),
+            None,
+            entity.pos.load(),
+            Vector2::new(entity.yaw.load(), entity.pitch.load()),
+            "@".to_owned(),
+            TextComponent::text("@"),
+            server.clone(),
+        );
+        server
+            .command_dispatcher
+            .read()
+            .await
+            .handle_command(&source, &command)
+            .await;
+        self.success_count.store(
+            command_entity.success_count.load(Ordering::Acquire),
+            Ordering::Release,
+        );
+        let last_output = command_entity.last_output.lock().await.clone();
+        *self.last_output.lock().await = last_output.clone();
+        entity.send_meta_data(
+            &[Metadata::new(
+                TrackedData::ID_LAST_OUTPUT,
+                MetaDataType::OPTIONAL_TEXT_COMPONENT,
+                Some(TextComponent::text(last_output)),
+            )],
+            None,
+        );
+    }
+
+    async fn write_nbt(&self, nbt: &mut NbtCompound) {
+        nbt.put_string("Command", self.command.lock().await.clone());
+        nbt.put_string("LastOutput", self.last_output.lock().await.clone());
+        nbt.put_bool("TrackOutput", self.track_output.load(Ordering::Acquire));
+        nbt.put_int(
+            "SuccessCount",
+            self.success_count.load(Ordering::Acquire) as i32,
+        );
+    }
+
+    async fn read_nbt(&self, nbt: &NbtCompound) {
+        *self.command.lock().await = nbt.get_string("Command").unwrap_or("").to_owned();
+        *self.last_output.lock().await = nbt.get_string("LastOutput").unwrap_or("").to_owned();
+        self.track_output.store(
+            nbt.get_bool("TrackOutput").unwrap_or(true),
+            Ordering::Release,
+        );
+        self.success_count.store(
+            nbt.get_int("SuccessCount").unwrap_or(0).max(0) as u32,
+            Ordering::Release,
+        );
+    }
+}
+
+/// A moving mob spawner backed by the normal spawner state machine.  Keeping
+/// the state in an `Arc` preserves weighted potentials and delay across cart
+/// movement, while `set_position` supplies the current cart block each tick.
+struct SpawnerMinecart {
+    spawner: Mutex<MobSpawnerBlockEntity>,
+}
+
+impl SpawnerMinecart {
+    fn new(position: BlockPos) -> Self {
+        Self {
+            spawner: Mutex::new(MobSpawnerBlockEntity::new(position, None)),
+        }
+    }
+
+    async fn tick(&self, entity: &Entity) {
+        let world = entity.world.load();
+        let spawner = self.spawner.lock().await;
+        spawner.set_position(entity.block_pos.load());
+        spawner.tick(&world).await;
+    }
+
+    async fn write_nbt(&self, nbt: &mut NbtCompound) {
+        self.spawner.lock().await.write_entity_nbt(nbt);
+    }
+
+    async fn read_nbt(&self, nbt: &NbtCompound) {
+        // Replace the complete typed state so custom SpawnData, weighted
+        // potentials and all timing/configuration fields survive a load.
+        let position = self.spawner.lock().await.get_position();
+        *self.spawner.lock().await = MobSpawnerBlockEntity::from_nbt(nbt, position);
+    }
+}
 
 const fn get_exits(
     shape: pumpkin_data::block_properties::RailShape,
@@ -71,6 +240,8 @@ enum MinecartKind {
     Furnace(FurnaceMinecart),
     Hopper(HopperMinecart),
     Tnt(TntMinecart),
+    Command(CommandMinecart),
+    Spawner(SpawnerMinecart),
     Other,
 }
 
@@ -86,6 +257,12 @@ impl MinecartEntity {
                 MinecartKind::Hopper(HopperMinecart::new())
             }
             id if id == EntityType::TNT_MINECART.id => MinecartKind::Tnt(TntMinecart::new()),
+            id if id == EntityType::COMMAND_BLOCK_MINECART.id => {
+                MinecartKind::Command(CommandMinecart::new())
+            }
+            id if id == EntityType::SPAWNER_MINECART.id => {
+                MinecartKind::Spawner(SpawnerMinecart::new(entity.block_pos.load()))
+            }
             _ => MinecartKind::Other,
         };
         Self {
@@ -102,12 +279,43 @@ impl MinecartEntity {
         }
     }
 
+    /// Analog output exposed by a detector rail for storage minecarts.
+    pub async fn detector_rail_comparator_output(&self) -> Option<u8> {
+        if let MinecartKind::Command(minecart) = &self.kind {
+            return Some(minecart.success_count.load(Ordering::Acquire).min(15) as u8);
+        }
+        let inventory = self.container()?;
+        Some(crate::block::calculate_comparator_output(inventory.as_ref()).await)
+    }
+
+    /// Applies the Java command-minecart editor packet after the network
+    /// layer has checked creative mode, permission and interaction distance.
+    pub async fn set_command(&self, command: &str, track_output: bool) {
+        let MinecartKind::Command(minecart) = &self.kind else {
+            return;
+        };
+        let command = command.strip_prefix('/').unwrap_or(command);
+        *minecart.command.lock().await = command.to_owned();
+        minecart.track_output.store(track_output, Ordering::Release);
+        self.vehicle.entity.send_meta_data(
+            &[Metadata::new(
+                TrackedData::ID_COMMAND_NAME,
+                MetaDataType::STRING,
+                command.to_owned(),
+            )],
+            None,
+        );
+    }
+
     const fn drop_item(&self) -> Option<&'static Item> {
         match &self.kind {
             MinecartKind::Chest(_) => Some(&Item::CHEST_MINECART),
             MinecartKind::Furnace(_) => Some(&Item::FURNACE_MINECART),
             MinecartKind::Hopper(_) => Some(&Item::HOPPER_MINECART),
             MinecartKind::Tnt(_) => Some(&Item::TNT_MINECART),
+            MinecartKind::Rideable(_) | MinecartKind::Command(_) | MinecartKind::Spawner(_) => {
+                Some(&Item::MINECART)
+            }
             _ => None,
         }
     }
@@ -122,6 +330,8 @@ impl NBTStorage for MinecartEntity {
                 MinecartKind::Furnace(minecart) => minecart.write_nbt(nbt),
                 MinecartKind::Hopper(minecart) => minecart.write_nbt(nbt).await,
                 MinecartKind::Tnt(minecart) => minecart.write_nbt(nbt),
+                MinecartKind::Command(minecart) => minecart.write_nbt(nbt).await,
+                MinecartKind::Spawner(minecart) => minecart.write_nbt(nbt).await,
                 MinecartKind::Rideable(_) | MinecartKind::Other => {}
             }
         })
@@ -135,6 +345,8 @@ impl NBTStorage for MinecartEntity {
                 MinecartKind::Furnace(minecart) => minecart.read_nbt(nbt),
                 MinecartKind::Hopper(minecart) => minecart.read_nbt(nbt).await,
                 MinecartKind::Tnt(minecart) => minecart.read_nbt(nbt),
+                MinecartKind::Command(minecart) => minecart.read_nbt(nbt).await,
+                MinecartKind::Spawner(minecart) => minecart.read_nbt(nbt).await,
                 MinecartKind::Rideable(_) | MinecartKind::Other => {}
             }
         })
@@ -152,6 +364,12 @@ impl EntityBase for MinecartEntity {
             self.vehicle.tick();
             if let MinecartKind::Furnace(minecart) = &self.kind {
                 minecart.tick(&self.vehicle.entity);
+            }
+            if let MinecartKind::Command(minecart) = &self.kind {
+                minecart.tick();
+            }
+            if let MinecartKind::Spawner(minecart) = &self.kind {
+                minecart.tick(&self.vehicle.entity).await;
             }
 
             let world = self.vehicle.entity.world.load();
@@ -229,6 +447,9 @@ impl EntityBase for MinecartEntity {
                         match &self.kind {
                             MinecartKind::Tnt(minecart) => {
                                 minecart.prime(&self.vehicle.entity, 80);
+                            }
+                            MinecartKind::Command(minecart) => {
+                                minecart.activate(&self.vehicle.entity).await;
                             }
                             MinecartKind::Rideable(_) => {
                                 let passengers =
@@ -390,7 +611,11 @@ impl EntityBase for MinecartEntity {
                     | RailShape::AscendingSouth => pos.y,
                     _ => f64::from(block_pos.0.y) + RAIL_HEIGHT_OFFSET,
                 };
-                self.vehicle.entity.pos.store(target_position);
+                // Keep all position-derived state in sync. Writing `pos` directly leaves
+                // `block_pos`/`chunk_pos` stale, so an unloading chunk can save the cart at
+                // its old location and the entity tracker can keep a client-side ghost.
+                // `set_pos` also emits the normal cross-chunk tracking transition.
+                self.vehicle.entity.set_pos(target_position);
 
                 let horizontal_in_direction = Vector3::new(exit1.x, 0.0, exit1.z);
                 let mut horizontal_out_direction = Vector3::new(exit0.x, 0.0, exit0.z);
@@ -511,6 +736,11 @@ impl EntityBase for MinecartEntity {
 
     fn get_living_entity(&self) -> Option<&LivingEntity> {
         None
+    }
+
+    fn get_entity_inventory(self: Arc<Self>) -> Option<Arc<dyn Inventory>> {
+        self.container()
+            .map(|inventory| inventory.clone() as Arc<dyn Inventory>)
     }
 
     fn is_pushable(&self) -> bool {
@@ -668,6 +898,47 @@ impl EntityBase for MinecartEntity {
             if let MinecartKind::Furnace(minecart) = &self.kind {
                 minecart.init_data_tracker(&self.vehicle.entity);
             }
+            match &self.kind {
+                MinecartKind::Command(minecart) => {
+                    let command = minecart.command.lock().await.clone();
+                    let last_output = minecart.last_output.lock().await.clone();
+                    self.vehicle.entity.send_meta_data(
+                        &[Metadata::new(
+                            TrackedData::ID_CUSTOM_DISPLAY_BLOCK,
+                            MetaDataType::BLOCK_STATE,
+                            VarInt(i32::from(Block::COMMAND_BLOCK.default_state.id.as_u16())),
+                        )],
+                        None,
+                    );
+                    self.vehicle.entity.send_meta_data(
+                        &[Metadata::new(
+                            TrackedData::ID_COMMAND_NAME,
+                            MetaDataType::STRING,
+                            command,
+                        )],
+                        None,
+                    );
+                    self.vehicle.entity.send_meta_data(
+                        &[Metadata::new(
+                            TrackedData::ID_LAST_OUTPUT,
+                            MetaDataType::OPTIONAL_TEXT_COMPONENT,
+                            Some(TextComponent::text(last_output)),
+                        )],
+                        None,
+                    );
+                }
+                MinecartKind::Spawner(_) => {
+                    self.vehicle.entity.send_meta_data(
+                        &[Metadata::new(
+                            TrackedData::ID_CUSTOM_DISPLAY_BLOCK,
+                            MetaDataType::BLOCK_STATE,
+                            VarInt(i32::from(Block::SPAWNER.default_state.id.as_u16())),
+                        )],
+                        None,
+                    );
+                }
+                _ => {}
+            }
         })
     }
 
@@ -779,7 +1050,19 @@ impl EntityBase for MinecartEntity {
                 MinecartKind::Rideable(minecart) => {
                     minecart.interact(&self.vehicle.entity, player).await
                 }
-                MinecartKind::Tnt(_) | MinecartKind::Other => false,
+                MinecartKind::Command(_)
+                    if player.permission_lvl.load().ge(&PermissionLvl::Two) =>
+                {
+                    // The Java client opens the command-minecart editor here.
+                    // Until that dedicated packet exists, consume the
+                    // interaction for authorized users rather than mounting
+                    // the cart or letting a normal player edit it.
+                    true
+                }
+                MinecartKind::Command(_)
+                | MinecartKind::Spawner(_)
+                | MinecartKind::Tnt(_)
+                | MinecartKind::Other => false,
             }
         })
     }
@@ -854,5 +1137,82 @@ impl EntityBase for MinecartEntity {
 
     fn cast_any(&self) -> &dyn std::any::Any {
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CommandMinecart;
+    use futures::executor::block_on;
+    use pumpkin_nbt::compound::NbtCompound;
+
+    #[test]
+    fn command_minecart_activation_cooldown_is_four_ticks() {
+        let minecart = CommandMinecart::new();
+        minecart
+            .activation_cooldown
+            .store(4, std::sync::atomic::Ordering::Relaxed);
+        minecart.tick();
+        assert_eq!(
+            minecart
+                .activation_cooldown
+                .load(std::sync::atomic::Ordering::Relaxed),
+            3
+        );
+        minecart.tick();
+        minecart.tick();
+        minecart.tick();
+        assert_eq!(
+            minecart
+                .activation_cooldown
+                .load(std::sync::atomic::Ordering::Relaxed),
+            0
+        );
+    }
+
+    #[test]
+    fn command_minecart_nbt_preserves_command_state() {
+        let minecart = CommandMinecart::new();
+        block_on(async {
+            *minecart.command.lock().await = "say hello".to_owned();
+            *minecart.last_output.lock().await = "ok".to_owned();
+            minecart
+                .success_count
+                .store(7, std::sync::atomic::Ordering::Release);
+            let mut nbt = NbtCompound::new();
+            minecart.write_nbt(&mut nbt).await;
+
+            let restored = CommandMinecart::new();
+            restored.read_nbt(&nbt).await;
+            assert_eq!(restored.command.lock().await.as_str(), "say hello");
+            assert_eq!(restored.last_output.lock().await.as_str(), "ok");
+            assert_eq!(
+                restored
+                    .success_count
+                    .load(std::sync::atomic::Ordering::Acquire),
+                7
+            );
+        });
+    }
+
+    #[test]
+    fn command_minecart_nbt_preserves_track_output_flag() {
+        let minecart = CommandMinecart::new();
+        minecart
+            .track_output
+            .store(false, std::sync::atomic::Ordering::Release);
+        block_on(async {
+            let mut nbt = NbtCompound::new();
+            minecart.write_nbt(&mut nbt).await;
+            assert_eq!(nbt.get_bool("TrackOutput"), Some(false));
+
+            let restored = CommandMinecart::new();
+            restored.read_nbt(&nbt).await;
+            assert!(
+                !restored
+                    .track_output
+                    .load(std::sync::atomic::Ordering::Acquire)
+            );
+        });
     }
 }

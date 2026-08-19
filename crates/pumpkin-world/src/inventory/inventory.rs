@@ -1,3 +1,4 @@
+use pumpkin_data::BlockDirection;
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
@@ -115,6 +116,48 @@ pub trait Inventory: Send + Sync + Clearable {
         _hopper_inventory: &dyn Inventory,
         _slot: usize,
         _stack: &ItemStack,
+    ) -> bool {
+        true
+    }
+
+    /// Returns whether a hopper may extract a stack through `direction`.
+    ///
+    /// Vanilla's `WorldlyContainer` exposes side-aware extraction.  Existing
+    /// inventories that do not have sided rules retain the historical
+    /// `can_transfer_to` behaviour through this default implementation.
+    fn can_extract_to_hopper(
+        &self,
+        hopper_inventory: &dyn Inventory,
+        slot: usize,
+        stack: &ItemStack,
+        _direction: BlockDirection,
+    ) -> bool {
+        self.can_transfer_to(hopper_inventory, slot, stack)
+    }
+
+    /// Returns whether a hopper may insert a stack through `direction`.
+    ///
+    /// The default is the inventory's slot validation; specialized
+    /// containers (for example furnaces) override this to implement their
+    /// top/side/bottom slot contract.
+    fn can_insert_from_hopper(
+        &self,
+        slot: usize,
+        stack: &ItemStack,
+        _direction: BlockDirection,
+    ) -> bool {
+        self.is_valid_slot_for(slot, stack)
+    }
+
+    /// Allows a container to reject merging into an already occupied slot.
+    /// Most inventories use normal component-equality merging; brewing stands
+    /// override this for their bottle slots.
+    fn can_merge_from_hopper(
+        &self,
+        _slot: usize,
+        _current: &ItemStack,
+        _incoming: &ItemStack,
+        _direction: BlockDirection,
     ) -> bool {
         true
     }

@@ -55,15 +55,18 @@ impl VarInt {
         Ok(())
     }
 
-    // TODO: Validate that the first byte will not overflow a i32
     #[inline]
     pub fn decode(read: &mut impl Read) -> Result<Self, ReadingError> {
-        let mut val = 0;
+        let mut val = 0_u32;
         for i in 0..Self::MAX_SIZE.get() {
             let byte = read.get_u8()?;
-            val |= (i32::from(byte) & 0x7F) << (i * 7);
+            let payload = u32::from(byte & 0x7F);
+            if i == Self::MAX_SIZE.get() - 1 && payload > 0x0F {
+                return Err(ReadingError::TooLarge("VarInt".to_string()));
+            }
+            val |= payload << (i * 7);
             if byte & 0x80 == 0 {
-                return Ok(Self(val));
+                return Ok(Self(val as i32));
             }
         }
         Err(ReadingError::TooLarge("VarInt".to_string()))
@@ -81,9 +84,13 @@ impl VarInt {
                     ReadingError::Incomplete(err.to_string())
                 }
             })?;
-            val |= (i32::from(byte) & 0x7F) << (i * 7);
+            let payload = u32::from(byte & 0x7F);
+            if i == Self::MAX_SIZE.get() - 1 && payload > 0x0F {
+                return Err(ReadingError::TooLarge("VarInt".to_string()));
+            }
+            val |= payload << (i * 7);
             if byte & 0x80 == 0 {
-                return Ok(Self(val));
+                return Ok(Self(val as i32));
             }
         }
         Err(ReadingError::TooLarge("VarInt".to_string()))
@@ -177,7 +184,14 @@ impl PacketRead for VarInt {
         let mut val = 0u32;
         for i in 0..Self::MAX_SIZE.get() {
             let byte = u8::read(read)?;
-            val |= u32::from(byte & 0x7F) << (i * 7);
+            let payload = u32::from(byte & 0x7F);
+            if i == Self::MAX_SIZE.get() - 1 && payload > 0x0F {
+                return Err(Error::new(
+                    ErrorKind::InvalidData,
+                    "VarInt payload overflows i32",
+                ));
+            }
+            val |= payload << (i * 7);
             if byte & 0x80 == 0 {
                 return Ok(Self(((val >> 1) as i32) ^ -((val & 1) as i32)));
             }
@@ -200,5 +214,15 @@ mod tests {
                 VarInt(value)
             );
         }
+    }
+
+    #[test]
+    fn rejects_overflowing_fifth_byte() {
+        // The fifth byte has only four payload bits in a 32-bit VarInt.
+        let mut encoded = [0x80, 0x80, 0x80, 0x80, 0x10].as_slice();
+        assert!(VarInt::decode(&mut encoded).is_err());
+
+        let mut encoded = [0x80, 0x80, 0x80, 0x80, 0x10].as_slice();
+        assert!(VarInt::read(&mut encoded).is_err());
     }
 }

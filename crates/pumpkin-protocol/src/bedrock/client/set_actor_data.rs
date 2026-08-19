@@ -5,6 +5,7 @@ use crate::{
     serial::PacketWrite,
 };
 use pumpkin_macros::packet;
+use pumpkin_nbt::{compound::NbtCompound, serializer::NbtWriteHelperBedrock, tag::NbtTag};
 use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
 use std::io::Error;
 
@@ -89,7 +90,7 @@ pub enum MetadataValue {
     Int(i32),
     Float(f32),
     String(String),
-    CompoundTag,
+    CompoundTag(NbtCompound),
     BlockPos(BlockPos),
     Long(i64),
     Vec3(Vector3<f32>),
@@ -104,7 +105,7 @@ impl MetadataValue {
             Self::Int(_) => 2,
             Self::Float(_) => 3,
             Self::String(_) => 4,
-            Self::CompoundTag => 5,
+            Self::CompoundTag(_) => 5,
             Self::BlockPos(_) => 6,
             Self::Long(_) => 7,
             Self::Vec3(_) => 8,
@@ -118,7 +119,12 @@ impl MetadataValue {
             Self::Int(v) => VarInt(*v).write(writer),
             Self::Float(v) => writer.write_all(&v.to_le_bytes()),
             Self::String(v) => v.write(writer),
-            Self::CompoundTag => Err(Error::other("CompoundTag not implemented")),
+            Self::CompoundTag(compound) => {
+                let mut nbt_writer = NbtWriteHelperBedrock::new(writer);
+                NbtTag::Compound(compound.clone())
+                    .serialize(&mut nbt_writer)
+                    .map_err(|error| Error::other(error.to_string()))
+            }
             Self::BlockPos(v) => v.write(writer),
             Self::Long(v) => VarLong(*v).write(writer),
             Self::Vec3(v) => {
@@ -431,7 +437,9 @@ pub mod entity_data_flag {
 
 #[cfg(test)]
 mod tests {
-    use super::{EntityMetadata, entity_data_key};
+    use super::{EntityMetadata, MetadataValue, entity_data_key};
+    use crate::serial::PacketWrite;
+    use pumpkin_nbt::compound::NbtCompound;
 
     #[test]
     fn partial_metadata_does_not_reset_flags() {
@@ -440,5 +448,17 @@ mod tests {
         assert!(!metadata.0.contains_key(&entity_data_key::FLAGS));
         assert!(!metadata.0.contains_key(&entity_data_key::FLAGS_TWO));
         assert!(!metadata.0.contains_key(&entity_data_key::PLAYER_FLAGS));
+    }
+
+    #[test]
+    fn compound_tag_metadata_uses_bedrock_network_nbt() {
+        let mut compound = NbtCompound::new();
+        compound.put_int("value", 42);
+        let mut metadata = EntityMetadata::new();
+        metadata.set(entity_data_key::NAME, MetadataValue::CompoundTag(compound));
+
+        let mut bytes = Vec::new();
+        metadata.write(&mut bytes).expect("metadata should encode");
+        assert!(bytes.len() > 4, "compound metadata must not be a stub");
     }
 }

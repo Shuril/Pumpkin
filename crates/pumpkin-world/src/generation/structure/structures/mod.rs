@@ -503,6 +503,44 @@ impl StructurePiece {
 
         true
     }
+
+    /// Places an inventory block with a deferred loot table at the given local
+    /// coordinates.  Unlike [`Self::add_chest`], this keeps the caller's block
+    /// state intact so generated dispensers, barrels and similar containers
+    /// retain their vanilla-facing state.
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_loot_container(
+        &self,
+        chunk: &mut ProtoChunk,
+        bb: &BlockBox,
+        random: &mut RandomGenerator,
+        x: i32,
+        y: i32,
+        z: i32,
+        state: &BlockState,
+        block_entity_id: &str,
+        loot_table: &str,
+    ) -> bool {
+        use pumpkin_nbt::compound::NbtCompound;
+
+        let world_pos = self.offset_pos(x, y, z);
+        if !bb.contains_pos(&world_pos) {
+            return false;
+        }
+
+        chunk.set_block_state(world_pos.x, world_pos.y, world_pos.z, state);
+
+        let mut nbt = NbtCompound::new();
+        nbt.put_string("id", block_entity_id.to_string());
+        nbt.put_int("x", world_pos.x);
+        nbt.put_int("y", world_pos.y);
+        nbt.put_int("z", world_pos.z);
+        nbt.put_string("LootTable", loot_table.to_string());
+        nbt.put_long("LootTableSeed", random.next_i64());
+        chunk.add_block_entity(nbt);
+
+        true
+    }
 }
 
 impl StructurePieceBase for StructurePiece {

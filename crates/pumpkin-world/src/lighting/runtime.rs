@@ -3,7 +3,7 @@ use crate::chunk::palette::BlockPalette;
 use crate::level::Level;
 use crossbeam::queue::SegQueue;
 use pumpkin_config::lighting::LightingEngineConfig;
-use pumpkin_data::BlockDirection;
+use pumpkin_data::{BlockDirection, dimension::Dimension};
 use pumpkin_util::math::position::BlockPos;
 use std::sync::Arc;
 
@@ -31,9 +31,19 @@ impl Default for DynamicLightEngine {
     }
 }
 impl DynamicLightEngine {
+    #[inline]
+    fn sky_bounds(dimension: &Dimension) -> Option<(i32, i32)> {
+        dimension
+            .has_skylight
+            .then_some((dimension.min_y, dimension.min_y + dimension.height - 1))
+    }
+
     /// Checks if there is an open sky above the given position (no opaque blocks blocking sky light).
     fn has_open_sky_above(level: &Arc<Level>, pos: &BlockPos) -> bool {
-        let max_y = 319; // Maximum build height in Minecraft, can be adjusted if needed
+        let dimension = level.world_gen.dimension();
+        let Some((_, max_y)) = Self::sky_bounds(dimension) else {
+            return false;
+        };
         let mut current_pos = *pos;
 
         // Scan upward until we hit sky or an opaque block
@@ -351,6 +361,13 @@ impl DynamicLightEngine {
     }
 
     pub fn check_sky_light_updates(&self, level: &Arc<Level>, pos: BlockPos) {
+        // Nether-like dimensions have no sky-light layer.  Do this before the
+        // configurable Full/Dark overrides so a no-skylight dimension can
+        // never accidentally acquire a synthetic sky source.
+        if Self::sky_bounds(level.world_gen.dimension()).is_none() {
+            self.set_sky_light_level(level, &pos, 0).ok();
+            return;
+        }
         match level.lighting_config {
             LightingEngineConfig::Full => {
                 self.set_sky_light_level(level, &pos, 15).ok();
@@ -431,7 +448,11 @@ impl DynamicLightEngine {
         let (chunk_pos, relative) = position.chunk_and_chunk_relative_position();
 
         level.read_chunk_sync(&chunk_pos, |chunk| {
-            let section_idx = (relative.y - chunk.section.min_y) as usize / 16;
+            let section_y = relative.y - chunk.section.min_y;
+            if section_y < 0 {
+                return None;
+            }
+            let section_idx = section_y as usize / 16;
             let light_engine = chunk.light_engine.lock().ok()?;
 
             light_engine
@@ -439,7 +460,7 @@ impl DynamicLightEngine {
                 .get(section_idx)?
                 .get(
                     relative.x as usize,
-                    (relative.y - chunk.section.min_y) as usize % 16,
+                    section_y as usize % 16,
                     relative.z as usize,
                 )
                 .into()
@@ -447,11 +468,17 @@ impl DynamicLightEngine {
     }
 
     pub fn get_sky_light_level_sync(&self, level: &Level, position: &BlockPos) -> u8 {
+        if Self::sky_bounds(level.world_gen.dimension()).is_none() {
+            return 0;
+        }
         let (chunk_coordinate, relative) = position.chunk_and_chunk_relative_position();
         level
             .read_chunk_sync(&chunk_coordinate, |chunk| {
-                let section_index =
-                    (relative.y - chunk.section.min_y) as usize / BlockPalette::SIZE;
+                let section_y = relative.y - chunk.section.min_y;
+                if section_y < 0 {
+                    return 0;
+                }
+                let section_index = section_y as usize / BlockPalette::SIZE;
 
                 let light_engine = chunk
                     .light_engine
@@ -464,7 +491,7 @@ impl DynamicLightEngine {
 
                 light_engine.sky_light[section_index].get(
                     relative.x as usize,
-                    (relative.y - chunk.section.min_y) as usize % BlockPalette::SIZE,
+                    section_y as usize % BlockPalette::SIZE,
                     relative.z as usize,
                 )
             })
@@ -476,7 +503,11 @@ impl DynamicLightEngine {
 
         level
             .read_chunk_sync(&chunk_pos, |chunk| {
-                let section_idx = (relative.y - chunk.section.min_y) as usize / 16;
+                let section_y = relative.y - chunk.section.min_y;
+                if section_y < 0 {
+                    return None;
+                }
+                let section_idx = section_y as usize / 16;
                 chunk
                     .light_engine
                     .lock()
@@ -486,7 +517,7 @@ impl DynamicLightEngine {
                     .map(|section| {
                         section.get(
                             relative.x as usize,
-                            (relative.y - chunk.section.min_y) as usize % 16,
+                            section_y as usize % 16,
                             relative.z as usize,
                         )
                     })
@@ -501,8 +532,12 @@ impl DynamicLightEngine {
         light_level: u8,
     ) -> Result<(), String> {
         let (chunk_coordinate, relative) = position.chunk_and_chunk_relative_position();
-        level.read_chunk_sync(&chunk_coordinate, |chunk| {
-            let section_index = (relative.y - chunk.section.min_y) as usize / BlockPalette::SIZE;
+        let result = level.read_chunk_sync(&chunk_coordinate, |chunk| {
+            let section_y = relative.y - chunk.section.min_y;
+            if section_y < 0 {
+                return Err("Position below world minimum".to_string());
+            }
+            let section_index = section_y as usize / BlockPalette::SIZE;
             {
                 let mut light_engine = chunk
                     .light_engine
@@ -511,13 +546,25 @@ impl DynamicLightEngine {
                 if section_index >= light_engine.block_light.len() {
                     return Err("Invalid section index".to_string());
                 }
-                let relative_y = (relative.y - chunk.section.min_y) as usize % BlockPalette::SIZE;
+                let relative_y = section_y as usize % BlockPalette::SIZE;
+                let old_light = light_engine.block_light[section_index].get(
+                    relative.x as usize,
+                    relative_y,
+                    relative.z as usize,
+                );
                 light_engine.block_light[section_index].set(
                     relative.x as usize,
                     relative_y,
                     relative.z as usize,
                     light_level,
                 );
+                if old_light != light_level {
+                    chunk
+                        .dirty_light_sections
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .insert(section_index);
+                }
             };
             // Mark chunk as dirty so lighting changes are saved to disk
             if !chunk.is_dirty() {
@@ -525,15 +572,22 @@ impl DynamicLightEngine {
             }
             Ok(())
         });
+        result.ok_or_else(|| "Chunk is not loaded".to_string())??;
         Ok(())
     }
 
     pub fn get_sky_light_level(&self, level: &Arc<Level>, position: &BlockPos) -> u8 {
+        if Self::sky_bounds(level.world_gen.dimension()).is_none() {
+            return 0;
+        }
         let (chunk_coordinate, relative) = position.chunk_and_chunk_relative_position();
         level
             .read_chunk_sync(&chunk_coordinate, |chunk| {
-                let section_index =
-                    (relative.y - chunk.section.min_y) as usize / BlockPalette::SIZE;
+                let section_y = relative.y - chunk.section.min_y;
+                if section_y < 0 {
+                    return 0;
+                }
+                let section_index = section_y as usize / BlockPalette::SIZE;
 
                 let light_engine = chunk
                     .light_engine
@@ -546,7 +600,7 @@ impl DynamicLightEngine {
 
                 light_engine.sky_light[section_index].get(
                     relative.x as usize,
-                    (relative.y - chunk.section.min_y) as usize % BlockPalette::SIZE,
+                    section_y as usize % BlockPalette::SIZE,
                     relative.z as usize,
                 )
             })
@@ -560,8 +614,12 @@ impl DynamicLightEngine {
         light_level: u8,
     ) -> Result<(), String> {
         let (chunk_coordinate, relative) = position.chunk_and_chunk_relative_position();
-        level.read_chunk_sync(&chunk_coordinate, |chunk| {
-            let section_index = (relative.y - chunk.section.min_y) as usize / BlockPalette::SIZE;
+        let result = level.read_chunk_sync(&chunk_coordinate, |chunk| {
+            let section_y = relative.y - chunk.section.min_y;
+            if section_y < 0 {
+                return Err("Position below world minimum".to_string());
+            }
+            let section_index = section_y as usize / BlockPalette::SIZE;
             {
                 let mut light_engine = chunk
                     .light_engine
@@ -570,13 +628,25 @@ impl DynamicLightEngine {
                 if section_index >= light_engine.sky_light.len() {
                     return Err("Invalid section index".to_string());
                 }
-                let relative_y = (relative.y - chunk.section.min_y) as usize % BlockPalette::SIZE;
+                let relative_y = section_y as usize % BlockPalette::SIZE;
+                let old_light = light_engine.sky_light[section_index].get(
+                    relative.x as usize,
+                    relative_y,
+                    relative.z as usize,
+                );
                 light_engine.sky_light[section_index].set(
                     relative.x as usize,
                     relative_y,
                     relative.z as usize,
                     light_level,
                 );
+                if old_light != light_level {
+                    chunk
+                        .dirty_light_sections
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .insert(section_index);
+                }
             };
             // Mark chunk as dirty so lighting changes are saved to disk
             if !chunk.is_dirty() {
@@ -584,6 +654,22 @@ impl DynamicLightEngine {
             }
             Ok(())
         });
+        result.ok_or_else(|| "Chunk is not loaded".to_string())??;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DynamicLightEngine;
+    use pumpkin_data::dimension::Dimension;
+
+    #[test]
+    fn sky_bounds_follow_dimension_profile() {
+        assert_eq!(
+            DynamicLightEngine::sky_bounds(&Dimension::OVERWORLD),
+            Some((-64, 319))
+        );
+        assert_eq!(DynamicLightEngine::sky_bounds(&Dimension::THE_NETHER), None);
     }
 }

@@ -1,9 +1,9 @@
 use std::pin::Pin;
 use std::sync::Arc;
 
-use crate::entity::Entity;
 use crate::entity::decoration::armor_stand::ArmorStandEntity;
 use crate::entity::player::Player;
+use crate::entity::{Entity, EntityBase};
 use crate::item::{ItemBehaviour, ItemMetadata};
 use crate::server::Server;
 use pumpkin_data::entity::EntityType;
@@ -50,7 +50,8 @@ impl ItemBehaviour for ArmorStandItem {
     ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
         Box::pin(async move {
             let world = player.world();
-            let position = Self::calculate_placement_position(&location, face).to_f64();
+            let placement_block = Self::calculate_placement_position(&location, face);
+            let position = placement_block.to_f64();
 
             let bottom_center = Vector3::new(position.x, position.y, position.z);
 
@@ -91,6 +92,14 @@ impl ItemBehaviour for ArmorStandItem {
 
                 world.spawn_entity(Arc::new(armor_stand)).await;
                 item.decrement_unless_creative(player.gamemode.load(), 1);
+                world
+                    .emit_game_event_from_item(
+                        placement_block,
+                        crate::world::game_event::GameEventKind::EntityPlace,
+                        Some(player.get_entity().entity_uuid),
+                        item,
+                    )
+                    .await;
             }
         })
     }

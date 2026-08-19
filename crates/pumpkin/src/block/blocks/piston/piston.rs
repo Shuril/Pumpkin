@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::sync::atomic::AtomicI64;
 
 use crate::block::entities::{has_block_block_entity, piston::PistonBlockEntity};
 use crate::entity::EntityBase;
@@ -40,13 +41,20 @@ impl BlockMetadata for PistonBlock {
 impl PistonBlock {
     #[must_use]
     pub fn is_movable(
+        world: &World,
+        pos: &BlockPos,
         block: &Block,
         state: &BlockState,
         dir: BlockDirection,
         can_break: bool,
         piston_dir: BlockDirection,
     ) -> bool {
-        // TODO: more checks
+        if !world.is_in_build_limit(*pos)
+            || (dir == BlockDirection::Down && pos.0.y == world.get_bottom_y())
+            || (dir == BlockDirection::Up && pos.0.y == world.get_top_y())
+        {
+            return false;
+        }
         if state.is_air() {
             return true;
         }
@@ -227,6 +235,7 @@ impl BlockBehaviour for PistonBlock {
                 pushed_block_state: BlockState::from_id(props.to_state_id(block)),
                 current_progress: 0.0.into(),
                 last_progress: 0.0.into(),
+                last_ticked: AtomicI64::new(-1),
                 extending: false,
                 source: true,
             }));
@@ -249,7 +258,7 @@ impl BlockBehaviour for PistonBlock {
                 if !piston_piece {
                     if r#type == 1
                         && !state.is_air()
-                        && Self::is_movable(block, state, dir, false, dir)
+                        && Self::is_movable(world, &pull_pos, block, state, dir, false, dir)
                         && (state.piston_behavior == PistonBehavior::Normal
                             || block == &Block::PISTON
                             || block == &Block::STICKY_PISTON)
@@ -302,8 +311,7 @@ async fn should_extend(world: &World, block_pos: &BlockPos, piston_dir: BlockDir
         }
         return true;
     }
-    let neighbor_pos = block_pos.offset(BlockDirection::Down.to_offset());
-    let (block, state) = world.get_block_and_state(&neighbor_pos);
+    let (block, state) = world.get_block_and_state(block_pos);
     if is_emitting_redstone_power(block, state, world, block_pos, BlockDirection::Down).await {
         return true;
     }
@@ -348,8 +356,16 @@ pub async fn try_move(world: &Arc<World>, block: &Block, block_pos: &BlockPos) {
                 let Some(piston) = entity.as_any().downcast_ref::<PistonBlockEntity>() else {
                     return;
                 };
-                if piston.extending && piston.current_progress.load() < 0.5
-                // TODO: more stuff...
+                let game_time = world.get_world_age().await;
+                if piston.extending
+                    && PistonBlockEntity::should_use_final_tick(
+                        piston.current_progress.load(),
+                        game_time,
+                        piston
+                            .last_ticked
+                            .load(std::sync::atomic::Ordering::Relaxed),
+                    )
+                    || (piston.extending && world.is_handling_tick())
                 {
                     // Piston reduced too quickly, if its a stick piston no blocks will be dragged
                     r#type = 2;
@@ -433,6 +449,7 @@ async fn move_piston(
                 pushed_block_state: moved_state,
                 current_progress: 0.0.into(),
                 last_progress: 0.0.into(),
+                last_ticked: AtomicI64::new(-1),
                 extending: extend,
                 source: false,
             }));
@@ -466,6 +483,7 @@ async fn move_piston(
             pushed_block_state: BlockState::from_id(props.to_state_id(&Block::PISTON_HEAD)),
             current_progress: 0.0.into(),
             last_progress: 0.0.into(),
+            last_ticked: AtomicI64::new(-1),
             extending: true,
             source: true,
         }));

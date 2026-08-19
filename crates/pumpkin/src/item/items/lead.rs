@@ -90,6 +90,14 @@ impl ItemBehaviour for LeadItem {
                     item.decrement(1);
                 }
                 world.play_sound(Sound::ItemLeadTied, SoundCategory::Neutral, &center);
+                world
+                    .emit_game_event_from_item(
+                        location,
+                        crate::world::game_event::GameEventKind::BlockAttach,
+                        Some(player.get_entity().entity_uuid),
+                        item,
+                    )
+                    .await;
             }
         })
     }

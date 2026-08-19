@@ -2,7 +2,7 @@ use std::pin::Pin;
 
 use crate::generation::proto_chunk::GenerationCache;
 use bitflags::bitflags;
-use pumpkin_data::{Block, BlockState, BlockStateId, Mirror, Rotation, chunk::Biome};
+use pumpkin_data::{Block, BlockState, BlockStateId, Mirror, Rotation, chunk::Biome, fluid::Fluid};
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_util::math::position::BlockPos;
 use thiserror::Error;
@@ -93,4 +93,31 @@ pub trait BlockAccessor: Send + Sync {
     fn get_block_state_id(&self, position: &BlockPos) -> BlockStateId;
 
     fn get_block_and_state(&self, position: &BlockPos) -> (&'static Block, &'static BlockState);
+
+    /// Resolves the fluid occupying a block position, including fluids carried
+    /// by a waterlogged block state.  Block placement code must use this
+    /// accessor instead of inferring fluids from the block registry: a
+    /// waterlogged fence/sign/trapdoor is not the `WATER` block, but its fluid
+    /// state is still water in vanilla.
+    fn get_fluid(&self, position: &BlockPos) -> &'static Fluid {
+        let state_id = self.get_block_state_id(position);
+        if let Some(fluid) = Fluid::from_state_id(state_id) {
+            return fluid.to_flowing();
+        }
+
+        let block = Block::from_state_id(state_id);
+        if let Some(properties) = block.properties(state_id) {
+            for (name, value) in properties.to_props() {
+                if name == "waterlogged" {
+                    return if value == "true" {
+                        &Fluid::FLOWING_WATER
+                    } else {
+                        &Fluid::EMPTY
+                    };
+                }
+            }
+        }
+
+        &Fluid::EMPTY
+    }
 }

@@ -9,11 +9,12 @@ use std::{
 };
 
 use bytes::Bytes;
-use pumpkin_data::{Block, BlockStateId, chunk::ChunkStatus, fluid::Fluid};
+use pumpkin_data::{Block, BlockStateId, chunk::Biome, chunk::ChunkStatus, fluid::Fluid};
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_util::resource_location::{FromResourceLocation, ResourceLocation, ToResourceLocation};
 use rustc_hash::FxHashMap;
 use tokio::sync::Mutex;
+use tracing::warn;
 
 use crate::{
     chunk::{
@@ -21,7 +22,10 @@ use crate::{
         format::anvil::{SingleChunkDataSerializer, WORLD_DATA_VERSION},
         io::{Dirtiable, file_manager::PathFromLevelFolder},
     },
-    generation::section_coords,
+    generation::{
+        section_coords,
+        structure::template::{BlockStateResolver, PaletteEntry},
+    },
     level::LevelFolder,
     tick::{ScheduledTick, TickPriority, scheduler::ChunkTickScheduler},
 };
@@ -74,6 +78,76 @@ impl Dirtiable for ChunkData {
     }
 }
 
+/// Resolves one vanilla block palette entry, `{Name: "minecraft:stone", Properties: {..}}`,
+/// to a block state id.
+///
+/// Vanilla has written section palettes in this shape since the 1.13 flattening; we write
+/// raw numeric state ids. Both have to be understood on load, because a world can contain
+/// chunks last written by either.
+///
+/// Returns `None` for a name we do not know, so the caller can log it rather than silently
+/// turning someone's blocks into air.
+fn block_state_id_from_palette_entry(nbt: &NbtCompound) -> Option<BlockStateId> {
+    let name = nbt.get_string("Name")?;
+
+    let properties = nbt
+        .get_compound("Properties")
+        .map_or_else(Vec::new, |props| {
+            props
+                .child_tags
+                .iter()
+                .filter_map(|(key, value)| {
+                    value
+                        .extract_string()
+                        .map(|value| (key.to_string(), value.to_string()))
+                })
+                .collect()
+        });
+
+    let entry = PaletteEntry {
+        name: name.to_string(),
+        properties,
+    };
+    BlockStateResolver::resolve_simple(&entry).map(|state| state.id)
+}
+
+/// Resolves one vanilla biome palette entry, a plain resource location such as
+/// `"minecraft:plains"`, to a biome id.
+///
+/// `Biome::from_name` matches bare names, so the namespace has to be stripped first —
+/// unlike `Block::from_name`, which strips it itself.
+fn biome_id_from_palette_entry(name: &str) -> Option<u8> {
+    let bare = name.strip_prefix("minecraft:").unwrap_or(name);
+    Biome::from_name(bare).map(|biome| biome.id)
+}
+
+/// Renders a block state id as a vanilla palette entry,
+/// `{Name: "minecraft:stone", Properties: {..}}`.
+///
+/// `Properties` is omitted for a block that has none, matching vanilla.
+fn palette_entry_from_block_state_id(id: BlockStateId) -> pumpkin_nbt::tag::NbtTag {
+    let block = id.to_block_id().to_block();
+
+    let mut entry = NbtCompound::new();
+    entry.put_string("Name", format!("minecraft:{}", block.name));
+
+    if let Some(properties) = block.properties(id) {
+        let mut props = NbtCompound::new();
+        for (key, value) in properties.to_props() {
+            props.put_string(key, value.to_string());
+        }
+        entry.put_compound("Properties", props);
+    }
+
+    pumpkin_nbt::tag::NbtTag::Compound(entry)
+}
+
+/// Renders a biome id as a vanilla palette entry, a plain resource location.
+fn palette_entry_from_biome_id(id: u8) -> pumpkin_nbt::tag::NbtTag {
+    let registry_id = Biome::from_id(id).unwrap_or(&Biome::PLAINS).registry_id;
+    pumpkin_nbt::tag::NbtTag::String(format!("minecraft:{registry_id}").into())
+}
+
 fn extract_u16_array(tag: &pumpkin_nbt::tag::NbtTag) -> Option<Box<[BlockStateId]>> {
     match tag {
         pumpkin_nbt::tag::NbtTag::IntArray(arr) => Some(
@@ -94,15 +168,24 @@ fn extract_u16_array(tag: &pumpkin_nbt::tag::NbtTag) -> Option<Box<[BlockStateId
         pumpkin_nbt::tag::NbtTag::List(list) => {
             let ids: Box<[BlockStateId]> = list
                 .iter()
-                .map(|t| {
-                    let val = match t {
-                        pumpkin_nbt::tag::NbtTag::Int(x) => *x as u16,
-                        pumpkin_nbt::tag::NbtTag::Short(x) => *x as u16,
-                        pumpkin_nbt::tag::NbtTag::Byte(x) => *x as u16,
-                        pumpkin_nbt::tag::NbtTag::Long(x) => *x as u16,
-                        _ => 0,
-                    };
-                    BlockStateId::new_or_air(val)
+                .map(|t| match t {
+                    // Vanilla's shape. Resolve by name rather than falling through to air,
+                    // which would blank every block in the section.
+                    pumpkin_nbt::tag::NbtTag::Compound(nbt) => {
+                        block_state_id_from_palette_entry(nbt).unwrap_or_else(|| {
+                            warn!(
+                                "Unknown block in chunk palette: {:?}; loading it as air",
+                                nbt.get_string("Name").unwrap_or("<no Name>")
+                            );
+                            BlockStateId::AIR
+                        })
+                    }
+                    // Our own shape: a raw state id.
+                    pumpkin_nbt::tag::NbtTag::Int(x) => BlockStateId::new_or_air(*x as u16),
+                    pumpkin_nbt::tag::NbtTag::Short(x) => BlockStateId::new_or_air(*x as u16),
+                    pumpkin_nbt::tag::NbtTag::Byte(x) => BlockStateId::new_or_air(*x as u16),
+                    pumpkin_nbt::tag::NbtTag::Long(x) => BlockStateId::new_or_air(*x as u16),
+                    _ => BlockStateId::AIR,
                 })
                 .collect();
             Some(ids)
@@ -119,6 +202,13 @@ fn extract_u8_array(tag: &pumpkin_nbt::tag::NbtTag) -> Option<Box<[u8]>> {
             let bytes: Box<[u8]> = list
                 .iter()
                 .map(|t| match t {
+                    // Vanilla's shape: a resource location per entry.
+                    pumpkin_nbt::tag::NbtTag::String(name) => biome_id_from_palette_entry(name)
+                        .unwrap_or_else(|| {
+                            warn!("Unknown biome in chunk palette: {name}; loading it as plains");
+                            Biome::PLAINS.id
+                        }),
+                    // Our own shape: a raw biome id.
                     pumpkin_nbt::tag::NbtTag::Byte(x) => *x as u8,
                     pumpkin_nbt::tag::NbtTag::Int(x) => *x as u8,
                     pumpkin_nbt::tag::NbtTag::Short(x) => *x as u8,
@@ -138,7 +228,7 @@ where
     let x = nbt.get_int("x")?;
     let y = nbt.get_int("y")?;
     let z = nbt.get_int("z")?;
-    let delay = nbt.get_int("t")? as u8;
+    let delay = u32::try_from(nbt.get_int("t")?).ok()?;
     let priority = TickPriority::try_from(nbt.get_int("p")?).ok()?;
     let res_loc_str = nbt.get_string("i")?;
     let res_loc = ResourceLocation::from_str(res_loc_str).ok()?;
@@ -324,6 +414,12 @@ impl ChunkData {
             for tag in list {
                 if let pumpkin_nbt::tag::NbtTag::Compound(compound) = tag
                     && let Some(tick) = parse_scheduled_tick::<&'static Block>(compound)
+                    // SerializableChunkData uses SavedTick.filterTickListForChunk
+                    // before handing ticks to a ChunkAccess.  Region files can
+                    // contain stale/foreign entries after a crash or an older
+                    // writer, but a chunk must never schedule work owned by a
+                    // neighbouring chunk.
+                    && tick.position.chunk_position() == position
                 {
                     block_ticks.push(tick);
                 }
@@ -335,6 +431,7 @@ impl ChunkData {
             for tag in list {
                 if let pumpkin_nbt::tag::NbtTag::Compound(compound) = tag
                     && let Some(tick) = parse_scheduled_tick::<&'static Fluid>(compound)
+                    && tick.position.chunk_position() == position
                 {
                     fluid_ticks.push(tick);
                 }
@@ -356,6 +453,27 @@ impl ChunkData {
 
         let light_correct = root_tag.get_bool("isLightOn").unwrap_or(false);
 
+        // `blending_data` is a typed vanilla field, not an opaque extension. Keep the
+        // packed bounds/heights available to the generator while still retaining every
+        // unknown root tag in `unknown_nbt` for forward-compatible round trips.
+        let blending_data = root_tag.get_compound("blending_data").and_then(|data| {
+            let min_section = data.get_int("min_section")?;
+            let max_section = data.get_int("max_section")?;
+            let heights = data.get_list("heights").map(|values| {
+                values
+                    .iter()
+                    .filter_map(|value| value.extract_double())
+                    .collect::<Vec<_>>()
+            });
+            Some(
+                crate::generation::blender::blending_data::BlendingData::from_packed(
+                    min_section,
+                    max_section,
+                    heights,
+                ),
+            )
+        });
+
         let status_str = root_tag.get_string("Status").unwrap_or("minecraft:empty");
         let status = match status_str {
             "minecraft:structure_starts" => ChunkStatus::StructureStarts,
@@ -372,6 +490,24 @@ impl ChunkData {
             _ => ChunkStatus::Empty,
         };
 
+        let mut unknown_nbt = root_tag.clone();
+        for key in [
+            "DataVersion",
+            "xPos",
+            "zPos",
+            "yPos",
+            "Status",
+            "Heightmaps",
+            "sections",
+            "block_ticks",
+            "fluid_ticks",
+            "block_entities",
+            "isLightOn",
+            "InhabitedTime",
+        ] {
+            unknown_nbt.child_tags.remove(key);
+        }
+
         Ok(Self {
             section,
             heightmap: std::sync::Mutex::new(heightmaps),
@@ -383,10 +519,12 @@ impl ChunkData {
             fluid_ticks: ChunkTickScheduler::from_iter(fluid_ticks),
             pending_block_entities: std::sync::Mutex::new(block_entities),
             light_engine: std::sync::Mutex::new(light_engine),
+            dirty_light_sections: std::sync::Mutex::default(),
             light_populated: AtomicBool::new(light_correct),
             status,
-            blending_data: None,
+            blending_data,
             inhabited_time: AtomicU64::new(root_tag.get_long("InhabitedTime").unwrap_or(0) as u64),
+            unknown_nbt: std::sync::Mutex::new(unknown_nbt),
         })
     }
 
@@ -435,6 +573,13 @@ impl ChunkData {
         let min_section_y = (self.section.min_y >> 4) as i8;
 
         let mut root_compound = NbtCompound::new();
+        root_compound.child_tags.extend(
+            self.unknown_nbt
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clone()
+                .child_tags,
+        );
         root_compound.put_int("DataVersion", WORLD_DATA_VERSION);
         root_compound.put_int("xPos", self.x);
         root_compound.put_int("zPos", self.z);
@@ -455,6 +600,10 @@ impl ChunkData {
             ChunkStatus::Full => "minecraft:full",
         };
         root_compound.put_string("Status", status_str.to_string());
+
+        if let Some(blending_data) = &self.blending_data {
+            root_compound.put_compound("blending_data", blending_data.to_packed_nbt());
+        }
 
         let mut heightmaps_compound = NbtCompound::new();
         if let Some(ref arr) = heightmap_lock.world_surface {
@@ -483,7 +632,7 @@ impl ChunkData {
             let palette_tags: Vec<NbtTag> = block_states_nbt
                 .palette
                 .iter()
-                .map(|id| NbtTag::Int(BlockStateId::as_u16(*id) as i32))
+                .map(|id| palette_entry_from_block_state_id(*id))
                 .collect();
             bs_comp.put_list("palette", palette_tags);
             section_comp.put_compound("block_states", bs_comp);
@@ -497,7 +646,7 @@ impl ChunkData {
             let biome_palette_tags: Vec<NbtTag> = biomes_nbt
                 .palette
                 .iter()
-                .map(|&val| NbtTag::Byte(val as i8))
+                .map(|&val| palette_entry_from_biome_id(val))
                 .collect();
             b_comp.put_list("palette", biome_palette_tags);
             section_comp.put_compound("biomes", b_comp);
@@ -524,7 +673,7 @@ impl ChunkData {
             tick_comp.put_int("x", tick.position.0.x);
             tick_comp.put_int("y", tick.position.0.y);
             tick_comp.put_int("z", tick.position.0.z);
-            tick_comp.put_int("t", tick.delay as i32);
+            tick_comp.put_int("t", i32::try_from(tick.delay).unwrap_or(i32::MAX));
             tick_comp.put_int("p", tick.priority as i32);
             tick_comp.put_string("i", tick.value.to_resource_location());
             block_ticks_list.push(NbtTag::Compound(tick_comp));
@@ -537,7 +686,7 @@ impl ChunkData {
             tick_comp.put_int("x", tick.position.0.x);
             tick_comp.put_int("y", tick.position.0.y);
             tick_comp.put_int("z", tick.position.0.z);
-            tick_comp.put_int("t", tick.delay as i32);
+            tick_comp.put_int("t", i32::try_from(tick.delay).unwrap_or(i32::MAX));
             tick_comp.put_int("p", tick.priority as i32);
             tick_comp.put_string("i", tick.value.to_resource_location());
             fluid_ticks_list.push(NbtTag::Compound(tick_comp));
@@ -652,16 +801,35 @@ impl ChunkEntityData {
             _ => Vec::new(),
         };
 
+        // Keep every root field that is not part of the stable entity-region
+        // contract.  This mirrors the chunk-region loader and is important for
+        // newer Java versions adding metadata to `entities/*.mca`.
+        let mut unknown_nbt = nbt.root_tag.clone();
+        for key in [
+            "DataVersion",
+            "Position-X",
+            "Position-Z",
+            "Position",
+            "Entities",
+        ] {
+            unknown_nbt.child_tags.remove(key);
+        }
+
         Ok(Self {
             x: position.x,
             z: position.y,
             data: Mutex::new(entities),
+            unknown_nbt: std::sync::Mutex::new(unknown_nbt),
             dirty: AtomicBool::new(false),
         })
     }
 
     async fn internal_to_bytes(&self) -> Result<Bytes, ChunkSerializingError> {
-        let mut root = NbtCompound::new();
+        let mut root = self
+            .unknown_nbt
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
         root.put_int("DataVersion", WORLD_DATA_VERSION);
         root.put(
             "Position",
@@ -771,5 +939,459 @@ impl LightContainer {
 impl Default for LightContainer {
     fn default() -> Self {
         Self::new_empty(15)
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::{ChunkData, ChunkEntityData, WORLD_DATA_VERSION};
+    use pumpkin_data::{Block, BlockStateId, chunk::Biome};
+    use pumpkin_nbt::compound::NbtCompound;
+    use pumpkin_nbt::tag::NbtTag;
+    use pumpkin_util::math::vector2::Vector2;
+    use std::sync::atomic::Ordering;
+
+    /// A vanilla palette entry: `{Name: "minecraft:x", Properties: {..}}`.
+    fn named_entry(name: &str, properties: &[(&str, &str)]) -> NbtTag {
+        let mut entry = NbtCompound::new();
+        entry.put_string("Name", name.to_string());
+        if !properties.is_empty() {
+            let mut props = NbtCompound::new();
+            for (key, value) in properties {
+                props.put_string(key, (*value).to_string());
+            }
+            entry.put_compound("Properties", props);
+        }
+        NbtTag::Compound(entry)
+    }
+
+    /// One section at Y=-4 with the given block and biome palettes. A single-entry palette
+    /// needs no data array: every block in the section is that entry.
+    fn section(block_palette: Vec<NbtTag>, biome_palette: Vec<NbtTag>) -> NbtTag {
+        let mut block_states = NbtCompound::new();
+        block_states.put_list("palette", block_palette);
+        let mut biomes = NbtCompound::new();
+        biomes.put_list("palette", biome_palette);
+        let mut section = NbtCompound::new();
+        section.put_byte("Y", -4);
+        section.put_compound("block_states", block_states);
+        section.put_compound("biomes", biomes);
+        NbtTag::Compound(section)
+    }
+
+    fn load(block_palette: Vec<NbtTag>, biome_palette: Vec<NbtTag>) -> ChunkData {
+        let mut root = NbtCompound::new();
+        root.put_int("DataVersion", WORLD_DATA_VERSION);
+        root.put_int("xPos", 0);
+        root.put_int("zPos", 0);
+        root.put_int("yPos", -4);
+        root.put_string("Status", "minecraft:full".to_string());
+        root.put_list("sections", vec![section(block_palette, biome_palette)]);
+
+        let buf = pumpkin_nbt::Nbt::from(root).write();
+        ChunkData::internal_from_bytes(&buf, Vector2::new(0, 0)).expect("parse fixture")
+    }
+
+    fn only_block(chunk: &ChunkData) -> BlockStateId {
+        let blocks = chunk.section.dump_blocks();
+        let first = blocks[0];
+        assert!(
+            blocks.iter().all(|b| *b == first),
+            "expected a uniform section"
+        );
+        first
+    }
+
+    #[test]
+    fn vanilla_named_block_palette_loads_as_that_block() {
+        // The regression: before this, a vanilla palette entry hit the catch-all arm and
+        // every block in the section became air.
+        let chunk = load(
+            vec![named_entry("minecraft:stone", &[])],
+            vec![NbtTag::String("minecraft:plains".into())],
+        );
+        assert_eq!(only_block(&chunk), Block::STONE.default_state.id);
+        assert_ne!(only_block(&chunk), BlockStateId::AIR);
+    }
+
+    #[test]
+    fn vanilla_block_palette_properties_select_the_right_state() {
+        // A property-bearing entry must not collapse to the block's default state, or
+        // every log in a loaded world silently changes axis.
+        let upright = load(
+            vec![named_entry("minecraft:oak_log", &[("axis", "y")])],
+            vec![NbtTag::String("minecraft:plains".into())],
+        );
+        let sideways = load(
+            vec![named_entry("minecraft:oak_log", &[("axis", "x")])],
+            vec![NbtTag::String("minecraft:plains".into())],
+        );
+        assert_ne!(
+            only_block(&upright),
+            only_block(&sideways),
+            "axis=y and axis=x resolved to the same state"
+        );
+        for state in [only_block(&upright), only_block(&sideways)] {
+            assert_eq!(state.to_block_id(), Block::OAK_LOG.id);
+        }
+    }
+
+    #[test]
+    fn vanilla_biome_palette_resolves_the_resource_location() {
+        // `Biome::from_name` takes bare names, so the namespace has to be stripped. If it
+        // is not, every biome in a loaded world silently becomes id 0.
+        let chunk = load(
+            vec![named_entry("minecraft:stone", &[])],
+            vec![NbtTag::String("minecraft:plains".into())],
+        );
+        let biomes = chunk.section.dump_biomes();
+        assert_eq!(biomes[0], Biome::PLAINS.id);
+        assert!(biomes.iter().all(|b| *b == Biome::PLAINS.id));
+    }
+
+    #[test]
+    fn biome_palette_without_a_namespace_also_resolves() {
+        let chunk = load(
+            vec![named_entry("minecraft:stone", &[])],
+            vec![NbtTag::String("desert".into())],
+        );
+        assert_eq!(chunk.section.dump_biomes()[0], Biome::DESERT.id);
+    }
+
+    #[test]
+    fn numeric_palettes_still_load() {
+        // Our own on-disk shape. A world written by this server must keep loading.
+        let stone = Block::STONE.default_state.id;
+        let chunk = load(
+            vec![NbtTag::Int(i32::from(BlockStateId::as_u16(stone)))],
+            vec![NbtTag::Byte(Biome::DESERT.id as i8)],
+        );
+        assert_eq!(only_block(&chunk), stone);
+        assert_eq!(chunk.section.dump_biomes()[0], Biome::DESERT.id);
+    }
+
+    #[test]
+    fn an_unknown_block_name_falls_back_to_air_rather_than_failing_the_chunk() {
+        // A modded or future block should cost one block, not the whole chunk.
+        let chunk = load(
+            vec![named_entry("somemod:unobtainium", &[])],
+            vec![NbtTag::String("minecraft:plains".into())],
+        );
+        assert_eq!(only_block(&chunk), BlockStateId::AIR);
+    }
+
+    #[test]
+    fn an_unknown_biome_name_falls_back_to_plains() {
+        let chunk = load(
+            vec![named_entry("minecraft:stone", &[])],
+            vec![NbtTag::String("somemod:mystery_biome".into())],
+        );
+        assert_eq!(chunk.section.dump_biomes()[0], Biome::PLAINS.id);
+    }
+
+    /// Re-reads a written chunk's first section palette.
+    fn written_palettes(chunk: &ChunkData) -> (Vec<NbtTag>, Vec<NbtTag>) {
+        let bytes = chunk.internal_to_bytes();
+        let mut cursor = std::io::Cursor::new(&bytes[..]);
+        let mut reader = pumpkin_nbt::deserializer::NbtReadHelperJava::new(&mut cursor);
+        let root = pumpkin_nbt::Nbt::read(&mut reader)
+            .expect("reparse written chunk")
+            .root_tag;
+        let sections = root.get_list("sections").expect("sections");
+        let NbtTag::Compound(section) = &sections[0] else {
+            panic!("section is not a compound")
+        };
+        let blocks = section
+            .get_compound("block_states")
+            .and_then(|bs| bs.get_list("palette"))
+            .expect("block palette")
+            .to_vec();
+        let biomes = section
+            .get_compound("biomes")
+            .and_then(|b| b.get_list("palette"))
+            .expect("biome palette")
+            .to_vec();
+        (blocks, biomes)
+    }
+
+    #[test]
+    fn palettes_are_written_in_the_vanilla_shape() {
+        // We used to write raw numeric ids, which no other tool can read. A chunk written
+        // here has to be loadable by vanilla, so the palette must be named.
+        let chunk = load(
+            vec![named_entry("minecraft:oak_log", &[("axis", "x")])],
+            vec![NbtTag::String("minecraft:desert".into())],
+        );
+        let (blocks, biomes) = written_palettes(&chunk);
+
+        let NbtTag::Compound(entry) = &blocks[0] else {
+            panic!("block palette entry is not a compound: {:?}", blocks[0])
+        };
+        assert_eq!(entry.get_string("Name"), Some("minecraft:oak_log"));
+        assert_eq!(
+            entry
+                .get_compound("Properties")
+                .and_then(|p| p.get_string("axis")),
+            Some("x"),
+            "block properties were dropped on write"
+        );
+
+        assert_eq!(biomes[0], NbtTag::String("minecraft:desert".into()));
+    }
+
+    #[test]
+    fn unknown_root_nbt_survives_chunk_round_trip() {
+        let mut root = NbtCompound::new();
+        root.put_int("DataVersion", WORLD_DATA_VERSION);
+        root.put_int("xPos", 0);
+        root.put_int("zPos", 0);
+        root.put_int("yPos", -4);
+        root.put_string("Status", "minecraft:full".to_string());
+        root.put_list(
+            "sections",
+            vec![section(
+                vec![named_entry("minecraft:stone", &[])],
+                vec![NbtTag::String("minecraft:plains".into())],
+            )],
+        );
+        let mut future = NbtCompound::new();
+        future.put_string("marker", "keep-me".to_string());
+        root.put_compound("FutureData", future);
+
+        let encoded = pumpkin_nbt::Nbt::from(root).write();
+        let chunk =
+            ChunkData::internal_from_bytes(&encoded, Vector2::new(0, 0)).expect("parse fixture");
+        let written = chunk.internal_to_bytes();
+        let mut cursor = std::io::Cursor::new(&written[..]);
+        let mut reader = pumpkin_nbt::deserializer::NbtReadHelperJava::new(&mut cursor);
+        let root = pumpkin_nbt::Nbt::read(&mut reader)
+            .expect("reparse written chunk")
+            .root_tag;
+        assert_eq!(
+            root.get_compound("FutureData")
+                .and_then(|data| data.get_string("marker")),
+            Some("keep-me")
+        );
+    }
+
+    #[test]
+    fn a_block_without_properties_omits_the_properties_tag() {
+        // Vanilla writes a bare {Name} for a propertyless block; an empty Properties
+        // compound is not the same shape.
+        let chunk = load(
+            vec![named_entry("minecraft:bedrock", &[])],
+            vec![NbtTag::String("minecraft:plains".into())],
+        );
+        let (blocks, _) = written_palettes(&chunk);
+        let NbtTag::Compound(entry) = &blocks[0] else {
+            panic!("not a compound")
+        };
+        assert_eq!(entry.get_string("Name"), Some("minecraft:bedrock"));
+        assert!(!entry.has("Properties"));
+    }
+
+    #[test]
+    fn a_vanilla_chunk_round_trips_unchanged() {
+        // Load a vanilla-shaped chunk, write it, load it again: same blocks, same biomes.
+        // Verified additionally against a real 26.2 chunk from Mojang's server.jar, which
+        // round-tripped 98304 of 98304 blocks identically.
+        let original = load(
+            vec![named_entry("minecraft:deepslate", &[("axis", "y")])],
+            vec![NbtTag::String("minecraft:desert".into())],
+        );
+        let bytes = original.internal_to_bytes();
+        let reloaded = ChunkData::internal_from_bytes(&bytes, Vector2::new(0, 0)).expect("reparse");
+
+        assert_eq!(only_block(&reloaded), only_block(&original));
+        assert_eq!(
+            reloaded.section.dump_biomes(),
+            original.section.dump_biomes()
+        );
+        assert_eq!(only_block(&reloaded).to_block_id(), Block::DEEPSLATE.id);
+        assert_eq!(reloaded.section.dump_biomes()[0], Biome::DESERT.id);
+    }
+
+    #[test]
+    fn vanilla_chunk_auxiliary_data_round_trips_without_loss() {
+        // This is the part of SerializableChunkData which is easiest to lose when a
+        // server only tests block palettes. Keep a compact vanilla-shaped fixture here:
+        // block entities, both scheduled-tick lists, blending metadata and inhabited time
+        // all have to survive a load/save cycle unchanged.
+        let mut root = NbtCompound::new();
+        root.put_int("DataVersion", WORLD_DATA_VERSION);
+        root.put_int("xPos", 0);
+        root.put_int("zPos", 0);
+        root.put_int("yPos", -4);
+        root.put_string("Status", "minecraft:full".to_string());
+        root.put_long("InhabitedTime", 123_456);
+        root.put_bool("isLightOn", true);
+        root.put_list(
+            "sections",
+            vec![section(
+                vec![named_entry("minecraft:stone", &[])],
+                vec![NbtTag::String("minecraft:plains".into())],
+            )],
+        );
+
+        let mut block_entity = NbtCompound::new();
+        block_entity.put_string("id", "minecraft:chest".to_string());
+        block_entity.put_int("x", 2);
+        block_entity.put_int("y", 64);
+        block_entity.put_int("z", 3);
+        block_entity.put_string("CustomName", "fixture".to_string());
+        root.put_list("block_entities", vec![NbtTag::Compound(block_entity)]);
+
+        let mut block_tick = NbtCompound::new();
+        block_tick.put_int("x", 2);
+        block_tick.put_int("y", 64);
+        block_tick.put_int("z", 3);
+        // SavedTick.delay is an int in vanilla. Values above the old Pumpkin
+        // 8-bit wheel must survive both parsing and serialization unchanged.
+        block_tick.put_int("t", 1_000);
+        block_tick.put_int("p", 1);
+        block_tick.put_string("i", "minecraft:stone".to_string());
+        let mut foreign_block_tick = NbtCompound::new();
+        foreign_block_tick.put_int("x", 16);
+        foreign_block_tick.put_int("y", 64);
+        foreign_block_tick.put_int("z", 3);
+        foreign_block_tick.put_int("t", 77);
+        foreign_block_tick.put_int("p", 0);
+        foreign_block_tick.put_string("i", "minecraft:stone".to_string());
+        root.put_list(
+            "block_ticks",
+            vec![
+                NbtTag::Compound(block_tick),
+                NbtTag::Compound(foreign_block_tick),
+            ],
+        );
+
+        let mut fluid_tick = NbtCompound::new();
+        fluid_tick.put_int("x", 4);
+        fluid_tick.put_int("y", 65);
+        fluid_tick.put_int("z", 5);
+        fluid_tick.put_int("t", 9);
+        fluid_tick.put_int("p", 0);
+        fluid_tick.put_string("i", "minecraft:water".to_string());
+        let mut foreign_fluid_tick = NbtCompound::new();
+        foreign_fluid_tick.put_int("x", 4);
+        foreign_fluid_tick.put_int("y", 65);
+        foreign_fluid_tick.put_int("z", 16);
+        foreign_fluid_tick.put_int("t", 88);
+        foreign_fluid_tick.put_int("p", 0);
+        foreign_fluid_tick.put_string("i", "minecraft:water".to_string());
+        root.put_list(
+            "fluid_ticks",
+            vec![
+                NbtTag::Compound(fluid_tick),
+                NbtTag::Compound(foreign_fluid_tick),
+            ],
+        );
+
+        let mut blending = NbtCompound::new();
+        blending.put_int("min_section", -4);
+        blending.put_int("max_section", 20);
+        blending.put_list("heights", vec![NbtTag::Double(64.0), NbtTag::Double(65.0)]);
+        root.put_compound("blending_data", blending);
+
+        let encoded = pumpkin_nbt::Nbt::from(root).write();
+        let chunk = ChunkData::internal_from_bytes(&encoded, Vector2::new(0, 0))
+            .expect("parse auxiliary-data fixture");
+        assert_eq!(chunk.inhabited_time.load(Ordering::Relaxed), 123_456);
+        assert!(chunk.light_populated.load(Ordering::Relaxed));
+        let blending = chunk.blending_data.as_ref().expect("typed blending data");
+        assert_eq!(blending.min_y, -64);
+        assert_eq!(blending.max_y, 320);
+        assert_eq!(blending.heights[0], 64.0);
+        assert_eq!(chunk.pending_block_entities.lock().unwrap().len(), 1);
+        assert_eq!(chunk.block_ticks.to_vec().len(), 1);
+        assert_eq!(chunk.block_ticks.to_vec()[0].delay, 1_000);
+        assert_eq!(chunk.fluid_ticks.to_vec().len(), 1);
+
+        let written = chunk.internal_to_bytes();
+        let mut cursor = std::io::Cursor::new(&written[..]);
+        let mut reader = pumpkin_nbt::deserializer::NbtReadHelperJava::new(&mut cursor);
+        let root = pumpkin_nbt::Nbt::read(&mut reader)
+            .expect("reparse auxiliary-data fixture")
+            .root_tag;
+
+        assert_eq!(root.get_long("InhabitedTime"), Some(123_456));
+        assert_eq!(root.get_bool("isLightOn"), Some(true));
+        assert_eq!(root.get_list("block_entities").map(<[_]>::len), Some(1));
+        assert_eq!(root.get_list("block_ticks").map(<[_]>::len), Some(1));
+        assert_eq!(
+            root.get_list("block_ticks")
+                .and_then(|ticks| ticks.first())
+                .and_then(|tick| tick.extract_compound())
+                .and_then(|tick| tick.get_int("t")),
+            Some(1_000)
+        );
+        assert_eq!(root.get_list("fluid_ticks").map(<[_]>::len), Some(1));
+        assert_eq!(
+            root.get_compound("blending_data")
+                .and_then(|data| data.get_int("min_section")),
+            Some(-4)
+        );
+        assert_eq!(
+            root.get_compound("blending_data")
+                .and_then(|data| data.get_list("heights"))
+                .map(<[_]>::len),
+            Some(16)
+        );
+    }
+
+    #[test]
+    fn a_multi_entry_named_palette_resolves_every_entry() {
+        // NBT lists are homogeneous, so a palette is all-named or all-numeric and the two
+        // arms can never shadow each other. What does need pinning is that a palette with
+        // more than one entry resolves each of them, not just the first.
+        let chunk = load(
+            vec![
+                named_entry("minecraft:bedrock", &[]),
+                named_entry("minecraft:deepslate", &[("axis", "y")]),
+                named_entry("minecraft:deepslate_gold_ore", &[]),
+            ],
+            vec![NbtTag::String("minecraft:plains".into())],
+        );
+        // No data array, so every block takes palette index 0.
+        assert_eq!(only_block(&chunk), Block::BEDROCK.default_state.id);
+    }
+
+    #[tokio::test]
+    async fn entity_region_unknown_root_nbt_survives_round_trip() {
+        let mut entity = NbtCompound::new();
+        entity.put_string("id", "minecraft:item".to_string());
+        entity.put_double("PosX", 1.25);
+
+        let mut future = NbtCompound::new();
+        future.put_string("marker", "keep-entity-metadata".to_string());
+
+        let mut root = NbtCompound::new();
+        root.put_int("DataVersion", WORLD_DATA_VERSION);
+        root.put("Position", NbtTag::IntArray(vec![7, -3]));
+        root.put_list("Entities", vec![NbtTag::Compound(entity)]);
+        root.put_compound("FutureEntityData", future);
+
+        let encoded = pumpkin_nbt::Nbt::from(root).write();
+        let parsed = ChunkEntityData::internal_from_bytes(&encoded, Vector2::new(7, -3))
+            .expect("parse entity-region fixture");
+        assert_eq!(parsed.data.lock().await.len(), 1);
+
+        let written = parsed
+            .internal_to_bytes()
+            .await
+            .expect("serialize entity-region fixture");
+        let mut cursor = std::io::Cursor::new(&written[..]);
+        let mut reader = pumpkin_nbt::deserializer::NbtReadHelperJava::new(&mut cursor);
+        let root = pumpkin_nbt::Nbt::read(&mut reader)
+            .expect("reparse entity-region fixture")
+            .root_tag;
+
+        assert_eq!(root.get_int("Position-X"), None);
+        assert_eq!(root.get_int("Position-Z"), None);
+        assert_eq!(
+            root.get_compound("FutureEntityData")
+                .and_then(|data| data.get_string("marker")),
+            Some("keep-entity-metadata")
+        );
+        assert_eq!(root.get_list("Entities").map(<[_]>::len), Some(1));
     }
 }

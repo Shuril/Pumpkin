@@ -1,5 +1,6 @@
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::sound::{Sound, SoundCategory};
+use pumpkin_data::tag::Taggable;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_util::math::position::BlockPos;
 use std::any::Any;
@@ -110,7 +111,12 @@ impl ViewerCountListener for ShulkerBoxBlockEntity {
     ) -> ViewerFuture<'a, ()> {
         Box::pin(async move {
             Self::play_sound(world, position, 1);
-            // TODO: this.world.emitGameEvent(player, GameEvent.CONTAINER_OPEN, this.pos);
+            world
+                .emit_game_event(
+                    *position,
+                    crate::world::game_event::GameEventKind::ContainerOpen,
+                )
+                .await;
         })
     }
 
@@ -121,7 +127,12 @@ impl ViewerCountListener for ShulkerBoxBlockEntity {
     ) -> ViewerFuture<'a, ()> {
         Box::pin(async move {
             Self::play_sound(world, position, 0);
-            // TODO: this.world.emitGameEvent(player, GameEvent.CONTAINER_CLOSE, this.pos);
+            world
+                .emit_game_event(
+                    *position,
+                    crate::world::game_event::GameEventKind::ContainerClose,
+                )
+                .await;
         })
     }
 
@@ -218,6 +229,22 @@ impl Inventory for ShulkerBoxBlockEntity {
             items[slot] = stack;
             self.mark_dirty();
         })
+    }
+
+    fn can_insert_from_hopper(
+        &self,
+        slot: usize,
+        stack: &ItemStack,
+        direction: pumpkin_data::BlockDirection,
+    ) -> bool {
+        // ShulkerBoxBlock's WorldlyContainer rejects nested shulker boxes on
+        // every face.  There is no directional slot subset for this container.
+        let _ = (slot, direction);
+        stack.is_empty()
+            || !matches!(
+                pumpkin_data::Block::from_item_id(stack.get_item().id),
+                Some(block) if block.has_tag(&pumpkin_data::tag::Block::MINECRAFT_SHULKER_BOXES)
+            )
     }
 
     fn on_open(&self) -> InventoryFuture<'_, ()> {

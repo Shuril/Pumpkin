@@ -146,6 +146,14 @@ impl NbtCompound {
     pub fn put_int(&mut self, name: &str, value: i32) {
         self.put(name, NbtTag::Int(value));
     }
+
+    /// Inserts an integer-array tag.  Vanilla uses this representation for
+    /// fields such as Crafter `disabled_slots`; keeping a dedicated helper
+    /// avoids accidentally encoding those arrays as a scalar compatibility
+    /// value.
+    pub fn put_int_array(&mut self, name: &str, value: Vec<i32>) {
+        self.put(name, NbtTag::IntArray(value));
+    }
     /// Inserts a long tag when `name` is not already present.
     pub fn put_long(&mut self, name: &str, value: i64) {
         self.put(name, NbtTag::Long(value));

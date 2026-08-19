@@ -99,12 +99,8 @@ impl Identifier {
                 // Colon exists.
                 let path = identifier[colon_i + 1..].to_string();
 
-                if colon_i == 0 {
-                    Self::new(VANILLA_NAMESPACE, path)
-                } else {
-                    let namespace = identifier[0..colon_i].to_string();
-                    Self::new(namespace, path)
-                }
+                let namespace = identifier[0..colon_i].to_string();
+                Self::new(namespace, path)
             },
         )
     }
@@ -138,7 +134,7 @@ impl Identifier {
             };
 
             if colon_i == 0 {
-                Self::from_static(VANILLA_NAMESPACE, path)
+                Self::from_static("", path)
             } else {
                 let namespace = unsafe {
                     // SAFETY: The given start and end is valid.
@@ -278,6 +274,9 @@ impl Identifier {
         // We have to use a manual loop so that the function
         // can be marked as a `const` function.
         let bytes = namespace.as_bytes();
+        if bytes.is_empty() {
+            return false;
+        }
         let mut i = 0;
         while i < bytes.len() {
             if !matches!(bytes[i], b'0'..=b'9' | b'a'..=b'z' | b'-' | b'_' | b'.') {
@@ -295,6 +294,9 @@ impl Identifier {
         // We have to use a manual loop so that the function
         // can be marked as a `const` function.
         let bytes = path.as_bytes();
+        if bytes.is_empty() {
+            return false;
+        }
         let mut i = 0;
         while i < bytes.len() {
             if !matches!(bytes[i], b'0'..=b'9' | b'a'..=b'z' | b'-' | b'_' | b'.' | b'/') {
@@ -418,14 +420,14 @@ mod test {
     fn parse() -> Result<(), IdentifierError> {
         assert_eq!(Identifier::parse("abc")?.to_string(), "minecraft:abc");
         assert_eq!(Identifier::parse("abc:def")?.to_string(), "abc:def");
-        assert_eq!(Identifier::parse("abc:")?.to_string(), "abc:");
-        assert_eq!(Identifier::parse(":def")?.to_string(), "minecraft:def");
-        assert_eq!(Identifier::parse(":")?.to_string(), "minecraft:");
+        assert!(Identifier::parse("abc:").is_err());
+        assert!(Identifier::parse(":def").is_err());
+        assert!(Identifier::parse(":").is_err());
 
         assert_eq!(Identifier::parse_static("abc").to_string(), "minecraft:abc");
         assert_eq!(Identifier::parse_static("abc:def").to_string(), "abc:def");
 
-        let _ = Identifier::parse("")?;
+        assert!(Identifier::parse("").is_err());
         let _ = Identifier::parse("abc:/4/5")?;
         let _ = Identifier::parse("a._b-c:/4_-/5.9")?;
 
@@ -445,11 +447,6 @@ mod test {
             json!("abc:def")
         );
         assert_encode_success!(
-            Identifier::from_static("", "no_namespace"),
-            JsonOps,
-            json!(":no_namespace")
-        );
-        assert_encode_success!(
             Identifier::vanilla_static("example"),
             JsonOps,
             json!("minecraft:example")
@@ -457,6 +454,7 @@ mod test {
 
         assert_decode!(Identifier, json!("abc:def"), JsonOps, is_success);
         assert_decode!(Identifier, json!("vanilla"), JsonOps, is_success);
+        assert_decode!(Identifier, json!(":no_namespace"), JsonOps, is_error);
         assert_decode!(Identifier, json!("2 + 3"), JsonOps, is_error);
         assert_decode!(Identifier, json!("a._b-c:/4_-/5.9"), JsonOps, is_success);
     }

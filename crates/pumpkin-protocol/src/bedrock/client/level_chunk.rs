@@ -196,11 +196,13 @@ mod tests {
             fluid_ticks: ChunkTickScheduler::default(),
             pending_block_entities: Mutex::default(),
             light_engine: Mutex::new(ChunkLight::default()),
+            dirty_light_sections: Mutex::default(),
             light_populated: AtomicBool::new(false),
             status: ChunkStatus::Full,
             blending_data: None,
             dirty: AtomicBool::new(false),
             inhabited_time: AtomicU64::new(0),
+            unknown_nbt: Mutex::default(),
         };
         let mut encoded = Vec::new();
         CLevelChunk {

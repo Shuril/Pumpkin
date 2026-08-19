@@ -123,7 +123,11 @@ pub fn generate_structure_position(
         StructureKeys::Monument => OceanMonumentGenerator.get_structure_position(context),
         StructureKeys::Mineshaft | StructureKeys::MineshaftMesa => {
             let generator = MineshaftGenerator {
-                is_mesa: *key == StructureKeys::MineshaftMesa,
+                mineshaft_type: if *key == StructureKeys::MineshaftMesa {
+                    crate::generation::structure::structures::mineshaft::MineshaftType::Mesa
+                } else {
+                    crate::generation::structure::structures::mineshaft::MineshaftType::Normal
+                },
             };
             generator.get_structure_position(context)
         }

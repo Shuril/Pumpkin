@@ -41,7 +41,15 @@ fn ring_bell(position: BlockPos, world: &Arc<World>, hit_direction: Option<Horiz
         2.0,
     );
 
-    //TODO Emit game event: BLOCK_CHANGE -> Send block update Packet
+    let world_for_event = world.clone();
+    tokio::spawn(async move {
+        world_for_event
+            .emit_game_event(
+                position,
+                crate::world::game_event::GameEventKind::BlockChange,
+            )
+            .await;
+    });
 }
 
 fn is_point_on_bell(

@@ -2,9 +2,33 @@
 mod test {
     #![allow(clippy::print_stdout, clippy::needless_pass_by_value)]
     use crate::chunk_system::chunk_state::StagedChunkEnum;
+    use crate::generation::proto_chunk::GenerationCache;
     use crate::generation::{generator::WorldGenerator, get_world_gen, proto_chunk::ProtoChunk};
     use pumpkin_data::dimension::Dimension;
     use pumpkin_util::world_seed::Seed;
+
+    #[test]
+    fn proto_chunk_exposes_dimension_specific_sea_level() {
+        let overworld = get_world_gen(
+            Seed(1),
+            Dimension::OVERWORLD,
+            false,
+            Vec::new(),
+            String::new(),
+        );
+        let nether = get_world_gen(
+            Seed(1),
+            Dimension::THE_NETHER,
+            false,
+            Vec::new(),
+            String::new(),
+        );
+
+        let overworld_chunk = ProtoChunk::new(0, 0, &overworld);
+        let nether_chunk = ProtoChunk::new(0, 0, &nether);
+        assert_eq!(GenerationCache::sea_level(&overworld_chunk), 63);
+        assert_eq!(GenerationCache::sea_level(&nether_chunk), 32);
+    }
 
     #[test]
     fn structure_references_are_rebuilt_when_resuming_generation() {
@@ -120,6 +144,65 @@ mod test {
         assert_eq!(
             surface_mismatches, 0,
             "resumed chunk surface differs from uninterrupted generation (stone-trail bug)"
+        );
+    }
+
+    #[test]
+    fn scheduler_block_entities_and_unknown_nbt_survive_proto_resume() {
+        use crate::chunk_system::chunk_state::Chunk;
+        use crate::tick::{ScheduledTick, TickPriority};
+        use pumpkin_config::lighting::LightingEngineConfig;
+        use pumpkin_nbt::compound::NbtCompound;
+        use pumpkin_util::math::position::BlockPos;
+        use pumpkin_util::resource_location::ToResourceLocation;
+
+        let world_gen = get_world_gen(
+            Seed(99),
+            Dimension::OVERWORLD,
+            false,
+            Vec::new(),
+            String::new(),
+        );
+        let mut proto = ProtoChunk::new(0, 0, &world_gen);
+        proto.block_ticks.push(ScheduledTick {
+            delay: 4,
+            priority: TickPriority::High,
+            position: BlockPos::new(1, 20, 2),
+            value: &pumpkin_data::Block::REDSTONE_WIRE,
+        });
+        proto.inhabited_time = 1234;
+        proto
+            .unknown_nbt
+            .put_string("FutureField", "kept".to_string());
+        let mut entity = NbtCompound::new();
+        entity.put_string("id", "minecraft:chest".to_string());
+        entity.put_int("x", 1);
+        entity.put_int("y", 20);
+        entity.put_int("z", 2);
+        proto.pending_block_entities.push(entity);
+
+        let mut staged = Chunk::Proto(Box::new(proto));
+        staged.upgrade_to_level_chunk(&Dimension::OVERWORLD, &LightingEngineConfig::Default);
+        let Chunk::Level(chunk) = staged else {
+            unreachable!()
+        };
+        assert_eq!(chunk.block_ticks.to_vec().len(), 1);
+        assert_eq!(chunk.pending_block_entities.lock().unwrap().len(), 1);
+        assert_eq!(
+            chunk
+                .inhabited_time
+                .load(std::sync::atomic::Ordering::Relaxed),
+            1234
+        );
+
+        let resumed = ProtoChunk::from_chunk_data(&chunk, &world_gen);
+        assert_eq!(resumed.block_ticks.len(), 1);
+        assert_eq!(resumed.pending_block_entities.len(), 1);
+        assert_eq!(resumed.inhabited_time, 1234);
+        assert_eq!(resumed.unknown_nbt.get_string("FutureField"), Some("kept"));
+        assert_eq!(
+            resumed.block_ticks[0].value.to_resource_location(),
+            "minecraft:redstone_wire"
         );
     }
 

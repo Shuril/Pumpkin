@@ -1,16 +1,22 @@
 use std::sync::Arc;
 
 use pumpkin_data::{
-    Block, BlockState, BlockStateId, damage::DamageType, entity::EntityType, fluid::Fluid,
+    Block, BlockState, BlockStateId, attributes::Attributes, damage::DamageType,
+    entity::EntityType, fluid::Fluid,
 };
 use pumpkin_util::math::{boundingbox::BoundingBox, position::BlockPos, vector3::Vector3};
 use pumpkin_world::chunk::ChunkData;
+use rand::RngExt;
 use rustc_hash::FxHashMap;
 
 use crate::{
-    block::{ExplodeArgs, drop_loot},
+    block::{
+        ExplodeArgs,
+        blocks::fire::{FireBlockBase, fire::FireBlock},
+        drop_loot,
+    },
     entity::{Entity, EntityBase},
-    world::loot::LootContextParameters,
+    world::loot::{LootContextParameters, derive_loot_seed},
 };
 
 use super::{BlockFlags, World};
@@ -19,6 +25,7 @@ pub struct Explosion {
     power: f32,
     pos: Vector3<f64>,
     preserve_rails: bool,
+    causes_fire: bool,
 }
 
 impl Explosion {
@@ -28,12 +35,24 @@ impl Explosion {
             power,
             pos,
             preserve_rails: false,
+            causes_fire: false,
         }
     }
 
     #[must_use]
     pub const fn preserving_rails(mut self) -> Self {
         self.preserve_rails = true;
+        self
+    }
+
+    /// Makes this explosion ignite a subset of the air blocks it destroys.
+    ///
+    /// Vanilla only enables this for incendiary sources (for example a
+    /// ghast fireball); TNT, creepers, beds and respawn anchors use the
+    /// regular non-incendiary path unless their caller opts in explicitly.
+    #[must_use]
+    pub const fn causing_fire(mut self) -> Self {
+        self.causes_fire = true;
         self
     }
 
@@ -209,7 +228,6 @@ impl Explosion {
                 * self.power as f64
                 + 1.0) as f32;
 
-            // TODO: damage type
             entity
                 .damage(entity_base.as_ref(), damage, DamageType::EXPLOSION)
                 .await;
@@ -221,12 +239,19 @@ impl Explosion {
                 entity.get_eye_pos()
             };
             let direction = (dir_pos - self.pos).normalize();
-            // TODO
-            let knockback_resistance = 0.0;
+            let knockback_resistance = entity_base.get_living_entity().map_or(0.0, |living| {
+                living
+                    .get_attribute_value(&Attributes::KNOCKBACK_RESISTANCE)
+                    .clamp(0.0, 1.0)
+            });
 
             let knockback_multiplier = (1.0 - distance) * exposure * (1.0 - knockback_resistance);
-            let knockback = direction * knockback_multiplier;
-            entity.add_velocity(knockback);
+            if entity_base.get_living_entity().is_some() {
+                entity.knockback(knockback_multiplier, direction.x, direction.z);
+            } else {
+                let knockback = direction * knockback_multiplier;
+                entity.add_velocity(knockback);
+            }
         }
     }
 
@@ -289,6 +314,39 @@ impl Explosion {
         visible_points as f32 / total_points as f32
     }
 
+    async fn ignite_destroyed_blocks(
+        &self,
+        world: &Arc<World>,
+        blocks: &FxHashMap<BlockPos, (&'static Block, &'static BlockState)>,
+    ) {
+        if !self.causes_fire {
+            return;
+        }
+
+        // Keep the non-Send thread RNG out of the async portion.  This is
+        // important because explosions can be invoked from plugin futures
+        // whose executor requires `Send`.
+        let ignitions: Vec<BlockPos> = {
+            let mut rng = rand::rng();
+            blocks
+                .keys()
+                .filter(|pos| {
+                    rng.random_range(0..3) == 0
+                        && world.get_block_state(pos).is_air()
+                        && FireBlockBase::can_place_at(world, pos)
+                })
+                .copied()
+                .collect()
+        };
+
+        for pos in ignitions {
+            let state_id = FireBlock.get_state_for_position(world, &Block::FIRE, &pos);
+            world
+                .set_block_state(&pos, state_id, BlockFlags::NOTIFY_ALL)
+                .await;
+        }
+    }
+
     /// Returns the removed block count
     pub async fn explode(&self, world: &Arc<World>) -> u32 {
         let blocks = self.get_blocks_to_destroy(world);
@@ -304,17 +362,22 @@ impl Explosion {
             if pumpkin_block.is_none_or(|s| s.should_drop_items_on_explosion()) {
                 let is_raining = world.is_raining().await;
                 let is_thundering = world.is_thundering().await;
+                let world_time = world.level_info.load().day_time as u64;
+                let loot_position = Vector3::new(pos.0.x as f64, pos.0.y as f64, pos.0.z as f64);
                 let params = LootContextParameters {
                     block_state: Some(state),
+                    biome: Some(world.get_biome(pos).registry_id),
                     explosion_radius: Some(self.power),
-                    position: Some(pumpkin_util::math::vector3::Vector3::new(
-                        pos.0.x as f64,
-                        pos.0.y as f64,
-                        pos.0.z as f64,
-                    )),
-                    world_time: world.level_info.load().day_time as u64,
+                    position: Some(loot_position),
+                    world_time,
                     is_raining: Some(is_raining),
                     is_thundering: Some(is_thundering),
+                    random_seed: Some(derive_loot_seed(
+                        world.level.seed.0,
+                        Some(loot_position),
+                        world_time,
+                        0x4558504c4f4445,
+                    )),
                     ..Default::default()
                 };
                 drop_loot(world, block, pos, false, params).await;
@@ -329,7 +392,7 @@ impl Explosion {
                     .await;
             }
         }
-        // TODO: fire
+        self.ignite_destroyed_blocks(world, &blocks).await;
         blocks.len() as u32
     }
 }
@@ -338,6 +401,7 @@ impl Explosion {
 mod tests {
     use super::Explosion;
     use pumpkin_data::Block;
+    use pumpkin_util::math::vector3::Vector3;
 
     #[test]
     fn tnt_minecart_rail_protection_covers_every_rail_type() {
@@ -350,5 +414,13 @@ mod tests {
             assert!(Explosion::is_rail(rail));
         }
         assert!(!Explosion::is_rail(&Block::STONE));
+    }
+
+    #[test]
+    fn incendiary_flag_is_opt_in() {
+        let normal = Explosion::new(1.0, Vector3::new(0.0, 0.0, 0.0));
+        assert!(!normal.causes_fire);
+        let fireball = normal.causing_fire();
+        assert!(fireball.causes_fire);
     }
 }

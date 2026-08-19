@@ -263,8 +263,15 @@ impl BlockLightPropagator {
 
 impl SkyLightPropagator {
     #[expect(clippy::too_many_lines)]
-    pub fn convert_light(&mut self, cache: &mut Cache) {
+    pub fn convert_light(&mut self, cache: &mut Cache, has_skylight: bool) {
         self.clear();
+
+        if !has_skylight {
+            // Nether-like dimensions still carry a sky-light array in the
+            // shared chunk shape, but its semantic value is always zero.
+            // Do not manufacture sky sources while initializing those chunks.
+            return;
+        }
 
         //let scan_start = Instant::now();
 
@@ -447,7 +454,12 @@ impl LightEngine {
         }
     }
 
-    pub fn initialize_light(&mut self, cache: &mut Cache, config: &LightingEngineConfig) {
+    pub fn initialize_light(
+        &mut self,
+        cache: &mut Cache,
+        config: &LightingEngineConfig,
+        has_skylight: bool,
+    ) {
         if *config != LightingEngineConfig::Default {
             return;
         }
@@ -460,7 +472,7 @@ impl LightEngine {
             return;
         }
 
-        self.sky_light.convert_light(cache);
+        self.sky_light.convert_light(cache, has_skylight);
         self.block_light.propagate_light(cache);
 
         self.block_light.clear();

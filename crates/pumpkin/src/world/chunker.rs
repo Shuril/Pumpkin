@@ -51,9 +51,32 @@ pub async fn update_position(player: &Arc<Player>) {
     // }
 
     let view_distance = get_view_distance(player);
+    let simulation_distance =
+        player
+            .world()
+            .server
+            .upgrade()
+            .map_or(10, |server| match player.client.as_ref() {
+                ClientPlatform::Java(_) => server
+                    .advanced_config
+                    .networking
+                    .java
+                    .simulation_distance
+                    .get(),
+                ClientPlatform::Bedrock(_) => server
+                    .advanced_config
+                    .networking
+                    .bedrock
+                    .simulation_distance
+                    .get(),
+            });
     let new_cylindrical = Cylindrical::new(new_chunk_center, view_distance);
 
-    if old_cylindrical == new_cylindrical {
+    let simulation_distance_matches = {
+        let chunk_manager = player.chunk_manager.lock().await;
+        chunk_manager.simulation_distance_matches(simulation_distance)
+    };
+    if old_cylindrical == new_cylindrical && simulation_distance_matches {
         return;
     }
 
@@ -83,12 +106,18 @@ pub async fn update_position(player: &Arc<Player>) {
 
     // Use the chunk_manager's world reference, which is updated on dimension change.
     // This ensures we load chunks from the correct world after portal teleportation.
+    // Close entity pairings before the client forgets terrain.  Otherwise the
+    // next visit to the same chunk would be treated as already tracked and
+    // minecarts/projectiles could remain invisible.
     let world = {
+        let world = player.world().clone();
+        world.remove_tracked_entities_in_chunks(player, &unloading_chunks);
         let mut chunk_manager = player.chunk_manager.lock().await;
         let world = chunk_manager.world().clone();
         chunk_manager.update_center_and_view_distance(
             new_chunk_center,
             view_distance.into(),
+            simulation_distance,
             &world.level,
             &loading_chunks,
             &unloading_chunks,

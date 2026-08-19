@@ -51,7 +51,9 @@ trait CropBlockBase: PlantBlockBase {
     async fn random_tick(&self, world: &Arc<World>, pos: &BlockPos) {
         let (block, state) = world.get_block_and_state_id(pos);
         let age = self.get_age(state, block);
-        if age < self.max_age() {
+        // CropBlock.randomTick only advances a crop when raw brightness is at
+        // least 9.  Without this guard crops grew in complete darkness.
+        if world.get_raw_brightness(pos, 0) >= 9 && age < self.max_age() {
             let f = get_available_moisture(world, pos, block).await;
             if rand::rng().random_range(0..=(25.0 / f).floor() as i64) == 0 {
                 let mut new_state_id = self.state_with_age(block, state, age + 1);
@@ -76,8 +78,6 @@ trait CropBlockBase: PlantBlockBase {
             }
         }
     }
-
-    //TODO add impl for light level
 }
 
 pub async fn get_available_moisture(world: &Arc<World>, pos: &BlockPos, block: &Block) -> f32 {

@@ -1,4 +1,5 @@
 use pumpkin_data::recipes::RecipeCategoryTypes;
+use pumpkin_nbt::compound::NbtCompound;
 
 use pumpkin_data::item::Item;
 use pumpkin_data::tag::Taggable;
@@ -31,12 +32,16 @@ impl OwnedRecipeIngredient {
 pub struct OwnedRecipeResult {
     pub item_id: String,
     pub count: u8,
-    // TODO: Add components/enchantments if needed for the display result
+    /// Component patch encoded with the same NBT shape used by item stacks.
+    /// `None` keeps the compact representation for the generated vanilla table.
+    pub components: Option<NbtCompound>,
 }
 
 #[derive(Clone, Debug)]
 pub enum OwnedCraftingRecipe {
     Shaped {
+        /// Stable namespaced recipe key, independent of the output item.
+        recipe_id: String,
         category: RecipeCategoryTypes,
         group: Option<String>,
         show_notification: bool,
@@ -45,6 +50,8 @@ pub enum OwnedCraftingRecipe {
         result: OwnedRecipeResult,
     },
     Shapeless {
+        /// Stable namespaced recipe key, independent of the output item.
+        recipe_id: String,
         category: RecipeCategoryTypes,
         group: Option<String>,
         ingredients: Vec<OwnedRecipeIngredient>,

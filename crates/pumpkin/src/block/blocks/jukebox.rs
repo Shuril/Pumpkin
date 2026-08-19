@@ -77,6 +77,12 @@ impl JukeboxBlock {
     async fn stop_playing(block: &Block, position: &BlockPos, world: &Arc<World>) {
         Self::set_record_state(false, block, position, world).await;
         world.sync_world_event(WorldEvent::SoundStopJukeboxSong, *position, 0);
+        world
+            .emit_game_event(
+                *position,
+                crate::world::game_event::GameEventKind::JukeboxStopPlay,
+            )
+            .await;
     }
 
     /// Starts playing music
@@ -176,7 +182,12 @@ impl BlockBehaviour for JukeboxBlock {
                 )
                 .await;
 
-            // TODO: world.emitGameEvent(GameEvent.BLOCK_CHANGE, pos, ...)
+            world
+                .emit_game_event(
+                    *args.position,
+                    crate::world::game_event::GameEventKind::JukeboxPlay,
+                )
+                .await;
 
             BlockActionResult::Success
         })
@@ -186,18 +197,32 @@ impl BlockBehaviour for JukeboxBlock {
     fn broken<'a>(&'a self, args: BrokenArgs<'a>) -> BlockFuture<'a, ()> {
         Box::pin(async move {
             // Drop the record if there is one
-            Self::drop_record(args.position, args.world).await;
+            if args.world.level_info.load().game_rules.block_drops {
+                Self::drop_record(args.position, args.world).await;
+            }
             // Stop the music
             args.world
                 .sync_world_event(WorldEvent::SoundStopJukeboxSong, *args.position, 0);
+            args.world
+                .emit_game_event(
+                    *args.position,
+                    crate::world::game_event::GameEventKind::JukeboxStopPlay,
+                )
+                .await;
         })
     }
 
     /// Vanilla: `JukeboxBlock.onStateReplaced()` -> `ItemScatterer.onStateReplaced()`
-    fn on_state_replaced<'a>(&'a self, _args: OnStateReplacedArgs<'a>) -> BlockFuture<'a, ()> {
+    fn on_state_replaced<'a>(&'a self, args: OnStateReplacedArgs<'a>) -> BlockFuture<'a, ()> {
         Box::pin(async move {
             // Vanilla calls ItemScatterer.onStateReplaced which updates comparators
-            // TODO: world.updateComparators(pos, block) when implemented
+            args.world.update_neighbors(args.position, None).await;
+            args.world
+                .emit_game_event(
+                    *args.position,
+                    crate::world::game_event::GameEventKind::BlockChange,
+                )
+                .await;
         })
     }
 

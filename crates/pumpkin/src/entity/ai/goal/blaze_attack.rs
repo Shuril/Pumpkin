@@ -1,3 +1,4 @@
+use pumpkin_data::attributes::Attributes;
 use pumpkin_protocol::java::client::play::CWorldEvent;
 use pumpkin_util::math::vector3::Vector3;
 use rand::RngExt;
@@ -5,7 +6,10 @@ use std::sync::Arc;
 
 use crate::entity::{
     Entity,
-    ai::goal::{Controls, Goal, GoalFuture},
+    ai::{
+        goal::{Controls, Goal, GoalFuture},
+        pathfinder::NavigatorGoal,
+    },
     mob::Mob,
     mob::blaze::BlazeEntity,
     projectile::small_fireball::SmallFireballEntity,
@@ -29,9 +33,11 @@ impl BlazeShootFireballGoal {
         }
     }
 
-    const fn get_follow_distance() -> f64 {
-        // TODO: use FOLLOW_RANGE
-        48.0
+    fn get_follow_distance(blaze: &BlazeEntity) -> f64 {
+        blaze
+            .entity
+            .living_entity
+            .get_attribute_value(&Attributes::FOLLOW_RANGE)
     }
 }
 
@@ -42,12 +48,7 @@ impl Goal for BlazeShootFireballGoal {
                 return false;
             };
             let target = blaze.entity.target.lock().await.clone();
-            if target.is_some() {
-                // TODO: check is_alive
-                true
-            } else {
-                false
-            }
+            target.is_some_and(|target| target.get_entity().is_alive())
         })
     }
 
@@ -57,12 +58,7 @@ impl Goal for BlazeShootFireballGoal {
                 return false;
             };
             let target = blaze.entity.target.lock().await.clone();
-            if target.is_some() {
-                // TODO: check is_alive
-                true
-            } else {
-                false
-            }
+            target.is_some_and(|target| target.get_entity().is_alive())
         })
     }
 
@@ -98,8 +94,19 @@ impl Goal for BlazeShootFireballGoal {
                 return;
             };
 
-            // TODO: hasLineOfSight check
-            let has_line_of_sight = true;
+            let blaze_entity = &blaze.entity.living_entity.entity;
+            let world = blaze_entity.world.load();
+            let has_line_of_sight = world
+                .raycast(
+                    blaze_entity.get_eye_pos(),
+                    target.get_eye_pos(),
+                    async |block_pos, world_ref| {
+                        let state = world_ref.get_block_state(block_pos);
+                        !state.is_air() && !state.collision_shapes.is_empty()
+                    },
+                )
+                .await
+                .is_none();
 
             if has_line_of_sight {
                 self.last_seen = 0;
@@ -107,7 +114,7 @@ impl Goal for BlazeShootFireballGoal {
                 self.last_seen += 1;
             }
 
-            let blaze_pos = blaze.entity.living_entity.entity.pos.load();
+            let blaze_pos = blaze_entity.pos.load();
             let target_pos = target.get_entity().pos.load();
 
             let dx = target_pos.x - blaze_pos.x;
@@ -123,11 +130,20 @@ impl Goal for BlazeShootFireballGoal {
 
                 if self.attack_time <= 0 {
                     self.attack_time = 20;
-                    // TODO: doHurtTarget
+                    let successful = blaze
+                        .entity
+                        .try_attack(blaze.as_ref(), target.as_ref())
+                        .await;
+                    blaze.after_attack(target.as_ref(), successful).await;
                 }
 
-                // TODO: set wanted position to target
-            } else if distance_sq < Self::get_follow_distance().powi(2) && has_line_of_sight {
+                blaze
+                    .entity
+                    .navigator
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .set_progress(NavigatorGoal::new(blaze_pos, target_pos, 1.0));
+            } else if distance_sq < Self::get_follow_distance(&blaze).powi(2) && has_line_of_sight {
                 let target_y_offset = target_pos.y + 0.5; // roughly target.getY(0.5)
                 let blaze_y_offset = blaze_pos.y + 0.5; // roughly blaze.getY(0.5)
                 let yd = target_y_offset - blaze_y_offset;
@@ -179,7 +195,7 @@ impl Goal for BlazeShootFireballGoal {
                             };
 
                             // Spawn SmallFireball
-                            let world = blaze.entity.living_entity.entity.world.load();
+                            let world = blaze_entity.world.load();
                             let uuid = uuid::Uuid::new_v4();
 
                             let mut pos = blaze.entity.living_entity.entity.pos.load();
@@ -211,7 +227,12 @@ impl Goal for BlazeShootFireballGoal {
                     .unwrap_or_else(std::sync::PoisonError::into_inner)
                     .look_at_entity(&*blaze, &target);
             } else if self.last_seen < 5 {
-                // TODO: set wanted position to target
+                blaze
+                    .entity
+                    .navigator
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .set_progress(NavigatorGoal::new(blaze_pos, target_pos, 1.0));
             }
         })
     }

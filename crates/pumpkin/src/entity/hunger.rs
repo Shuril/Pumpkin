@@ -11,6 +11,32 @@ const MAX_FOOD: u8 = 20;
 const EXHAUSTION_COST: f32 = 4.0;
 const MAX_EXHAUSTION: f32 = 40.0;
 
+#[must_use]
+fn food_level_after_eating(current: u8, food: u8) -> u8 {
+    // Item food values are network/NBT data and may be 255 when supplied by a
+    // datapack.  Vanilla's integer math is bounded by the 20-point food bar;
+    // a wrapping u8 addition would otherwise turn a full player back to zero.
+    current.saturating_add(food).min(MAX_FOOD)
+}
+
+#[must_use]
+fn bounded_saturation(value: f32, max: f32) -> f32 {
+    if !value.is_nan() {
+        value.clamp(0.0, max.max(0.0))
+    } else {
+        0.0
+    }
+}
+
+#[must_use]
+fn bounded_exhaustion(value: f32) -> f32 {
+    if !value.is_nan() {
+        value.clamp(0.0, MAX_EXHAUSTION)
+    } else {
+        0.0
+    }
+}
+
 pub struct HungerManager {
     pub level: AtomicCell<u8>,
     pub saturation: AtomicCell<f32>,
@@ -120,9 +146,9 @@ impl HungerManager {
         let current_level = self.level.load();
         let current_sat = self.saturation.load();
 
-        let new_level = (current_level + food).min(MAX_FOOD);
+        let new_level = food_level_after_eating(current_level, food);
 
-        let new_sat = (current_sat + added_saturation).min(f32::from(new_level));
+        let new_sat = bounded_saturation(current_sat + added_saturation, f32::from(new_level));
 
         self.level.store(new_level);
         self.saturation.store(new_sat);
@@ -134,20 +160,23 @@ impl HungerManager {
     pub fn add_exhaustion(&self, exhaustion: f32) {
         let current = self.exhaustion.load();
         self.exhaustion
-            .store((current + exhaustion).min(MAX_EXHAUSTION));
+            .store(bounded_exhaustion(current + exhaustion));
     }
 
     /// Add hunger manually
     pub fn add_hunger(&self, hunger: u8) {
         let current = self.level.load();
-        self.level.store((current + hunger).min(MAX_FOOD));
+        self.level
+            .store(current.saturating_add(hunger).min(MAX_FOOD));
     }
 
     /// Add saturation manually
     pub fn add_saturation(&self, saturation: f32) {
         let current = self.saturation.load();
-        self.saturation
-            .store((current + saturation).min(f32::from(self.level.load())));
+        self.saturation.store(bounded_saturation(
+            current + saturation,
+            f32::from(self.level.load()),
+        ));
     }
 
     pub fn set_level(&self, level: u8) {
@@ -156,7 +185,7 @@ impl HungerManager {
 
     pub fn set_saturation(&self, saturation: f32) {
         self.saturation
-            .store(saturation.min(f32::from(self.level.load())));
+            .store(bounded_saturation(saturation, f32::from(self.level.load())));
     }
 
     pub fn get_exhaustion(&self) -> f32 {
@@ -164,7 +193,7 @@ impl HungerManager {
     }
 
     pub fn set_exhaustion(&self, exhaustion: f32) {
-        self.exhaustion.store(exhaustion.min(MAX_EXHAUSTION));
+        self.exhaustion.store(bounded_exhaustion(exhaustion));
     }
 
     pub fn restart(&self) {
@@ -187,16 +216,60 @@ impl NBTStorage for HungerManager {
 
     fn read_nbt<'a>(&'a mut self, nbt: &'a mut NbtCompound) -> NbtFuture<'a, ()> {
         Box::pin(async move {
-            self.level
-                .store(nbt.get_int("foodLevel").unwrap_or(20) as u8);
-            self.saturation
-                .store(nbt.get_float("foodSaturationLevel").unwrap_or(5.0));
-            self.exhaustion
-                .store(nbt.get_float("foodExhaustionLevel").unwrap_or(0.0));
-            self.tick_timer
-                .store(nbt.get_int("foodTickTimer").unwrap_or(0) as u32);
+            let level = nbt
+                .get_int("foodLevel")
+                .and_then(|value| u8::try_from(value).ok())
+                .unwrap_or(MAX_FOOD)
+                .min(MAX_FOOD);
+            self.level.store(level);
+            self.saturation.store(bounded_saturation(
+                nbt.get_float("foodSaturationLevel").unwrap_or(5.0),
+                f32::from(level),
+            ));
+            self.exhaustion.store(bounded_exhaustion(
+                nbt.get_float("foodExhaustionLevel").unwrap_or(0.0),
+            ));
+            let timer = nbt
+                .get_int("foodTickTimer")
+                .and_then(|value| u32::try_from(value).ok())
+                .unwrap_or(0);
+            self.tick_timer.store(timer);
         })
     }
 }
 
 impl NBTStorageInit for HungerManager {}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        HungerManager, MAX_EXHAUSTION, bounded_exhaustion, bounded_saturation,
+        food_level_after_eating,
+    };
+
+    #[test]
+    fn food_bar_addition_is_saturating_for_datapack_values() {
+        assert_eq!(food_level_after_eating(20, u8::MAX), 20);
+        assert_eq!(food_level_after_eating(19, u8::MAX), 20);
+        assert_eq!(food_level_after_eating(3, 4), 7);
+    }
+
+    #[test]
+    fn malformed_food_floats_are_bounded() {
+        assert_eq!(bounded_saturation(f32::NAN, 20.0), 0.0);
+        assert_eq!(bounded_saturation(-2.0, 20.0), 0.0);
+        assert_eq!(bounded_saturation(40.0, 20.0), 20.0);
+        assert_eq!(bounded_exhaustion(f32::INFINITY), MAX_EXHAUSTION);
+        assert_eq!(bounded_exhaustion(-1.0), 0.0);
+        assert_eq!(bounded_exhaustion(100.0), MAX_EXHAUSTION);
+    }
+
+    #[test]
+    fn manual_saturation_respects_current_food_level() {
+        let manager = HungerManager::default();
+        manager.level.store(2);
+        manager.saturation.store(1.8);
+        manager.add_saturation(0.4);
+        assert_eq!(manager.saturation.load(), 2.0);
+    }
+}

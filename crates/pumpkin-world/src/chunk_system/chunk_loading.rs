@@ -2,12 +2,13 @@ use super::{ChunkLevel, ChunkPos, HashMapType, LevelChannel};
 use crate::chunk_system::chunk_state::StagedChunkEnum; // Fixed path
 use itertools::Itertools;
 use std::cmp::min;
+use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::collections::hash_map::Entry;
 use std::fmt::Write;
 use std::mem::swap;
 use std::sync::Arc;
-use tracing::debug;
+use tracing::{debug, error};
 
 struct LevelCache(i32, i32, usize, [(i8, i8); 256 * 256]);
 
@@ -345,35 +346,107 @@ impl ChunkLoading {
         self.cache.write(&mut self.pos_level, &mut self.change);
         debug_assert!(self.debug_check_error());
     }
+
+    /// Rebuild the derived chunk-level map from the authoritative ticket map.
+    ///
+    /// The scheduler normally updates `pos_level` incrementally. Cancellation
+    /// or a plugin callback can interrupt an update between the two maps. This
+    /// slow path is reserved for that invariant failure: it converts the old
+    /// fatal panic into a recoverable state and publishes the affected stage
+    /// changes to the worker.
+    fn rebuild_levels_from_tickets(&mut self) {
+        let mut rebuilt = ChunkLevel::default();
+        for (ticket_pos, levels) in &self.ticket {
+            for &level in levels {
+                if level >= Self::MAX_LEVEL {
+                    continue;
+                }
+                let range = i32::from(Self::MAX_LEVEL - level - 1);
+                for dx in -range..=range {
+                    for dy in -range..=range {
+                        let target = ticket_pos.add_raw(dx, dy);
+                        let candidate = level + dx.abs().max(dy.abs()) as i8;
+                        let value = rebuilt.entry(target).or_insert(Self::MAX_LEVEL);
+                        *value = min(*value, candidate);
+                    }
+                }
+            }
+        }
+
+        let previous = std::mem::replace(&mut self.pos_level, rebuilt);
+        let pending_changes = std::mem::take(&mut self.change);
+        self.cache = LevelCache::new();
+        self.increase_update.clear();
+        self.decrease_update.clear();
+
+        let mut positions = HashSet::with_capacity(previous.len() + self.pos_level.len());
+        positions.extend(previous.keys().copied());
+        positions.extend(self.pos_level.keys().copied());
+        positions.extend(pending_changes.keys().copied());
+        for position in positions {
+            let old = previous.get(&position).copied().unwrap_or(Self::MAX_LEVEL);
+            let new = self
+                .pos_level
+                .get(&position)
+                .copied()
+                .unwrap_or(Self::MAX_LEVEL);
+            let transition = pending_changes.get(&position).map_or(
+                (
+                    StagedChunkEnum::level_to_stage(old),
+                    StagedChunkEnum::level_to_stage(new),
+                ),
+                |(from, _)| (*from, StagedChunkEnum::level_to_stage(new)),
+            );
+            if transition.0 != transition.1 {
+                self.change.insert(position, transition);
+            }
+        }
+    }
+
     pub fn remove_ticket(&mut self, pos: ChunkPos, level: i8) {
         // debug!("remove ticket at {pos:?} level {level}");
         debug_assert!(level < Self::MAX_LEVEL);
-        let Some(vec) = self.ticket.get_mut(&pos) else {
+        let Some(levels) = self.ticket.get_mut(&pos) else {
             // warn!("No ticket found at {pos:?}");
             return;
         };
-        let Some((index, _)) = vec.iter().find_position(|x| **x == level) else {
+        let Some((index, _)) = levels.iter().find_position(|x| **x == level) else {
             // warn!("No ticket found at {pos:?}");
             return;
         };
-        vec.remove(index);
-        match self.pos_level.entry(pos) {
-            Entry::Occupied(entry) => {
-                let old_level = *entry.get();
-                let source = *vec.iter().min().unwrap_or(&Self::MAX_LEVEL);
-                if vec.is_empty() {
-                    self.ticket.remove(&pos);
-                }
-                if level == old_level && source != level {
-                    self.cache.clean(pos, old_level);
-                    self.cache.set(&self.pos_level, pos, Self::MAX_LEVEL);
-                    debug_assert!(self.decrease_update.is_empty());
-                    self.decrease_update.push_back((pos, level));
-                    self.run_decrease_update(pos, (Self::MAX_LEVEL - level - 1) as i32);
-                    self.cache.write(&mut self.pos_level, &mut self.change);
-                }
-            }
-            Entry::Vacant(_) => panic!(),
+        levels.remove(index);
+        let source = levels.iter().min().copied().unwrap_or(Self::MAX_LEVEL);
+        let no_remaining_tickets = levels.is_empty();
+        // End the mutable borrow before touching `pos_level`; this also lets
+        // the recovery path below remove the empty ticket entry safely.
+        let _ = levels;
+        if no_remaining_tickets {
+            self.ticket.remove(&pos);
+        }
+
+        let Some(old_level) = self.pos_level.get(&pos).copied() else {
+            // `pos_level` is derived state. A cancelled chunk-load update or a
+            // plugin callback can leave the ticket map ahead of it. The old
+            // code panicked here, taking the entire server down. Rebuild all
+            // derived levels from the authoritative tickets instead.
+            error!(
+                ?pos,
+                removed_level = level,
+                remaining_level = source,
+                "chunk ticket level map was missing a source; repairing"
+            );
+            self.rebuild_levels_from_tickets();
+            debug_assert!(self.debug_check_error());
+            return;
+        };
+
+        if level == old_level && source != level {
+            self.cache.clean(pos, old_level);
+            self.cache.set(&self.pos_level, pos, Self::MAX_LEVEL);
+            debug_assert!(self.decrease_update.is_empty());
+            self.decrease_update.push_back((pos, level));
+            self.run_decrease_update(pos, (Self::MAX_LEVEL - level - 1) as i32);
+            self.cache.write(&mut self.pos_level, &mut self.change);
         }
         debug_assert!(self.debug_check_error());
     }
@@ -435,4 +508,21 @@ fn test() {
 
         println!("\nloading level:\n{header}\n{grid}");
     }
+}
+
+#[test]
+fn removing_a_ticket_repairs_a_missing_derived_level_without_panicking() {
+    let mut loading = ChunkLoading::new(Arc::new(LevelChannel::new()));
+    let pos = ChunkPos::new(4, -7);
+    loading.add_ticket(pos, 24);
+    loading.add_ticket(pos, 31);
+
+    // Simulate a stale derived map, which can occur when a cancellation races
+    // the chunk scheduler.  Removing the ticket must be recoverable and must
+    // retain the remaining source instead of aborting the process.
+    loading.pos_level.remove(&pos);
+    loading.remove_ticket(pos, 24);
+
+    assert_eq!(loading.ticket.get(&pos), Some(&vec![31]));
+    assert_eq!(loading.pos_level.get(&pos), Some(&31));
 }

@@ -3,7 +3,7 @@ use crate::data_component::DataComponent::Enchantments;
 use crate::data_component_impl::{
     BlocksAttacksImpl, ConsumableImpl, CustomDataImpl, DamageImpl, DataComponentImpl,
     EnchantmentsImpl, IDSet, MaxDamageImpl, MaxStackSizeImpl, ToolImpl, UnbreakableImpl,
-    UseCooldownImpl, get, get_mut, read_data,
+    UseCooldownImpl, UseRemainderImpl, get, get_mut, read_data,
 };
 use crate::item::Item;
 use crate::recipes::RecipeResultStruct;
@@ -286,6 +286,16 @@ impl ItemStack {
         self.get_max_damage().unwrap_or(0) > 0
     }
 
+    /// Vanilla `ItemStack.nextDamageWillBreak`: true when one durability
+    /// point would exhaust this stack.  Item use actions that can consume the
+    /// last point (notably Trident Riptide/throw) must reject the action before
+    /// spawning an entity or applying movement, rather than creating a broken
+    /// item and only then discovering that it cannot be damaged.
+    #[must_use]
+    pub fn next_damage_will_break(&self) -> bool {
+        self.is_damageable() && self.get_damage() >= self.get_max_damage().unwrap_or(0) - 1
+    }
+
     pub fn repair_item(&mut self, amount: i32) -> i32 {
         if amount <= 0 {
             return 0;
@@ -532,6 +542,24 @@ impl ItemStack {
             if self.item_count == 0 {
                 self.clear();
             }
+        }
+    }
+
+    /// Decrements a consumable stack and applies its vanilla `use_remainder`
+    /// template when the final item is consumed.  Creative players retain the
+    /// original stack and therefore never receive a remainder.
+    pub fn decrement_unless_creative_with_remainder(&mut self, gamemode: GameMode, amount: u8) {
+        let remainder = self
+            .get_data_component::<UseRemainderImpl>()
+            .map(|component| (component.remainder, component.count));
+        let before = self.item_count;
+        self.decrement_unless_creative(gamemode, amount);
+        if gamemode != GameMode::Creative
+            && before > 0
+            && self.is_empty()
+            && let Some((remainder, count)) = remainder
+        {
+            *self = Self::new(count, remainder);
         }
     }
 
@@ -793,6 +821,23 @@ mod tests {
     }
 
     #[test]
+    fn use_remainder_converts_only_the_exhausted_survival_stack() {
+        let mut stack = ItemStack::new(2, &Item::MUSHROOM_STEW);
+        stack.decrement_unless_creative_with_remainder(GameMode::Survival, 1);
+        assert_eq!(stack.item.id, Item::MUSHROOM_STEW.id);
+        assert_eq!(stack.item_count, 1);
+
+        stack.decrement_unless_creative_with_remainder(GameMode::Survival, 1);
+        assert_eq!(stack.item.id, Item::BOWL.id);
+        assert_eq!(stack.item_count, 1);
+
+        let mut creative = ItemStack::new(1, &Item::MILK_BUCKET);
+        creative.decrement_unless_creative_with_remainder(GameMode::Creative, 1);
+        assert_eq!(creative.item.id, Item::MILK_BUCKET.id);
+        assert_eq!(creative.item_count, 1);
+    }
+
+    #[test]
     fn custom_data_sets_and_reads_full_nbt_tags() {
         let mut stack = ItemStack::new(1, &Item::WOODEN_AXE);
         let mut compound = NbtCompound::new();
@@ -956,6 +1001,18 @@ mod tests {
         // AIR has no MaxDamage component.
         let mut stack = ItemStack::new(1, &Item::AIR);
         assert_eq!(stack.damage_item(1), DamageResult::Untouched);
+    }
+
+    #[test]
+    fn next_damage_will_break_matches_vanilla_boundary() {
+        let mut stack = iron_sword();
+        assert!(!stack.next_damage_will_break());
+        stack.set_damage(stack.get_max_damage().unwrap() - 2);
+        assert!(!stack.next_damage_will_break());
+        stack.set_damage(stack.get_max_damage().unwrap() - 1);
+        assert!(stack.next_damage_will_break());
+        stack.set_damage(stack.get_max_damage().unwrap());
+        assert!(stack.next_damage_will_break());
     }
 
     #[test]

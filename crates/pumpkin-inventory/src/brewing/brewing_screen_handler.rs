@@ -94,6 +94,11 @@ impl BrewingScreenHandler {
         let pi: Arc<dyn Inventory> = player_inventory.clone();
         handler.add_player_slots(&pi);
 
+        // BrewingStandMenu opens the owned block inventory before exposing
+        // slots. Keep the matching callback here so viewer/dirty lifecycle
+        // implementations are not skipped on the first open.
+        handler.inventory.on_open().await;
+
         handler
     }
 }
@@ -119,7 +124,13 @@ impl ScreenHandler for BrewingScreenHandler {
         &'a mut self,
         player: &'a dyn crate::screen_handler::InventoryPlayer,
     ) -> ScreenHandlerFuture<'a, ()> {
-        Box::pin(async move { self.default_on_closed(player).await })
+        Box::pin(async move {
+            self.default_on_closed(player).await;
+            // Match the other container handlers: the block entity owns the
+            // inventory and needs the close notification to update viewers,
+            // dirty state, and any container-specific lifecycle bookkeeping.
+            self.inventory.on_close().await;
+        })
     }
 
     /// Quick move logic for brewing stand.

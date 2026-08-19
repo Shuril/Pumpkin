@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 use arc_swap::ArcSwap;
 use crossbeam::atomic::AtomicCell;
 use crossbeam::channel::Receiver;
+use dashmap::DashSet;
 use pumpkin_data::dimension::Dimension;
 use pumpkin_data::meta_data_type::MetaDataType;
 use pumpkin_data::tracked_data::TrackedData;
@@ -25,7 +26,7 @@ use pumpkin_protocol::bedrock::server::text::SText;
 use pumpkin_protocol::codec::item_stack_seralizer::ItemStackSerializer;
 use pumpkin_util::translation::Locale;
 use pumpkin_world::chunk::{ChunkData, ChunkEntityData};
-use pumpkin_world::inventory::Inventory;
+use pumpkin_world::inventory::{Clearable, Inventory};
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 use tracing::{debug, warn};
@@ -39,12 +40,13 @@ use pumpkin_data::data_component_impl::{AttributeModifiersImpl, EnchantmentsImpl
 use pumpkin_data::data_component_impl::{EquipmentSlot, EquippableImpl, ToolImpl, WeaponImpl};
 use pumpkin_data::effect::StatusEffect;
 use pumpkin_data::entity::{EntityPose, EntityStatus, EntityType};
+use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::particle::Particle;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_data::statistic::StatisticCategory;
 use pumpkin_data::tag::Taggable;
-use pumpkin_data::{Block, BlockState, Enchantment, screen::WindowType, tag, translation};
+use pumpkin_data::{Block, BlockId, BlockState, Enchantment, screen::WindowType, tag, translation};
 use pumpkin_inventory::player::{
     player_inventory::PlayerInventory, player_screen_handler::PlayerScreenHandler,
 };
@@ -67,12 +69,12 @@ use pumpkin_protocol::java::client::play::{
     Animation, CActionBar, CAwardStats, CChangeDifficulty, CCloseContainer, CCombatDeath,
     CCustomPayload, CDisguisedChatMessage, CEntityAnimation, CEntityPositionSync, CGameEvent,
     CItemCooldown, CMapItemData, COpenScreen, CParticle, CPlayerAbilities, CPlayerInfoUpdate,
-    CPlayerPosition, CPlayerSpawnPosition, CRespawn, CSetCamera, CSetContainerContent,
-    CSetContainerProperty, CSetContainerSlot, CSetCursorItem, CSetExperience, CSetHealth,
-    CSetPlayerInventory, CSetSelectedSlot, CSoundEffect, CStopSound, CSubtitle, CSystemChatMessage,
-    CTabList, CTitleAnimation, CTitleText, CUnloadChunk, CUpdateMobEffect, CUpdateTime, GameEvent,
-    MapIcon, MapPatch, Metadata, PlayerAction, PlayerInfoFlags, PlayerSpawnData, PreviousMessage,
-    Statistic,
+    CPlayerPosition, CPlayerSpawnPosition, CRecipeBookSettings, CRespawn, CSetCamera,
+    CSetContainerContent, CSetContainerProperty, CSetContainerSlot, CSetCursorItem, CSetExperience,
+    CSetHealth, CSetPlayerInventory, CSetSelectedSlot, CSoundEffect, CStopSound, CSubtitle,
+    CSystemChatMessage, CTabList, CTitleAnimation, CTitleText, CUnloadChunk, CUpdateMobEffect,
+    CUpdateTime, GameEvent, MapIcon, MapPatch, Metadata, PlayerAction, PlayerInfoFlags,
+    PlayerSpawnData, PreviousMessage, Statistic,
 };
 use pumpkin_protocol::java::server::play::{
     SClickSlot, SContainerButtonClick, SRenameItem, SlotActionType,
@@ -162,6 +164,77 @@ fn read_root_vehicle(nbt: &NbtCompound) -> Option<Uuid> {
 
 pub const DATA_VERSION: i32 = 4903; // 26.2
 
+/// Root-level tags owned by the player serializer (including the legacy forms
+/// accepted by the reader).  Player data files are intentionally extensible:
+/// newer vanilla versions and data packs may add tags that Pumpkin does not
+/// understand yet.  Those tags must not be mistaken for defaults and dropped
+/// on the next autosave.
+const PLAYER_SERIALIZED_TAGS: &[&str] = &[
+    // Entity / LivingEntity
+    "id",
+    "UUID",
+    "Pos",
+    "Motion",
+    "Rotation",
+    "Fire",
+    "OnGround",
+    "Invulnerable",
+    "PortalCooldown",
+    "HasVisualFire",
+    "TicksFrozen",
+    "CustomName",
+    "CustomNameVisible",
+    "PersistenceRequired",
+    "Tags",
+    "Health",
+    "AbsorptionAmount",
+    "fall_distance",
+    "active_effects",
+    "equipment",
+    "drop_chances",
+    "HandItems",
+    "ArmorItems",
+    "HandDropChances",
+    "ArmorDropChances",
+    // PlayerInventory / EnderChestInventory
+    "SelectedItemSlot",
+    "Inventory",
+    "EnderItems",
+    // Abilities and player state
+    "abilities",
+    "XpTotal",
+    "playerGameType",
+    "previousPlayerGameType",
+    "HasPlayedBefore",
+    "warden_spawn_tracker",
+    "foodLevel",
+    "foodSaturationLevel",
+    "foodExhaustionLevel",
+    "foodTickTimer",
+    "AirSupply",
+    "DrowningTick",
+    "Dimension",
+    "SpawnX",
+    "SpawnY",
+    "SpawnZ",
+    "SpawnDimension",
+    "SpawnForced",
+    "sleeping_pos",
+    "recipeBook",
+    "XpSeed",
+    "RootVehicle",
+    "Statistics",
+    "DataVersion",
+];
+
+fn unknown_player_nbt(nbt: &NbtCompound) -> NbtCompound {
+    let mut unknown = nbt.clone();
+    for key in PLAYER_SERIALIZED_TAGS {
+        unknown.child_tags.remove(*key);
+    }
+    unknown
+}
+
 /// Food exhaustion applied for every block a player mines.
 ///
 /// Vanilla: `Block#playerDestroy` calls `player.causeFoodExhaustion(0.005F)`.
@@ -204,14 +277,34 @@ pub struct ChunkManager {
     chunks_per_tick: usize,
     center: Vector2<i32>,
     view_distance: u8,
+    simulation_distance: u8,
     chunk_listener: Receiver<(Vector2<i32>, Weak<ChunkData>)>,
     chunk_sent: HashMap<Vector2<i32>, Weak<ChunkData>>,
+    /// Chunks whose encoded packet was actually accepted by the client
+    /// transport. `chunk_sent` is only the de-duplication/queue set.
+    chunk_delivered: HashSet<Vector2<i32>>,
+    /// Entity IDs for which this connection has received a spawn/pairing
+    /// packet.  Visibility is not the same as a geometric view-distance test:
+    /// a chunk can still be in range while its terrain packet is in flight,
+    /// and entity removal must also work after the entity crossed a border.
+    tracked_entities: Arc<DashSet<i32>>,
     chunk_queue: BinaryHeap<HeapNode>,
     entity_chunk_queue: VecDeque<(Vector2<i32>, Weak<ChunkEntityData>)>,
     batches_sent_since_ack: u8,
     last_chunk_batch_sent_at: Instant,
     /// The current world for chunk loading. Updated on dimension change.
     world: Arc<World>,
+}
+
+fn record_chunk_batch_sent(
+    batches_sent_since_ack: &mut u8,
+    last_chunk_batch_sent_at: &mut Instant,
+    has_payload: bool,
+) {
+    if has_payload {
+        *batches_sent_since_ack = batches_sent_since_ack.saturating_add(1);
+        *last_chunk_batch_sent_at = Instant::now();
+    }
 }
 
 impl ChunkManager {
@@ -223,13 +316,17 @@ impl ChunkManager {
         chunks_per_tick: usize,
         chunk_listener: Receiver<(Vector2<i32>, Weak<ChunkData>)>,
         world: Arc<World>,
+        tracked_entities: Arc<DashSet<i32>>,
     ) -> Self {
         Self {
             chunks_per_tick,
             center: Vector2::<i32>::new(0, 0),
             view_distance: 0,
+            simulation_distance: 0,
             chunk_listener,
             chunk_sent: HashMap::new(),
+            chunk_delivered: HashSet::new(),
+            tracked_entities,
             chunk_queue: BinaryHeap::new(),
             entity_chunk_queue: VecDeque::new(),
             batches_sent_since_ack: 0,
@@ -249,11 +346,74 @@ impl ChunkManager {
         self.chunk_sent.len()
     }
 
+    #[must_use]
+    pub const fn simulation_distance_matches(&self, distance: u8) -> bool {
+        self.simulation_distance == distance
+    }
+
+    /// Returns whether the client has a chunk queued for (or already received
+    /// from) this chunk manager.  `chunk_sent` is deliberately the same
+    /// authoritative set used for duplicate suppression and unload cleanup;
+    /// using a second view-distance-only check would allow entity spawns to
+    /// race ahead of the chunk packet.
+    #[must_use]
+    pub fn has_sent_chunk(&self, position: Vector2<i32>) -> bool {
+        self.chunk_delivered.contains(&position)
+    }
+
+    /// Marks an entity as paired with this client.  Returns `true` only for a
+    /// new pairing so replaying a delivered chunk cannot duplicate spawns.
+    pub fn mark_entity_tracked(&mut self, entity_id: i32) -> bool {
+        self.tracked_entities.insert(entity_id)
+    }
+
+    #[must_use]
+    pub fn is_entity_tracked(&self, entity_id: i32) -> bool {
+        self.tracked_entities.contains(&entity_id)
+    }
+
+    /// Removes a pairing and reports whether a remove packet is necessary.
+    pub fn unmark_entity_tracked(&mut self, entity_id: i32) -> bool {
+        self.tracked_entities.remove(&entity_id).is_some()
+    }
+
+    /// Records a chunk delivered by a synchronous path (respawn/teleport).
+    pub fn mark_chunk_delivered_with_chunk(&mut self, position: Vector2<i32>, chunk: &SyncChunk) {
+        self.chunk_sent.insert(position, Arc::downgrade(chunk));
+        self.chunk_delivered.insert(position);
+    }
+
+    /// Records a chunk delivered by the asynchronous packet writer.
+    pub fn mark_chunk_delivered(&mut self, position: Vector2<i32>) {
+        if self.chunk_sent.contains_key(&position) {
+            self.chunk_delivered.insert(position);
+        }
+    }
+
+    /// Requeue a chunk whose packet was cancelled or could not be encoded.
+    /// `ChunkSend` is cancellable, so a failed attempt must not leave the
+    /// de-duplication set claiming that the client already knows the chunk.
+    pub fn requeue_chunk(&mut self, position: Vector2<i32>, chunk: &SyncChunk) {
+        self.chunk_sent.remove(&position);
+        self.chunk_delivered.remove(&position);
+        let dst = Self::chebyshev(position, self.center);
+        if dst <= i32::from(self.view_distance) {
+            self.chunk_sent.insert(position, Arc::downgrade(chunk));
+            self.chunk_queue
+                .push(HeapNode(dst, position, Arc::downgrade(chunk)));
+        }
+    }
+
     fn should_enqueue_chunk(&mut self, position: Vector2<i32>, chunk: &SyncChunk) -> bool {
-        self.chunk_sent
+        let changed = self
+            .chunk_sent
             .insert(position, Arc::downgrade(chunk))
             .and_then(|old_chunk| old_chunk.upgrade())
-            .is_none_or(|old_chunk| !Arc::ptr_eq(&old_chunk, chunk))
+            .is_none_or(|old_chunk| !Arc::ptr_eq(&old_chunk, chunk));
+        if changed {
+            self.chunk_delivered.remove(&position);
+        }
+        changed
     }
 
     #[must_use]
@@ -289,6 +449,7 @@ impl ChunkManager {
         &mut self,
         center: Vector2<i32>,
         mut view_distance: u8,
+        simulation_distance: u8,
         level: &Arc<Level>,
         loading_chunks: &[Vector2<i32>],
         unloading_chunks: &[Vector2<i32>],
@@ -296,6 +457,7 @@ impl ChunkManager {
         view_distance += 1; // Margin for loading
         let old_center = self.center;
         let old_view_distance = self.view_distance;
+        let old_simulation_distance = self.simulation_distance;
 
         {
             let mut lock = level
@@ -305,27 +467,35 @@ impl ChunkManager {
             let new_level = ChunkLoading::get_level_from_view_distance(view_distance);
             lock.add_ticket(center, new_level);
 
-            let sim_dist = self.world.server.upgrade().map_or(10, |s| {
-                s.advanced_config.networking.java.simulation_distance.get()
-            });
-            let sim_level = ChunkLoading::get_level_from_simulation_distance(sim_dist);
+            let sim_level = ChunkLoading::get_level_from_simulation_distance(simulation_distance);
             lock.add_ticket(center, sim_level);
 
             if (old_center != center || old_view_distance != view_distance) && old_view_distance > 0
             {
                 let old_level = ChunkLoading::get_level_from_view_distance(old_view_distance);
                 lock.remove_ticket(old_center, old_level);
-                lock.remove_ticket(old_center, sim_level);
+            }
+            if (old_center != center || old_simulation_distance != simulation_distance)
+                && old_simulation_distance > 0
+            {
+                let old_level =
+                    ChunkLoading::get_level_from_simulation_distance(old_simulation_distance);
+                lock.remove_ticket(old_center, old_level);
             }
             lock.send_change();
         };
 
         self.center = center;
         self.view_distance = view_distance;
+        self.simulation_distance = simulation_distance;
         let view_distance_i32 = i32::from(view_distance);
         let unloading_chunks: HashSet<Vector2<i32>> = unloading_chunks.iter().copied().collect();
 
         self.chunk_sent.retain(|pos, _| {
+            (pos.x - center.x).abs().max((pos.y - center.y).abs()) <= view_distance_i32
+                && !unloading_chunks.contains(pos)
+        });
+        self.chunk_delivered.retain(|pos| {
             (pos.x - center.x).abs().max((pos.y - center.y).abs()) <= view_distance_i32
                 && !unloading_chunks.contains(pos)
         });
@@ -368,6 +538,12 @@ impl ChunkManager {
             self.center,
             ChunkLoading::get_level_from_view_distance(self.view_distance),
         );
+        if self.simulation_distance > 0 {
+            lock.remove_ticket(
+                self.center,
+                ChunkLoading::get_level_from_simulation_distance(self.simulation_distance),
+            );
+        }
         lock.send_change();
         let (_rx, tx) = crossbeam::channel::unbounded();
         // drop old channel
@@ -375,10 +551,13 @@ impl ChunkManager {
 
         // Drop any held chunk references to allow chunks to be unloaded.
         self.chunk_sent.clear();
+        self.chunk_delivered.clear();
         self.chunk_queue.clear();
         self.entity_chunk_queue.clear();
+        self.tracked_entities.clear();
         self.batches_sent_since_ack = 0;
         self.last_chunk_batch_sent_at = Instant::now();
+        self.simulation_distance = 0;
     }
 
     pub fn change_world(&mut self, old_level: &Arc<Level>, new_world: Arc<World>) {
@@ -390,12 +569,21 @@ impl ChunkManager {
             self.center,
             ChunkLoading::get_level_from_view_distance(self.view_distance),
         );
+        if self.simulation_distance > 0 {
+            lock.remove_ticket(
+                self.center,
+                ChunkLoading::get_level_from_simulation_distance(self.simulation_distance),
+            );
+        }
         lock.send_change();
         drop(lock);
         self.chunk_listener = new_world.level.chunk_listener.add_global_chunk_listener();
         self.chunk_sent.clear();
+        self.chunk_delivered.clear();
         self.chunk_queue.clear();
+        self.tracked_entities.clear();
         self.world = new_world;
+        self.simulation_distance = 0;
         // Reset batch state so chunks can be sent immediately in the new dimension
         self.batches_sent_since_ack = 0;
         self.last_chunk_batch_sent_at = Instant::now();
@@ -438,8 +626,14 @@ impl ChunkManager {
                 chunks.push(chunk);
             }
         }
-        self.batches_sent_since_ack = self.batches_sent_since_ack.saturating_add(1);
-        self.last_chunk_batch_sent_at = Instant::now();
+        // Expired weak references do not produce a terrain packet.  Counting
+        // such an empty batch against the Java ACK window can permanently
+        // pause a connection even though no bytes were sent.
+        record_chunk_batch_sent(
+            &mut self.batches_sent_since_ack,
+            &mut self.last_chunk_batch_sent_at,
+            !chunks.is_empty(),
+        );
 
         chunks.into_boxed_slice()
     }
@@ -459,8 +653,11 @@ impl ChunkManager {
             }
         }
 
-        self.batches_sent_since_ack = self.batches_sent_since_ack.saturating_add(1);
-        self.last_chunk_batch_sent_at = Instant::now();
+        record_chunk_batch_sent(
+            &mut self.batches_sent_since_ack,
+            &mut self.last_chunk_batch_sent_at,
+            !chunks.is_empty(),
+        );
 
         chunks.into_boxed_slice()
     }
@@ -481,6 +678,45 @@ pub enum PlayerWeather {
     Downfall,
 }
 
+/// Persistent server-side state for the four vanilla recipe-book categories.
+///
+/// The client treats `recipes` and `toBeDisplayed` independently: a recipe can
+/// be known but no longer highlighted after the player has viewed it.  Keeping
+/// both sets also makes reconnect and `/recipe take` deterministic.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct RecipeBookCategorySettings {
+    pub open: bool,
+    pub filtering: bool,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct RecipeBookState {
+    pub known: HashSet<String>,
+    pub highlight: HashSet<String>,
+    pub categories: [RecipeBookCategorySettings; 4],
+}
+
+impl RecipeBookState {
+    fn category_mut(&mut self, category: i32) -> Option<&mut RecipeBookCategorySettings> {
+        self.categories.get_mut(usize::try_from(category).ok()?)
+    }
+
+    #[must_use]
+    pub fn to_packet(&self) -> CRecipeBookSettings {
+        let [crafting, furnace, blasting, smoker] = self.categories;
+        CRecipeBookSettings {
+            crafting_open: crafting.open,
+            crafting_filtering: crafting.filtering,
+            furnace_open: furnace.open,
+            furnace_filtering: furnace.filtering,
+            blast_furnace_open: blasting.open,
+            blast_furnace_filtering: blasting.filtering,
+            smoker_open: smoker.open,
+            smoker_filtering: smoker.filtering,
+        }
+    }
+}
+
 pub struct Player {
     /// The underlying living entity object that represents the player.
     pub living_entity: LivingEntity,
@@ -492,6 +728,15 @@ pub struct Player {
     pub inventory: Arc<PlayerInventory>,
     /// The player's `EnderChest` inventory.
     pub ender_chest_inventory: Arc<EnderChestInventory>,
+    /// Server-side recipe-book state persisted using vanilla `recipeBook` NBT.
+    pub recipe_book: Arc<Mutex<RecipeBookState>>,
+    /// NBT tags introduced by a newer vanilla version or a data pack.
+    ///
+    /// The runtime only interprets the fields it knows about, but player data
+    /// must remain lossless across a Pumpkin save/load cycle.  The snapshot is
+    /// replaced when a player file is loaded and merged before every write;
+    /// known serializer fields always win over this opaque extension map.
+    opaque_nbt: Mutex<NbtCompound>,
     /// The player's configuration settings. Changes when the player changes their settings.
     pub config: ArcSwap<PlayerConfig>,
     /// The player's current gamemode (e.g., Survival, Creative, Adventure).
@@ -504,6 +749,10 @@ pub struct Player {
     pub respawn_point: Mutex<Option<RespawnPoint>>,
     /// The player's sleep status
     pub sleeping_since: AtomicCell<Option<u8>>,
+    /// The bed position is the authoritative sleeping predicate in vanilla;
+    /// `sleeping_since` is only the wake-up timer.  Keeping both prevents a
+    /// stale timer from making a player sleep after a load/teleport.
+    pub sleeping_pos: AtomicCell<Option<BlockPos>>,
     /// Manages the player's breath level
     pub breath_manager: BreathManager,
     /// Manages the player's hunger level.
@@ -512,6 +761,10 @@ pub struct Player {
     pub open_container: AtomicCell<Option<u64>>,
     /// The block position of the currently open container screen (if any).
     pub open_container_pos: AtomicCell<Option<BlockPos>>,
+    /// The block id captured when the block-backed container was opened.
+    /// `AbstractContainerMenu.stillValid` rejects interaction if the block was
+    /// replaced or destroyed while the screen remained open.
+    pub open_container_block: AtomicCell<Option<BlockId>>,
     /// The item currently being held by the player.
     pub carried_item: Mutex<Option<ItemStack>>,
     /// The player's abilities and special powers.
@@ -561,6 +814,8 @@ pub struct Player {
     pub using_item: AtomicBool,
     pub item_use_start_time: AtomicI32,
     pub using_hand: AtomicCell<Option<Hand>>,
+    /// Remaining ticks for the vanilla riptide auto-spin attack pose.
+    pub auto_spin_attack_ticks: AtomicI32,
     /// The player's experience level.
     pub experience_level: AtomicI32,
     /// The player's experience progress (`0.0` to `1.0`)
@@ -570,12 +825,20 @@ pub struct Player {
     pub item_cooldowns: Mutex<HashMap<String, ItemCooldown>>,
     pub experience_pick_up_delay: Mutex<u32>,
     pub chunk_manager: Mutex<ChunkManager>,
+    /// Lock-free paired entity IDs shared with the chunk manager. Entity
+    /// movement/spawn runs synchronously and must not lose a pairing merely
+    /// because the async chunk-manager mutex is briefly contended.
+    tracked_entities: Arc<DashSet<i32>>,
     pub has_played_before: AtomicBool,
     root_vehicle_uuid: AtomicCell<Option<Uuid>>,
     pub chat_session: Arc<Mutex<ChatSession>>,
     pub signature_cache: Mutex<MessageCache>,
     pub player_screen_handler: Arc<Mutex<PlayerScreenHandler>>,
     pub current_screen_handler: Mutex<Arc<Mutex<dyn ScreenHandler>>>,
+    /// Java's persistent WardenSpawnTracker state.
+    pub warden_ticks_since_warning: AtomicI32,
+    pub warden_warning_level: AtomicI32,
+    pub warden_cooldown_ticks: AtomicI32,
     pub screen_handler_sync_id: AtomicU8,
     pub screen_handler_listener: Arc<dyn ScreenHandlerListener>,
     pub screen_handler_sync_handler: Arc<SyncHandler>,
@@ -720,6 +983,8 @@ impl Player {
         ));
 
         let ender_chest_inventory = Arc::new(EnderChestInventory::new());
+        let recipe_book = Arc::new(Mutex::new(RecipeBookState::default()));
+        let tracked_entities = Arc::new(DashSet::new());
 
         let player_screen_handler = Arc::new(Mutex::new(
             PlayerScreenHandler::new(&inventory, None, 0, Some(server.recipe_manager.clone()))
@@ -759,13 +1024,15 @@ impl Player {
             client,
             awaiting_teleport: Mutex::new(None),
             breath_manager: BreathManager::default(),
-            // TODO: Load this from previous instance
+            // Persistent food/exhaustion state is applied by Server::add_player
+            // immediately after construction, before the initial health sync.
             hunger_manager: HungerManager::default(),
             current_block_destroy_stage: AtomicI32::new(-1),
             current_block_breaking_speed: AtomicU32::new(0),
             enchantment_seed: AtomicI32::new(rand::random()),
             open_container: AtomicCell::new(None),
             open_container_pos: AtomicCell::new(None),
+            open_container_block: AtomicCell::new(None),
             tick_counter: AtomicI32::new(0),
             start_mining_time: AtomicI32::new(0),
             last_input: AtomicI8::new(0),
@@ -779,9 +1046,11 @@ impl Player {
             gamemode: AtomicCell::new(gamemode),
             previous_gamemode: AtomicCell::new(None),
             camera_target_id: AtomicCell::new(None),
-            // TODO: Send the CPlayerSpawnPosition packet when the client connects with proper values
+            // The initial CPlayerSpawnPosition is sent by World::send_initial_data
+            // after the authoritative level spawn and dimension are known.
             respawn_point: Mutex::new(None),
             sleeping_since: AtomicCell::new(None),
+            sleeping_pos: AtomicCell::new(None),
             // We want this to be an impossible watched section so that `chunker::update_position`
             // will mark chunks as watched for a new join rather than a respawn.
             // (We left shift by one so we can search around that chunk)
@@ -800,6 +1069,7 @@ impl Player {
             using_item: AtomicBool::new(false),
             item_use_start_time: AtomicI32::new(0),
             using_hand: AtomicCell::new(None),
+            auto_spin_attack_ticks: AtomicI32::new(0),
             // Minecraft has no way to change the default permission level of new players.
             // Minecraft's default permission level is 0.
             permission_lvl: server
@@ -814,6 +1084,8 @@ impl Player {
                 ),
             inventory,
             ender_chest_inventory,
+            recipe_book,
+            opaque_nbt: Mutex::new(NbtCompound::new()),
             experience_level: AtomicI32::new(0),
             experience_progress: AtomicCell::new(0.0),
             experience_points: AtomicI32::new(0),
@@ -823,7 +1095,9 @@ impl Player {
                 16,
                 world.level.chunk_listener.add_global_chunk_listener(),
                 world.clone(),
+                tracked_entities.clone(),
             )),
+            tracked_entities,
             last_sent_xp: AtomicI32::new(-1),
             last_sent_health: AtomicI32::new(-1),
             last_sent_food: AtomicU8::new(0),
@@ -835,6 +1109,9 @@ impl Player {
             signature_cache: Mutex::new(MessageCache::default()),
             player_screen_handler: player_screen_handler.clone(),
             current_screen_handler: Mutex::new(player_screen_handler),
+            warden_ticks_since_warning: AtomicI32::new(0),
+            warden_warning_level: AtomicI32::new(0),
+            warden_cooldown_ticks: AtomicI32::new(0),
             screen_handler_sync_id: AtomicU8::new(0),
             screen_handler_listener: Arc::new(ScreenListener),
             screen_handler_sync_handler: Arc::new(SyncHandler::new()),
@@ -871,6 +1148,34 @@ impl Player {
         self.client
             .enqueue_packet(&CTabList::new(&header, &footer))
             .await;
+    }
+
+    /// Snapshot the chunk barrier without awaiting from synchronous entity
+    /// movement code.  If the manager is briefly contended, retain the legacy
+    /// caller's geometric decision rather than dropping an otherwise valid
+    /// transition forever; the next chunk boundary will re-evaluate it.
+    #[must_use]
+    pub fn has_sent_chunk_now(&self, position: Vector2<i32>) -> Option<bool> {
+        self.chunk_manager
+            .try_lock()
+            .ok()
+            .map(|manager| manager.has_sent_chunk(position))
+    }
+
+    /// Attempts to pair an entity without awaiting the chunk-manager lock.
+    /// Entity movement runs on the hot tick path; a contended lock simply
+    /// defers the next boundary/replay pass instead of blocking the world.
+    pub fn mark_entity_tracked_now(&self, entity_id: i32) -> Option<bool> {
+        Some(self.tracked_entities.insert(entity_id))
+    }
+
+    #[must_use]
+    pub fn is_entity_tracked_now(&self, entity_id: i32) -> Option<bool> {
+        Some(self.tracked_entities.contains(&entity_id))
+    }
+
+    pub fn unmark_entity_tracked_now(&self, entity_id: i32) -> Option<bool> {
+        Some(self.tracked_entities.remove(&entity_id).is_some())
     }
 
     pub async fn start_cooldown(&self, group: String, duration: i32) {
@@ -1066,7 +1371,7 @@ impl Player {
 
         vehicle
             .get_entity()
-            .add_passenger(vehicle.clone(), self.clone())
+            .add_passenger_silent(vehicle.clone(), self.clone())
             .await;
     }
 
@@ -1382,6 +1687,8 @@ impl Player {
         };
 
         let mut stack = self.inventory().get_stack(slot_index).await;
+        let broken_item_id = stack.item.id;
+        let broken_item_key = stack.item.registry_key.to_string();
         let result = stack.damage_item(amount);
         let updated = (result != pumpkin_data::item_stack::DamageResult::Untouched)
             .then_some((result, stack.clone()));
@@ -1392,7 +1699,7 @@ impl Player {
             {
                 let mut event = crate::plugin::api::events::player::player_item_damage::PlayerItemDamageEvent::new(
                     player_arc,
-                    updated_stack.item.registry_key.to_string(),
+                    broken_item_key.clone(),
                     amount,
                 );
                 server.plugin_manager.fire(&server, &mut event).await;
@@ -1405,13 +1712,13 @@ impl Player {
                 {
                     let mut event = crate::plugin::api::events::player::player_item_break::PlayerItemBreakEvent::new(
                         player_arc,
-                        updated_stack.item.registry_key.to_string(),
+                        broken_item_key.clone(),
                     );
                     server.plugin_manager.fire(&server, &mut event).await;
                 }
                 self.increment_stat(
                     statistics::StatisticCategory::Broken,
-                    updated_stack.item.id as i32,
+                    broken_item_id as i32,
                     1,
                 )
                 .await;
@@ -1435,6 +1742,74 @@ impl Player {
         }
 
         false
+    }
+
+    /// Applies durability to a stack being used by an item behaviour.
+    ///
+    /// Item behaviours receive a mutable snapshot and the network layer owns
+    /// committing that snapshot back to the main/off-hand slot.  Keeping the
+    /// damage result handling here makes these paths observe the same plugin
+    /// events, break status and statistics as block-breaking and combat.
+    pub async fn damage_item_stack_for_use(&self, stack: &mut ItemStack, amount: i32) -> bool {
+        if matches!(
+            self.gamemode.load(),
+            GameMode::Creative | GameMode::Spectator
+        ) {
+            return false;
+        }
+
+        // Capture the equipment slot before damage_item can replace a broken
+        // one-item stack with ItemStack::EMPTY (and therefore a new UID).
+        let selected = self.inventory.get_selected_slot() as usize;
+        let main = self.inventory().get_stack(selected).await;
+        let slot = if !main.is_empty() && main.uid == stack.uid {
+            EquipmentSlot::MAIN_HAND
+        } else {
+            EquipmentSlot::OFF_HAND
+        };
+
+        let broken_item_id = stack.item.id;
+        let broken_item_key = stack.item.registry_key.to_string();
+        let result = stack.damage_item(amount);
+        if result == pumpkin_data::item_stack::DamageResult::Untouched {
+            return false;
+        }
+
+        if let Some(server) = self.world().server.upgrade()
+            && let Some(player_arc) = self.world().get_player_by_uuid(self.gameprofile.id)
+        {
+            let mut event =
+                crate::plugin::api::events::player::player_item_damage::PlayerItemDamageEvent::new(
+                    player_arc,
+                    broken_item_key.clone(),
+                    amount,
+                );
+            server.plugin_manager.fire(&server, &mut event).await;
+        }
+
+        if result == pumpkin_data::item_stack::DamageResult::Broken {
+            if let Some(server) = self.world().server.upgrade()
+                && let Some(player_arc) = self.world().get_player_by_uuid(self.gameprofile.id)
+            {
+                let mut event = crate::plugin::api::events::player::player_item_break::PlayerItemBreakEvent::new(
+                    player_arc,
+                    broken_item_key,
+                );
+                server.plugin_manager.fire(&server, &mut event).await;
+            }
+            self.increment_stat(
+                statistics::StatisticCategory::Broken,
+                broken_item_id as i32,
+                1,
+            )
+            .await;
+            self.world().send_entity_status(
+                &self.living_entity.entity,
+                super::equipment_break_status(&slot),
+                None,
+            );
+        }
+        true
     }
 
     /// Convenience wrapper – damages the currently held (main-hand) item.
@@ -1533,10 +1908,34 @@ impl Player {
         type BedProperties = pumpkin_data::block_properties::WhiteBedLikeProperties;
         type AnchorProperties = pumpkin_data::block_properties::RespawnAnchorLikeProperties;
 
-        let respawn_guard = self.respawn_point.lock().await;
-        let respawn_point = respawn_guard.as_ref()?;
-        let world = self.world();
+        // Resolve the block in the dimension where the spawn point was set.  The
+        // old implementation always read from `self.world()`, which made beds
+        // and anchors in another dimension look invalid (or, worse, consume an
+        // unrelated anchor at the death location).  Clone the small value and
+        // release the mutex before doing world/chunk reads; the respawn point is
+        // immutable for this calculation.
+        let respawn_point = self.respawn_point.lock().await.clone()?;
+        let current_world = self.world();
+        let world = if current_world.dimension == respawn_point.dimension {
+            current_world
+        } else {
+            let server = current_world.server.upgrade()?;
+            server
+                .worlds
+                .load()
+                .iter()
+                .find(|candidate| candidate.dimension == respawn_point.dimension)
+                .cloned()?
+        };
         let pos = &respawn_point.position;
+        // Beds and anchors are valid even when their destination dimension was
+        // not ticking recently.  Load the target chunk before inspecting the
+        // block; an unloaded read must not turn a valid spawn point into a
+        // false `NoRespawnBlockAvailable` result.
+        world
+            .level
+            .get_or_fetch_chunk(pos.chunk_position(), |_| ())
+            .await;
         let (block, state_id) = world.get_block_and_state_id(pos);
 
         // If force is set (from /spawnpoint command), validate position is safe
@@ -1591,6 +1990,13 @@ impl Player {
 
         // Handle respawn anchor (Nether)
         if block == &Block::RESPAWN_ANCHOR {
+            // A normal anchor respawn point can only be used in the Nether.
+            // The interaction path already explodes anchors in other
+            // dimensions; this guard covers stale/forged respawn-point NBT and
+            // prevents an overworld anchor from silently consuming a charge.
+            if world.dimension != Dimension::THE_NETHER {
+                return None;
+            }
             let anchor_props = AnchorProperties::from_state_id(state_id, block);
             let charges = anchor_props.charges;
 
@@ -1627,16 +2033,23 @@ impl Player {
     }
 
     /// Find a valid spawn position around a bed.
-    /// Vanilla uses a complex algorithm based on bed facing direction.
-    /// We use a simplified version that tries cardinal directions first.
+    ///
+    /// The candidate order mirrors `BedBlock.findStandUpPosition`: the side
+    /// is selected from the player's yaw and the twelve vanilla offsets are
+    /// then examined in order.  Collision/respawn validity remains delegated
+    /// to `find_respawn_pos` so the same checks are shared by all candidates.
     fn find_bed_spawn_position(
         world: &Arc<crate::world::World>,
         bed_pos: &BlockPos,
         facing: HorizontalFacing,
-        _spawn_angle: f32,
+        spawn_angle: f32,
     ) -> Option<Vector3<f64>> {
-        // Get offsets based on bed facing direction (vanilla-like order)
-        let offsets = Self::get_bed_spawn_offsets(facing);
+        // BedBlock.findStandUpPosition chooses the side of the bed relative to
+        // the player's yaw first, then tries the exact vanilla offset order.
+        // This is observable when a bed is surrounded by partial blocks: using
+        // a fixed clockwise side (the old implementation) can select a
+        // different position or incorrectly report no spawn location.
+        let offsets = Self::get_bed_spawn_offsets(facing, spawn_angle);
 
         for (dx, dz) in offsets {
             let check_pos = BlockPos(Vector3::new(
@@ -1668,30 +2081,41 @@ impl Player {
         None
     }
 
-    /// Get spawn position offsets around a bed based on facing direction.
-    /// This is a simplified version of vanilla's getAroundBedOffsets.
-    fn get_bed_spawn_offsets(facing: HorizontalFacing) -> Vec<(i32, i32)> {
-        let (fx, fz) = match facing {
-            HorizontalFacing::North => (0, -1),
-            HorizontalFacing::South => (0, 1),
-            HorizontalFacing::West => (-1, 0),
-            HorizontalFacing::East => (1, 0),
+    /// Get the twelve vanilla stand-up offsets around a bed.
+    fn get_bed_spawn_offsets(facing: HorizontalFacing, spawn_angle: f32) -> Vec<(i32, i32)> {
+        let (fx, fz) = {
+            let offset = facing.to_offset();
+            (offset.x, offset.z)
         };
+        let right = facing.rotate_clockwise();
+        let right_offset = right.to_offset();
+        let (rx, rz) = (right_offset.x, right_offset.z);
 
-        // Clockwise rotation
-        let (rx, rz) = (-fz, fx);
+        // Direction::isFacingAngle uses the same view vector as Minecraft:
+        // (-sin(yaw), cos(yaw)).  If the player faces the clockwise side, the
+        // preferred side is its opposite; otherwise it is the clockwise side.
+        let yaw = spawn_angle.to_radians();
+        let view_x = -yaw.sin();
+        let view_z = yaw.cos();
+        let side_sign = (rx as f32 * view_x + rz as f32 * view_z) > 0.0;
+        let (sx, sz) = if side_sign { (-rx, -rz) } else { (rx, rz) };
 
+        // BedBlock.bedStandUpOffsets(forward, side), including the two
+        // positions above the bed.  Keep this order stable: the first valid
+        // candidate is the server-visible result.
         vec![
-            (rx, rz),                   // Right of bed
-            (-rx, -rz),                 // Left of bed
-            (rx - fx, rz - fz),         // Right-back
-            (-rx - fx, -rz - fz),       // Left-back
-            (-fx, -fz),                 // Behind foot
-            (-fx * 2, -fz * 2),         // Further behind
-            (rx + fx, rz + fz),         // Right-front
-            (-rx + fx, -rz + fz),       // Left-front
-            (fx, fz),                   // In front
-            (rx - fx * 2, rz - fz * 2), // Far right-back
+            (sx, sz),
+            (sx - fx, sz - fz),
+            (sx - 2 * fx, sz - 2 * fz),
+            (-2 * fx, -2 * fz),
+            (-sx - 2 * fx, -sz - 2 * fz),
+            (-sx - fx, -sz - fz),
+            (-sx, -sz),
+            (-sx + fx, -sz + fz),
+            (fx, fz),
+            (sx + fx, sz + fz),
+            (0, 0),
+            (-fx, -fz),
         ]
     }
 
@@ -1783,8 +2207,20 @@ impl Player {
         Some(spawn_pos)
     }
 
-    pub fn sleep(&self, bed_head_pos: BlockPos) {
-        // TODO: Stop riding
+    pub async fn sleep(&self, bed_head_pos: BlockPos) {
+        // Vanilla calls stopRiding before entering a bed.  Besides keeping the
+        // passenger graph consistent, this is important for the movement
+        // packet path: while mounted, normal player movement is ignored and
+        // the vehicle owns the player's position.  Reuse the vehicle's
+        // authoritative dismount implementation so the passenger list,
+        // vehicle back-reference, client packet ordering, and teleport guard
+        // are all updated together.
+        if let Some(vehicle) = self.get_entity().vehicle.lock().await.clone() {
+            vehicle
+                .get_entity()
+                .remove_passenger(self.entity_id())
+                .await;
+        }
 
         self.get_entity().set_pose(EntityPose::Sleeping);
         self.living_entity
@@ -1801,6 +2237,7 @@ impl Player {
         self.get_entity().set_velocity(Vector3::default());
 
         self.sleeping_since.store(Some(0));
+        self.sleeping_pos.store(Some(bed_head_pos));
     }
 
     pub async fn get_off_ground_speed(&self) -> f64 {
@@ -1827,26 +2264,59 @@ impl Player {
     }
 
     fn is_sleeping(&self) -> bool {
-        // TODO: Track sleeping position state explicitly (vanilla checks sleepingPosition.isPresent()).
-        self.sleeping_since.load().is_some()
+        self.sleeping_pos.load().is_some()
     }
 
-    async fn is_swimming(&self, flying: bool) -> bool {
+    pub(crate) async fn is_swimming(&self, flying: bool) -> bool {
         let entity = self.get_entity();
         let touching_water = entity.touching_water.load(Ordering::Relaxed);
-        let can_start_swimming = entity.water_height.load() > self.living_entity.get_swim_height();
+        let already_swimming = entity.swimming.load(Ordering::Relaxed);
+        let water_height = entity.water_height.load();
+        let swim_height = self.living_entity.get_swim_height();
+        let block_is_water = {
+            let world = entity.world.load();
+            let fluid = world.get_fluid(&entity.block_pos.load());
+            fluid.id == pumpkin_data::fluid::Fluid::WATER.id
+                || fluid.id == pumpkin_data::fluid::Fluid::FLOWING_WATER.id
+        };
 
-        touching_water
-            && (entity.swimming.load(Ordering::Relaxed) || can_start_swimming)
-            && entity.is_sprinting()
-            && !entity.on_ground.load(Ordering::Relaxed)
-            && !flying
-            && !entity.has_vehicle().await
+        Self::can_swim(
+            entity.is_sprinting(),
+            touching_water,
+            already_swimming,
+            water_height,
+            swim_height,
+            block_is_water,
+            entity.on_ground.load(Ordering::Relaxed),
+            flying,
+            entity.has_vehicle().await,
+        )
     }
 
-    const fn is_auto_spin_attack() -> bool {
-        // TODO: Track active auto-spin/riptide state and return true while it is active.
-        false
+    /// Mirrors `Entity.updateSwimming` for players.  A new swimming pose must
+    /// have a water fluid state at `blockPosition`; water height alone is not
+    /// sufficient because collision with waterlogged/edge blocks can expose a
+    /// positive height without the block-fluid predicate Mojang uses.
+    #[inline]
+    fn can_swim(
+        sprinting: bool,
+        touching_water: bool,
+        already_swimming: bool,
+        water_height: f64,
+        swim_height: f64,
+        block_is_water: bool,
+        on_ground: bool,
+        flying: bool,
+        passenger: bool,
+    ) -> bool {
+        if on_ground || flying || passenger || !sprinting || !touching_water {
+            return false;
+        }
+        already_swimming || (water_height > swim_height && block_is_water)
+    }
+
+    fn is_auto_spin_attack(&self) -> bool {
+        self.auto_spin_attack_ticks.load(Ordering::Relaxed) > 0
     }
 
     fn can_fit_pose(&self, pose: EntityPose) -> bool {
@@ -1875,7 +2345,7 @@ impl Player {
             EntityPose::Swimming
         } else if entity.is_fall_flying() {
             EntityPose::FallFlying
-        } else if Self::is_auto_spin_attack() {
+        } else if self.is_auto_spin_attack() {
             EntityPose::SpinAttack
         } else if entity.is_sneaking() && !flying {
             EntityPose::Crouching
@@ -1901,9 +2371,19 @@ impl Player {
 
     pub async fn wake_up(&self) {
         let world = self.world();
-        let respawn_point = self.respawn_point.lock().await;
-        let Some(respawn_point) = respawn_point.as_ref() else {
-            warn!("Player waking up should have it's respawn point set on the bed");
+        // The respawn point is normally the bed position, but sleeping_pos is
+        // the vanilla authoritative state and is also present for a player
+        // loaded while its respawn-point data is being rebuilt.
+        let respawn_point = self.respawn_point.lock().await.clone();
+        let bed_position = respawn_point
+            .as_ref()
+            .map(|point| point.position)
+            .or_else(|| self.sleeping_pos.load());
+        let Some(bed_position) = bed_position else {
+            warn!("Player waking up without a saved sleeping position");
+            self.sleeping_since.store(None);
+            self.sleeping_pos.store(None);
+            self.living_entity.entity.set_pose(EntityPose::Standing);
             return;
         };
 
@@ -1913,13 +2393,13 @@ impl Player {
             let mut event =
                 crate::plugin::api::events::player::player_bed::PlayerBedLeaveEvent::new(
                     player_arc,
-                    respawn_point.position,
+                    bed_position,
                 );
             server.plugin_manager.fire(&server, &mut event).await;
         }
 
-        let (bed, bed_state) = world.get_block_and_state_id(&respawn_point.position);
-        BedBlock::set_occupied(false, &world, bed, &respawn_point.position, bed_state).await;
+        let (bed, bed_state) = world.get_block_and_state_id(&bed_position);
+        BedBlock::set_occupied(false, &world, bed, &bed_position, bed_state).await;
 
         self.living_entity.entity.set_pose(EntityPose::Standing);
         self.living_entity.entity.set_pos(self.position());
@@ -1946,6 +2426,7 @@ impl Player {
         );
 
         self.sleeping_since.store(None);
+        self.sleeping_pos.store(None);
     }
 
     pub async fn show_title(&self, text: &TextComponent, mode: &TitleMode) {
@@ -2170,8 +2651,29 @@ impl Player {
         };
         if let Some(chunk_of_chunks) = chunk_of_chunks {
             let client = self.client.clone();
+            let player = self.clone();
             tokio::spawn(async move {
-                client.send_chunks(&chunk_of_chunks).await;
+                let delivered = client.send_chunks(&chunk_of_chunks).await;
+                let delivered_set: HashSet<_> = delivered.iter().copied().collect();
+                if !delivered.is_empty() {
+                    let mut chunk_manager = player.chunk_manager.lock().await;
+                    for &position in &delivered {
+                        chunk_manager.mark_chunk_delivered(position);
+                    }
+                    drop(chunk_manager);
+                    for position in delivered {
+                        player
+                            .world()
+                            .send_entities_in_chunk_to_player(&player, position);
+                    }
+                }
+                let mut chunk_manager = player.chunk_manager.lock().await;
+                for chunk in &chunk_of_chunks {
+                    let position = Vector2::new(chunk.x, chunk.z);
+                    if !delivered_set.contains(&position) {
+                        chunk_manager.requeue_chunk(position, chunk);
+                    }
+                }
             });
             if let ClientPlatform::Bedrock(bedrock_client) = self.client.as_ref()
                 && !self.bedrock_spawned.load(Ordering::Relaxed)
@@ -2185,6 +2687,27 @@ impl Player {
             }
         }
         self.tick_counter.fetch_add(1, Ordering::Relaxed);
+        self.auto_spin_attack_ticks
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |ticks| {
+                Some(ticks.saturating_sub(1))
+            })
+            .ok();
+        let warning_ticks = self
+            .warden_ticks_since_warning
+            .fetch_add(1, Ordering::Relaxed)
+            + 1;
+        if warning_ticks >= 12_000 {
+            self.warden_ticks_since_warning.store(0, Ordering::Relaxed);
+            self.warden_warning_level
+                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |level| {
+                    Some(level.saturating_sub(1))
+                })
+                .ok();
+        }
+        let cooldown = self.warden_cooldown_ticks.load(Ordering::Relaxed);
+        if cooldown > 0 {
+            self.warden_cooldown_ticks.fetch_sub(1, Ordering::Relaxed);
+        }
         self.living_entity
             .entity
             .age
@@ -2240,6 +2763,24 @@ impl Player {
             }
         }
         self.last_attacked_ticks.fetch_add(1, Ordering::Relaxed);
+
+        // Player.aiStep() resets the accumulated fall distance while the
+        // ability flight flag is active (unless mounted).  Doing this before
+        // LivingEntity::tick is important: movement in the same tick must not
+        // carry a stale distance into a landing callback.
+        let flying = {
+            let abilities = self.abilities.lock().await;
+            abilities.flying
+        };
+        if flying && self.living_entity.entity.vehicle.lock().await.is_none() {
+            self.living_entity.fall_distance.store(0.0);
+        }
+
+        // Elytra flight ends immediately when the supporting item becomes
+        // invalid (armor removed, broken, or the player becomes grounded).
+        if self.living_entity.entity.is_fall_flying() && !self.can_start_fall_flying().await {
+            self.living_entity.entity.set_fall_flying(false).await;
+        }
 
         let caller: Arc<dyn EntityBase> = self.clone();
         self.living_entity.tick(&caller, server).await;
@@ -2336,7 +2877,9 @@ impl Player {
     }
 
     pub async fn progress_motion(&self, delta_pos: Vector3<f64>) {
-        // TODO: Swimming, gliding...
+        // Movement steering for swimming/gliding lives in LivingEntity travel;
+        // this hook only applies the Player.checkMovementStatistics exhaustion
+        // rule for ground travel, so it must not double-charge those paths.
         if self.living_entity.entity.on_ground.load(Ordering::Relaxed) {
             let delta = (delta_pos.horizontal_length() * 100.0).round() as f32;
             if delta > 0.0 {
@@ -3306,14 +3849,16 @@ impl Player {
         self.set_client_loaded(false);
         let block_pos = self.position().to_block_pos();
 
-        let keep_inventory = { self.world().level_info.load().game_rules.keep_inventory };
+        let world = self.world();
+        let game_rules = world.level_info.load().game_rules.clone();
+        let keep_inventory = game_rules.keep_inventory;
 
         if !keep_inventory {
             let mut main_inv = self.inventory().main_inventory.write().await;
             for item in main_inv.iter_mut() {
                 if !item.is_empty() {
                     let stack = std::mem::replace(item, ItemStack::EMPTY.clone());
-                    self.world().drop_stack(&block_pos, stack).await;
+                    world.drop_stack(&block_pos, stack).await;
                 }
             }
         }
@@ -3333,6 +3878,21 @@ impl Player {
             )
             .await;
         self.send_health().await;
+
+        // `doImmediateRespawn` still sends the death packet first, but skips
+        // the client death screen and immediately follows the vanilla respawn
+        // path.  Recover the player's Arc from the world's published player
+        // list because this callback is entered through `&Player`.
+        if game_rules.immediate_respawn
+            && let Some(player) = world
+                .players
+                .load()
+                .iter()
+                .find(|player| player.entity_id() == self.entity_id())
+                .cloned()
+        {
+            world.respawn_player(&player, false).await;
+        }
     }
 
     pub async fn set_gamemode(self: &Arc<Self>, gamemode: GameMode) -> bool {
@@ -3360,10 +3920,14 @@ impl Player {
 
             'after: {
                 let gamemode = event.new_gamemode;
+                // ServerPlayerGameMode keeps the mode that was active before
+                // every successful change.  It is persisted as
+                // previousPlayerGameType and is used when cloning/respawning
+                // a player; leaving it untouched made repeated spectator or
+                // creative transitions lose the vanilla previous-mode value.
+                self.previous_gamemode
+                    .store(Some(event.previous_gamemode));
                 self.gamemode.store(gamemode);
-                // TODO: Fix this when mojang fixes it
-                // This is intentional to keep the pure vanilla mojang experience
-                // self.previous_gamemode.store(self.previous_gamemode.load());
                 {
                     // Use another scope so that we instantly unlock `abilities`.
                     let mut abilities = self.abilities.lock().await;
@@ -3390,9 +3954,7 @@ impl Player {
                 /* Vanilla doesn't reset fallDistance in setGameMode(), instead relies on
                  * Player.aiStep() resetting when abilities.flying=true and
                  * Player.causeFallDamage() returning false when abilities.mayfly=true.
-                 * TODO: Reset fall_distance each tick when abilities.flying=true (mirrors Player.aiStep())
-                 * TODO: Add abilities.allow_flying check in LivingEntity::handle_fall_damage() (mirrors Player.causeFallDamage())
-                 * TODO: Once implemented, restrict this reset to Spectator only.
+                 * Player::tick and LivingEntity::fall implement those two boundaries.
                  */
                 if matches!(gamemode, GameMode::Creative | GameMode::Spectator) {
                     self.living_entity.fall_distance.store(0.0);
@@ -3480,6 +4042,20 @@ impl Player {
                 .is_correct_for_drops(block)
     }
 
+    /// Vanilla `tryToStartFallFlying`: the player must be airborne, not a
+    /// passenger, and wear an Elytra with at least one durability point left.
+    pub async fn can_start_fall_flying(&self) -> bool {
+        if self.living_entity.entity.on_ground.load(Ordering::Relaxed)
+            || self.living_entity.entity.has_vehicle().await
+        {
+            return false;
+        }
+
+        let equipment = self.inventory.entity_equipment.lock().await;
+        let chest = equipment.get(&EquipmentSlot::CHEST);
+        chest.item.id == Item::ELYTRA.id && !chest.next_damage_will_break()
+    }
+
     pub async fn get_mining_speed(&self, block: &'static Block) -> f32 {
         let mut speed = self.inventory().held_item().await.get_speed(block);
         // Haste
@@ -3505,7 +4081,21 @@ impl Player {
             };
             speed *= fatigue_speed;
         }
-        // TODO: Handle when in water
+        // Vanilla applies the underwater penalty only when the eyes are
+        // submerged.  Aqua Affinity on the helmet removes that penalty; the
+        // enchantment on any other slot must not count.
+        if BreathManager::is_eye_in_water(self) {
+            let has_aqua_affinity = {
+                let equipment = self.inventory.entity_equipment.lock().await;
+                equipment
+                    .get(&EquipmentSlot::HEAD)
+                    .get_enchantment_level(&Enchantment::AQUA_AFFINITY)
+                    > 0
+            };
+            if !has_aqua_affinity {
+                speed /= 5.0;
+            }
+        }
         if !self.living_entity.entity.on_ground.load(Ordering::Relaxed) {
             speed /= 5.0;
         }
@@ -3882,41 +4472,28 @@ impl Player {
     }
 
     pub async fn remove_effect(&self, effect_type: &'static StatusEffect) -> bool {
-        let effect_id = VarInt(i32::from(effect_type.id));
-        self.client
-            .enqueue_packet(
-                &pumpkin_protocol::java::client::play::CRemoveMobEffect::new(
-                    self.entity_id().into(),
-                    effect_id,
-                ),
-            )
-            .await;
-
+        // The living-entity path owns the state mutation and the single
+        // tracking-aware packet broadcast. Sending here as well would deliver
+        // duplicate remove packets to the player itself.
         self.living_entity.remove_effect(effect_type).await
 
         // TODO broadcast metadata
     }
 
     pub async fn remove_all_effects(&self) -> bool {
-        let mut succeeded = false;
-        let mut effect_list = vec![];
-        for effect in self.living_entity.active_effects.lock().await.keys() {
-            effect_list.push(*effect);
-            let effect_id = VarInt(i32::from(effect.id));
-            self.client
-                .enqueue_packet(
-                    &pumpkin_protocol::java::client::play::CRemoveMobEffect::new(
-                        self.entity_id().into(),
-                        effect_id,
-                    ),
-                )
-                .await;
-            succeeded = true;
-        }
+        let effect_list: Vec<_> = self
+            .living_entity
+            .active_effects
+            .lock()
+            .await
+            .keys()
+            .copied()
+            .collect();
 
         // Need to remove effects afterward here because there would be a deadlock if this is done in the for loop.
+        let mut succeeded = false;
         for effect in effect_list {
-            self.living_entity.remove_effect(effect).await;
+            succeeded |= self.living_entity.remove_effect(effect).await;
         }
 
         succeeded
@@ -4108,6 +4685,7 @@ impl Player {
 
         *self.current_screen_handler.lock().await = self.player_screen_handler.clone();
         self.open_container_pos.store(None);
+        self.open_container_block.store(None);
     }
 
     pub async fn on_screen_handler_opened(&self, screen_handler: Arc<Mutex<dyn ScreenHandler>>) {
@@ -4217,6 +4795,8 @@ impl Player {
             self.on_screen_handler_opened(screen_handler.clone()).await;
             *self.current_screen_handler.lock().await = screen_handler;
             self.open_container_pos.store(block_pos);
+            self.open_container_block
+                .store(block_pos.map(|position| self.world().get_block(&position).id));
             Some(self.screen_handler_sync_id.load(Ordering::Relaxed))
         } else {
             //TODO: Send message if spectator
@@ -4283,6 +4863,7 @@ impl Player {
         self.on_screen_handler_opened(screen_handler.clone()).await;
         *self.current_screen_handler.lock().await = screen_handler;
         self.open_container_pos.store(None);
+        self.open_container_block.store(None);
     }
 
     #[allow(clippy::too_many_lines)]
@@ -4308,6 +4889,25 @@ impl Player {
         if self.gamemode.load() == GameMode::Spectator {
             screen_handler.sync_state().await;
             return;
+        }
+
+        // Every vanilla block-backed menu uses `AbstractContainerMenu`
+        // `stillValid`: distance is measured from the player's eye to the
+        // target block AABB, with `blockInteractionRange() + 4.0` as the
+        // buffer (8.5 survival, 9.0 creative in the current protocol).  The
+        // handler trait intentionally does not know about worlds or players,
+        // so enforce it here from the position captured when the screen was
+        // opened. Direct/plugin menus have no block position and remain
+        // unrestricted.
+        if let Some(container_pos) = self.open_container_pos.load() {
+            let same_block = self
+                .open_container_block
+                .load()
+                .is_some_and(|block_id| self.world().get_block(&container_pos).id == block_id);
+            if !same_block || !self.can_interact_with_block_at(&container_pos, 4.0) {
+                screen_handler.sync_state().await;
+                return;
+            }
         }
 
         if !screen_handler.can_use(self.as_ref()) {
@@ -4750,6 +5350,81 @@ impl Player {
         false
     }
 
+    /// Adds a recipe key to the server-side recipe book.
+    pub async fn unlock_recipe(&self, recipe_id: impl Into<String>) -> bool {
+        let recipe_id = crate::server::recipe::canonicalize_recipe_id(&recipe_id.into());
+        let mut recipe_book = self.recipe_book.lock().await;
+        let inserted = recipe_book.known.insert(recipe_id.clone());
+        if inserted {
+            recipe_book.highlight.insert(recipe_id);
+        }
+        inserted
+    }
+
+    /// Removes a recipe key from the server-side recipe book.
+    pub async fn revoke_recipe(&self, recipe_id: impl AsRef<str>) -> bool {
+        let recipe_id = crate::server::recipe::canonicalize_recipe_id(recipe_id.as_ref());
+        let mut recipe_book = self.recipe_book.lock().await;
+        let removed = recipe_book.known.remove(&recipe_id);
+        recipe_book.highlight.remove(&recipe_id);
+        removed
+    }
+
+    /// Returns a snapshot suitable for client synchronization or persistence.
+    pub async fn known_recipes(&self) -> HashSet<String> {
+        self.recipe_book.lock().await.known.clone()
+    }
+
+    /// Removes recipe-book entries that are no longer present in the active
+    /// generated/datapack registry.  This is deliberately an atomic state
+    /// operation: highlights are pruned together with their known key, so a
+    /// reload cannot leave a client-facing highlight for a recipe that will
+    /// fail the limited-crafting gate.
+    pub async fn prune_recipe_book(&self, valid_recipe_ids: &HashSet<String>) -> Vec<String> {
+        let mut recipe_book = self.recipe_book.lock().await;
+        let mut removed = Vec::new();
+        recipe_book.known.retain(|recipe_id| {
+            let keep = valid_recipe_ids.contains(recipe_id);
+            if !keep {
+                removed.push(recipe_id.clone());
+            }
+            keep
+        });
+        let known_recipe_ids = recipe_book.known.clone();
+        recipe_book.highlight.retain(|recipe_id| {
+            valid_recipe_ids.contains(recipe_id) && known_recipe_ids.contains(recipe_id)
+        });
+        removed
+    }
+
+    /// Returns the recipe-book state needed for initial Java client sync.
+    pub async fn recipe_book_state(&self) -> RecipeBookState {
+        self.recipe_book.lock().await.clone()
+    }
+
+    /// Applies a serverbound recipe-book category update. Vanilla has exactly
+    /// four category IDs: crafting, furnace, blast furnace and smoker.
+    pub async fn update_recipe_book_settings(
+        &self,
+        category: i32,
+        open: bool,
+        filtering: bool,
+    ) -> bool {
+        let mut recipe_book = self.recipe_book.lock().await;
+        let Some(settings) = recipe_book.category_mut(category) else {
+            return false;
+        };
+        settings.open = open;
+        settings.filtering = filtering;
+        true
+    }
+
+    /// Marks a known recipe as seen, removing its highlight marker.
+    pub async fn mark_recipe_seen(&self, recipe_id: impl AsRef<str>) -> bool {
+        let recipe_id = crate::server::recipe::canonicalize_recipe_id(recipe_id.as_ref());
+        self.recipe_book.lock().await.highlight.remove(&recipe_id)
+    }
+
     pub async fn trigger_advancement_criterion(
         &self,
         advancement: &'static pumpkin_data::advancement::Advancement,
@@ -4776,6 +5451,12 @@ impl PartialEq for Player {
 impl NBTStorage for Player {
     fn write_nbt<'a>(&'a self, nbt: &'a mut NbtCompound) -> NbtFuture<'a, ()> {
         Box::pin(async move {
+            // Start from the opaque extension map so fields unknown to this
+            // server survive reconnects and periodic saves.  Every known
+            // field is written below and therefore deterministically wins.
+            for (key, tag) in self.opaque_nbt.lock().await.clone().child_tags {
+                nbt.put(key.as_ref(), tag);
+            }
             nbt.put_int("DataVersion", DATA_VERSION);
             self.living_entity.write_nbt(nbt).await;
             self.inventory.write_nbt(nbt).await;
@@ -4796,17 +5477,34 @@ impl NBTStorage for Player {
                 "HasPlayedBefore",
                 self.has_played_before.load(Ordering::Relaxed),
             );
+            let mut warden_tracker = NbtCompound::new();
+            warden_tracker.put_int(
+                "ticks_since_last_warning",
+                self.warden_ticks_since_warning.load(Ordering::Relaxed),
+            );
+            warden_tracker.put_int(
+                "warning_level",
+                self.warden_warning_level.load(Ordering::Relaxed),
+            );
+            warden_tracker.put_int(
+                "cooldown_ticks",
+                self.warden_cooldown_ticks.load(Ordering::Relaxed),
+            );
+            nbt.put("warden_spawn_tracker", NbtTag::Compound(warden_tracker));
 
             // Store food level, saturation, exhaustion, and tick timer
             self.hunger_manager.write_nbt(nbt).await;
 
-            nbt.put_int(
-                "AirSupply",
-                self.breath_manager
-                    .air_supply
-                    .load(Ordering::Relaxed)
-                    .clamp(0, super::breath::MAX_AIR),
-            );
+            let air_supply = self
+                .breath_manager
+                .air_supply
+                .load(Ordering::Relaxed)
+                .clamp(0, super::breath::MAX_AIR);
+            // `Air` is the vanilla Entity key (a short).  Keep the previous
+            // Pumpkin `AirSupply` key as a compatibility alias while worlds
+            // migrate; both values are read below with `Air` authoritative.
+            nbt.put_short("Air", air_supply as i16);
+            nbt.put_int("AirSupply", air_supply);
             nbt.put_int(
                 "DrowningTick",
                 self.breath_manager
@@ -4820,6 +5518,15 @@ impl NBTStorage for Player {
                 self.world().dimension.minecraft_name.to_string(),
             );
 
+            if let Some(sleeping_pos) = self.sleeping_pos.load() {
+                // BlockPos.CODEC is Codec.INT_STREAM in vanilla, which
+                // serializes through NbtOps as an IntArray, not a compound.
+                nbt.put_int_array(
+                    "sleeping_pos",
+                    vec![sleeping_pos.0.x, sleeping_pos.0.y, sleeping_pos.0.z],
+                );
+            }
+
             if let Some(respawn) = self.respawn_point.lock().await.as_ref() {
                 nbt.put_int("SpawnX", respawn.position.0.x);
                 nbt.put_int("SpawnY", respawn.position.0.y);
@@ -4830,6 +5537,36 @@ impl NBTStorage for Player {
                 );
                 nbt.put_bool("SpawnForced", respawn.force);
             }
+            let recipe_book_state = self.recipe_book.lock().await.clone();
+            let mut known_recipes: Vec<_> = recipe_book_state.known.iter().cloned().collect();
+            known_recipes.sort_unstable();
+            let mut recipe_book = NbtCompound::new();
+            recipe_book.put_list(
+                "recipes",
+                known_recipes
+                    .into_iter()
+                    .map(|recipe| NbtTag::String(recipe.into_boxed_str()))
+                    .collect(),
+            );
+            let mut highlighted: Vec<_> = recipe_book_state.highlight.into_iter().collect();
+            highlighted.sort_unstable();
+            recipe_book.put_list(
+                "toBeDisplayed",
+                highlighted
+                    .into_iter()
+                    .map(|recipe| NbtTag::String(recipe.into_boxed_str()))
+                    .collect(),
+            );
+            let [crafting, furnace, blasting, smoker] = recipe_book_state.categories;
+            recipe_book.put_bool("isCraftingOpen", crafting.open);
+            recipe_book.put_bool("isCraftingFiltering", crafting.filtering);
+            recipe_book.put_bool("isFurnaceOpen", furnace.open);
+            recipe_book.put_bool("isFurnaceFiltering", furnace.filtering);
+            recipe_book.put_bool("isBlastingFurnaceOpen", blasting.open);
+            recipe_book.put_bool("isBlastingFurnaceFiltering", blasting.filtering);
+            recipe_book.put_bool("isSmokerOpen", smoker.open);
+            recipe_book.put_bool("isSmokerFiltering", smoker.filtering);
+            nbt.put("recipeBook", NbtTag::Compound(recipe_book));
             nbt.put_int("XpSeed", self.enchantment_seed.load(Ordering::Relaxed));
             let vehicle_uuid = self
                 .living_entity
@@ -4849,6 +5586,7 @@ impl NBTStorage for Player {
 
     fn read_nbt<'a>(&'a mut self, nbt: &'a mut NbtCompound) -> NbtFuture<'a, ()> {
         Box::pin(async move {
+            *self.opaque_nbt.lock().await = unknown_player_nbt(nbt);
             self.living_entity.read_nbt(nbt).await;
             self.inventory.read_nbt_non_mut(nbt).await;
             self.ender_chest_inventory.read_nbt_non_mut(nbt).await;
@@ -4876,10 +5614,31 @@ impl NBTStorage for Player {
                 nbt.get_bool("HasPlayedBefore").unwrap_or(false),
                 Ordering::Relaxed,
             );
+            if let Some(tracker) = nbt.get_compound("warden_spawn_tracker") {
+                self.warden_ticks_since_warning.store(
+                    tracker
+                        .get_int("ticks_since_last_warning")
+                        .unwrap_or(0)
+                        .max(0),
+                    Ordering::Relaxed,
+                );
+                self.warden_warning_level.store(
+                    tracker.get_int("warning_level").unwrap_or(0).clamp(0, 4),
+                    Ordering::Relaxed,
+                );
+                self.warden_cooldown_ticks.store(
+                    tracker.get_int("cooldown_ticks").unwrap_or(0).max(0),
+                    Ordering::Relaxed,
+                );
+            }
 
             self.hunger_manager.read_nbt(nbt).await;
 
-            if let Some(air) = nbt.get_int("AirSupply") {
+            if let Some(air) = nbt
+                .get_short("Air")
+                .map(i32::from)
+                .or_else(|| nbt.get_int("AirSupply"))
+            {
                 self.breath_manager
                     .air_supply
                     .store(air.clamp(0, super::breath::MAX_AIR), Ordering::Relaxed);
@@ -4889,6 +5648,90 @@ impl NBTStorage for Player {
                     tick.clamp(0, super::breath::DROWNING_INTERVAL - 1),
                     Ordering::Relaxed,
                 );
+            }
+
+            let sleeping_pos = nbt
+                .get_int_array("sleeping_pos")
+                .and_then(|values| match values {
+                    [x, y, z] => Some(BlockPos::new(*x, *y, *z)),
+                    _ => None,
+                })
+                .or_else(|| {
+                    // Accept a short-lived development shape written by older
+                    // Pumpkin builds, while every new save uses IntArray.
+                    nbt.get_compound("sleeping_pos").and_then(|pos| {
+                        Some(BlockPos::new(
+                            pos.get_int("x")?,
+                            pos.get_int("y")?,
+                            pos.get_int("z")?,
+                        ))
+                    })
+                });
+            self.sleeping_pos.store(sleeping_pos);
+            self.sleeping_since.store(sleeping_pos.map(|_| 0));
+            if sleeping_pos.is_some() {
+                self.living_entity.entity.set_pose(EntityPose::Sleeping);
+            }
+
+            let valid_recipe_ids = self
+                .world()
+                .server
+                .upgrade()
+                .map(|server| server.recipe_manager.clone());
+            let valid_recipe_ids = match valid_recipe_ids {
+                Some(recipe_manager) => Some(recipe_manager.valid_recipe_ids().await),
+                None => None,
+            };
+
+            if let Some(recipe_book) = nbt.get_compound("recipeBook")
+                && let Some(recipes) = recipe_book.get_list("recipes")
+            {
+                let mut recipe_book_state = self.recipe_book.lock().await;
+                recipe_book_state.known.clear();
+                recipe_book_state.known.extend(
+                    recipes
+                        .iter()
+                        .filter_map(NbtTag::extract_string)
+                        .map(crate::server::recipe::canonicalize_recipe_id)
+                        .filter(|recipe_id| {
+                            valid_recipe_ids
+                                .as_ref()
+                                .is_none_or(|valid| valid.contains(recipe_id))
+                        }),
+                );
+                recipe_book_state.highlight.clear();
+                if let Some(highlighted) = recipe_book.get_list("toBeDisplayed") {
+                    let known_recipes = recipe_book_state.known.clone();
+                    recipe_book_state.highlight.extend(
+                        highlighted
+                            .iter()
+                            .filter_map(NbtTag::extract_string)
+                            .map(crate::server::recipe::canonicalize_recipe_id)
+                            .filter(|recipe| known_recipes.contains(recipe)),
+                    );
+                }
+                recipe_book_state.categories = [
+                    RecipeBookCategorySettings {
+                        open: recipe_book.get_bool("isCraftingOpen").unwrap_or(false),
+                        filtering: recipe_book.get_bool("isCraftingFiltering").unwrap_or(false),
+                    },
+                    RecipeBookCategorySettings {
+                        open: recipe_book.get_bool("isFurnaceOpen").unwrap_or(false),
+                        filtering: recipe_book.get_bool("isFurnaceFiltering").unwrap_or(false),
+                    },
+                    RecipeBookCategorySettings {
+                        open: recipe_book
+                            .get_bool("isBlastingFurnaceOpen")
+                            .unwrap_or(false),
+                        filtering: recipe_book
+                            .get_bool("isBlastingFurnaceFiltering")
+                            .unwrap_or(false),
+                    },
+                    RecipeBookCategorySettings {
+                        open: recipe_book.get_bool("isSmokerOpen").unwrap_or(false),
+                        filtering: recipe_book.get_bool("isSmokerFiltering").unwrap_or(false),
+                    },
+                ];
             }
 
             // Load any saved spawnpoint data (SpawnX/SpawnY/SpawnZ, SpawnDimension, SpawnForced)
@@ -4939,7 +5782,6 @@ impl NBTStorage for PlayerInventory {
                 }
             }
 
-            let mut equipment_compound = NbtCompound::new();
             let equipment_guard = self.entity_equipment.lock().await;
             for slot in self.equipment_slots.values() {
                 if let Some(stack) = equipment_guard.equipment.get(slot)
@@ -4947,35 +5789,31 @@ impl NBTStorage for PlayerInventory {
                 {
                     let mut item_compound = NbtCompound::new();
                     stack.write_item_stack(&mut item_compound);
-                    match slot {
-                        EquipmentSlot::OffHand(_) => {
-                            equipment_compound.put_compound("offhand", item_compound);
-                        }
-                        EquipmentSlot::Feet(_) => {
-                            equipment_compound.put_compound("feet", item_compound);
-                        }
-                        EquipmentSlot::Legs(_) => {
-                            equipment_compound.put_compound("legs", item_compound);
-                        }
-                        EquipmentSlot::Chest(_) => {
-                            equipment_compound.put_compound("chest", item_compound);
-                        }
-                        EquipmentSlot::Head(_) => {
-                            equipment_compound.put_compound("head", item_compound);
-                        }
+                    let slot_id: i8 = match slot {
+                        EquipmentSlot::OffHand(_) => 40,
+                        EquipmentSlot::Feet(_) => 100,
+                        EquipmentSlot::Legs(_) => 101,
+                        EquipmentSlot::Chest(_) => 102,
+                        EquipmentSlot::Head(_) => 103,
                         _ => {
                             warn!("Invalid equipment slot for a player");
+                            continue;
                         }
-                    }
+                    };
+                    item_compound.put_byte("Slot", slot_id);
+                    items.push(NbtTag::Compound(item_compound));
                 }
             }
-            nbt.put_compound("equipment", equipment_compound);
             nbt.put("Inventory", NbtTag::List(items));
         })
     }
 
     fn read_nbt_non_mut<'a>(&'a self, nbt: &'a NbtCompound) -> NbtFuture<'a, ()> {
         Box::pin(async {
+            // Loading is a replacement operation, not a merge.  Clear the
+            // current snapshot first so slots omitted from the NBT cannot
+            // survive a reconnect/reload as ghost items.
+            self.clear().await;
             // Read selected hotbar slot
             self.set_selected_slot(nbt.get_int("SelectedItemSlot").unwrap_or(0) as u8);
             // Process inventory list
@@ -4984,9 +5822,16 @@ impl NBTStorage for PlayerInventory {
                     if let Some(item_compound) = tag.extract_compound()
                         && let Some(slot_byte) = item_compound.get_byte("Slot")
                     {
-                        let slot = slot_byte as usize;
                         if let Some(item_stack) = ItemStack::read_item_stack(item_compound) {
-                            self.set_stack(slot, item_stack).await;
+                            match slot_byte {
+                                0..=35 => self.set_stack(slot_byte as usize, item_stack).await,
+                                40 => self.set_stack(Self::OFF_HAND_SLOT, item_stack).await,
+                                100 => self.set_stack(36, item_stack).await,
+                                101 => self.set_stack(37, item_stack).await,
+                                102 => self.set_stack(38, item_stack).await,
+                                103 => self.set_stack(39, item_stack).await,
+                                _ => {}
+                            }
                         }
                     }
                 }
@@ -5050,6 +5895,10 @@ impl NBTStorage for EnderChestInventory {
 
     fn read_nbt_non_mut<'a>(&'a self, nbt: &'a NbtCompound) -> NbtFuture<'a, ()> {
         Box::pin(async {
+            // Loading is a replacement operation.  Clearing first prevents
+            // an omitted slot from surviving when a player object is reused
+            // during dimension transfer or reconnect recovery.
+            self.clear().await;
             // Process item list
             if let Some(item_list) = nbt.get_list("EnderItems") {
                 for tag in item_list {
@@ -5086,7 +5935,6 @@ impl EntityBase for Player {
             {
                 return false;
             }
-            // TODO: Implement shield blocking durability.
             let result = self
                 .living_entity
                 .damage_with_context(caller, amount, damage_type, position, source, cause)
@@ -5826,13 +6674,47 @@ impl InventoryPlayer for Player {
             self.increment_stat(category, stat_id, amount).await;
         })
     }
+
+    fn can_craft_recipe<'a>(&'a self, recipe_id: &'a str) -> PlayerFuture<'a, bool> {
+        Box::pin(async move {
+            let limited = self.world().level_info.load().game_rules.limited_crafting;
+            let known = self.known_recipes().await;
+            crate::server::recipe::is_recipe_allowed(limited, &known, recipe_id)
+        })
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{bedrock_inventory_slot, read_root_vehicle, write_root_vehicle};
+    use super::{
+        EnderChestInventory, Player, RecipeBookCategorySettings, RecipeBookState,
+        bedrock_inventory_slot, read_root_vehicle, record_chunk_batch_sent, write_root_vehicle,
+    };
+    use pumpkin_data::block_properties::HorizontalFacing;
+    use pumpkin_data::item::Item;
+    use pumpkin_data::item_stack::ItemStack;
+    use pumpkin_inventory::build_equipment_slots;
+    use pumpkin_inventory::entity_equipment::EntityEquipment;
+    use pumpkin_inventory::player::player_inventory::PlayerInventory;
     use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
+    use pumpkin_world::inventory::Inventory;
+    use std::sync::Arc;
+    use tokio::sync::Mutex;
     use uuid::Uuid;
+
+    #[test]
+    fn empty_chunk_batch_does_not_consume_the_ack_window() {
+        let mut batches = 4;
+        let before = std::time::Instant::now();
+        let mut last = before;
+        record_chunk_batch_sent(&mut batches, &mut last, false);
+        assert_eq!(batches, 4);
+        assert_eq!(last, before);
+
+        record_chunk_batch_sent(&mut batches, &mut last, true);
+        assert_eq!(batches, 5);
+        assert!(last >= before);
+    }
 
     #[test]
     fn player_screen_slots_map_to_bedrock_inventory() {
@@ -5877,5 +6759,157 @@ mod tests {
         nbt.put("RootVehicle", NbtTag::Compound(root_vehicle));
 
         assert_eq!(read_root_vehicle(&nbt), Some(expected));
+    }
+
+    #[test]
+    fn bed_spawn_offsets_follow_vanilla_order_and_yaw() {
+        let offsets = Player::get_bed_spawn_offsets(HorizontalFacing::North, 0.0);
+        assert_eq!(
+            offsets,
+            vec![
+                (1, 0),
+                (1, 1),
+                (1, 2),
+                (0, 2),
+                (-1, 2),
+                (-1, 1),
+                (-1, 0),
+                (-1, -1),
+                (0, -1),
+                (1, -1),
+                (0, 0),
+                (0, 1),
+            ]
+        );
+
+        // A player looking west makes the counter-clockwise side the
+        // preferred side, exactly as Direction::isFacingAngle does in Java.
+        assert_eq!(
+            Player::get_bed_spawn_offsets(HorizontalFacing::North, -90.0)[0],
+            (-1, 0)
+        );
+    }
+
+    #[tokio::test]
+    async fn player_inventory_uses_vanilla_armor_and_offhand_slots() {
+        let equipment = Arc::new(Mutex::new(EntityEquipment::new()));
+        let slots = Arc::new(build_equipment_slots());
+        let inventory = PlayerInventory::new(equipment.clone(), slots.clone());
+        inventory
+            .set_stack(
+                PlayerInventory::OFF_HAND_SLOT,
+                ItemStack::new(1, &Item::SHIELD),
+            )
+            .await;
+        inventory
+            .set_stack(39, ItemStack::new(1, &Item::DIAMOND_HELMET))
+            .await;
+
+        let mut nbt = NbtCompound::new();
+        <PlayerInventory as super::NBTStorage>::write_nbt(&inventory, &mut nbt).await;
+        let list = nbt.get_list("Inventory").expect("vanilla inventory list");
+        let slots: Vec<i8> = list
+            .iter()
+            .filter_map(|tag| tag.extract_compound()?.get_byte("Slot"))
+            .collect();
+        assert!(slots.contains(&40));
+        assert!(slots.contains(&103));
+        assert!(nbt.get_compound("equipment").is_none());
+
+        let restored = PlayerInventory::new(
+            Arc::new(Mutex::new(EntityEquipment::new())),
+            Arc::new(build_equipment_slots()),
+        );
+        <PlayerInventory as super::NBTStorage>::read_nbt_non_mut(&restored, &nbt).await;
+        assert_eq!(restored.get_stack(40).await.item.id, Item::SHIELD.id);
+        assert_eq!(
+            restored.get_stack(39).await.item.id,
+            Item::DIAMOND_HELMET.id
+        );
+    }
+
+    #[tokio::test]
+    async fn player_inventory_load_replaces_omitted_slots() {
+        let inventory = PlayerInventory::new(
+            Arc::new(Mutex::new(EntityEquipment::new())),
+            Arc::new(build_equipment_slots()),
+        );
+        inventory
+            .set_stack(0, ItemStack::new(1, &Item::APPLE))
+            .await;
+
+        let nbt = NbtCompound::new();
+        <PlayerInventory as super::NBTStorage>::read_nbt_non_mut(&inventory, &nbt).await;
+        assert!(inventory.get_stack(0).await.is_empty());
+        assert!(
+            inventory
+                .get_stack(PlayerInventory::OFF_HAND_SLOT)
+                .await
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn ender_inventory_load_replaces_omitted_slots() {
+        let inventory = EnderChestInventory::new();
+        inventory
+            .set_stack(0, ItemStack::new(1, &Item::APPLE))
+            .await;
+
+        let nbt = NbtCompound::new();
+        <EnderChestInventory as super::NBTStorage>::read_nbt_non_mut(&inventory, &nbt).await;
+
+        assert!(inventory.get_stack(0).await.is_empty());
+    }
+
+    #[test]
+    fn recipe_book_state_tracks_highlights_and_categories() {
+        let mut state = RecipeBookState::default();
+        assert!(state.known.insert("minecraft:stick".into()));
+        assert!(state.highlight.insert("minecraft:stick".into()));
+        state.categories[2] = RecipeBookCategorySettings {
+            open: true,
+            filtering: true,
+        };
+
+        let packet = state.to_packet();
+        assert!(packet.blast_furnace_open);
+        assert!(packet.blast_furnace_filtering);
+        assert!(!packet.crafting_open);
+    }
+
+    #[test]
+    fn player_nbt_keeps_unknown_root_extensions_out_of_known_serializer_fields() {
+        let mut source = NbtCompound::new();
+        source.put_string("DataPackCustomField", "kept".to_string());
+        source.put_int("XpTotal", 99);
+        source.put_compound("CustomCompound", {
+            let mut value = NbtCompound::new();
+            value.put_bool("enabled", true);
+            value
+        });
+
+        let unknown = super::unknown_player_nbt(&source);
+        assert_eq!(unknown.get_string("DataPackCustomField"), Some("kept"));
+        assert!(unknown.get_compound("CustomCompound").is_some());
+        assert!(!unknown.has("XpTotal"));
+    }
+
+    #[test]
+    fn swimming_start_requires_water_at_block_position() {
+        assert!(Player::can_swim(
+            true, true, false, 0.8, 0.4, true, false, false, false
+        ));
+        assert!(!Player::can_swim(
+            true, true, false, 0.8, 0.4, false, false, false, false
+        ));
+        // Once the vanilla swimming flag is active, the block-fluid start
+        // predicate is no longer consulted; only remaining in water matters.
+        assert!(Player::can_swim(
+            true, true, true, 0.0, 0.4, false, false, false, false
+        ));
+        assert!(!Player::can_swim(
+            false, true, true, 0.8, 0.4, true, false, false, false
+        ));
     }
 }

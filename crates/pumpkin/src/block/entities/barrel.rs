@@ -103,22 +103,34 @@ impl ViewerCountListener for BarrelBlockEntity {
     fn on_container_open<'a>(
         &'a self,
         world: &'a Arc<World>,
-        _position: &'a BlockPos,
+        position: &'a BlockPos,
     ) -> ViewerFuture<'a, ()> {
         Box::pin(async move {
             self.play_sound(world, Sound::BlockBarrelOpen);
             self.set_open(world, true).await;
+            world
+                .emit_game_event(
+                    *position,
+                    crate::world::game_event::GameEventKind::ContainerOpen,
+                )
+                .await;
         })
     }
 
     fn on_container_close<'a>(
         &'a self,
         world: &'a Arc<World>,
-        _position: &'a BlockPos,
+        position: &'a BlockPos,
     ) -> ViewerFuture<'a, ()> {
         Box::pin(async move {
             self.play_sound(world, Sound::BlockBarrelClose);
             self.set_open(world, false).await;
+            world
+                .emit_game_event(
+                    *position,
+                    crate::world::game_event::GameEventKind::ContainerClose,
+                )
+                .await;
         })
     }
 }

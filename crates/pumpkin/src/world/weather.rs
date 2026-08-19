@@ -1,5 +1,6 @@
 use super::World;
 use pumpkin_protocol::java::client::play::{CGameEvent, GameEvent};
+use pumpkin_world::world_info::data_files::WeatherData;
 use rand::RngExt;
 
 // Weather timing constants
@@ -52,6 +53,35 @@ impl Weather {
         }
     }
 
+    #[must_use]
+    pub const fn from_data(data: &WeatherData) -> Self {
+        Self {
+            clear_weather_time: data.clear_weather_time,
+            raining: data.raining,
+            rain_time: data.rain_time,
+            thundering: data.thundering,
+            thunder_time: data.thunder_time,
+            // Vanilla prepares the client-side levels from persisted flags.
+            rain_level: if data.raining { 1.0 } else { 0.0 },
+            old_rain_level: if data.raining { 1.0 } else { 0.0 },
+            thunder_level: if data.thundering { 1.0 } else { 0.0 },
+            old_thunder_level: if data.thundering { 1.0 } else { 0.0 },
+            weather_cycle_enabled: true,
+        }
+    }
+
+    #[must_use]
+    pub const fn to_data(&self) -> WeatherData {
+        WeatherData {
+            rain_time: self.rain_time,
+            raining: self.raining,
+            thundering: self.thundering,
+            thunder_time: self.thunder_time,
+            clear_weather_time: self.clear_weather_time,
+            data_version: 0,
+        }
+    }
+
     pub fn set_weather_parameters(
         &mut self,
         world: &World,
@@ -78,7 +108,7 @@ impl Weather {
     }
 
     pub fn tick_weather(&mut self, world: &World) {
-        if !self.weather_cycle_enabled {
+        if self.weather_cycle_enabled {
             self.advance_weather_cycle();
         }
 
@@ -115,9 +145,10 @@ impl Weather {
     }
 
     fn advance_weather_cycle(&mut self) {
-        // Removed async since there are no await calls
         if self.clear_weather_time > 0 {
             self.clear_weather_time -= 1;
+            // Match ServerLevel: a state which was already clear receives a
+            // one-tick timer, while an active state is held at zero.
             self.thunder_time = i32::from(!self.thundering);
             self.rain_time = i32::from(!self.raining);
             self.thundering = false;
@@ -169,5 +200,50 @@ impl Clone for Weather {
             old_thunder_level: self.old_thunder_level,
             weather_cycle_enabled: self.weather_cycle_enabled,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Weather;
+    use pumpkin_world::world_info::data_files::WeatherData;
+
+    #[test]
+    fn weather_data_round_trip_preserves_all_vanilla_fields() {
+        let data = WeatherData {
+            rain_time: 123,
+            raining: true,
+            thundering: true,
+            thunder_time: 456,
+            clear_weather_time: 789,
+            data_version: 4903,
+        };
+        let weather = Weather::from_data(&data);
+        let restored = weather.to_data();
+        assert_eq!(restored.rain_time, data.rain_time);
+        assert_eq!(restored.raining, data.raining);
+        assert_eq!(restored.thundering, data.thundering);
+        assert_eq!(restored.thunder_time, data.thunder_time);
+        assert_eq!(restored.clear_weather_time, data.clear_weather_time);
+    }
+
+    #[test]
+    fn forced_clear_keeps_vanilla_timer_semantics() {
+        let mut weather = Weather {
+            clear_weather_time: 2,
+            raining: true,
+            rain_time: 40,
+            thundering: false,
+            thunder_time: 40,
+            ..Weather::new()
+        };
+        // Calling the private state transition directly keeps this test
+        // independent of a network-backed World.
+        weather.advance_weather_cycle();
+        assert_eq!(weather.clear_weather_time, 1);
+        assert_eq!(weather.rain_time, 0);
+        assert_eq!(weather.thunder_time, 1);
+        assert!(!weather.raining);
+        assert!(!weather.thundering);
     }
 }

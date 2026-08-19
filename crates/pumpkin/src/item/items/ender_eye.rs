@@ -73,6 +73,14 @@ impl ItemBehaviour for EnderEyeItem {
                 .await;
             // Consume one item.
             item.decrement_unless_creative(player.gamemode.load(), 1);
+            world
+                .emit_game_event_from_item(
+                    location,
+                    crate::world::game_event::GameEventKind::BlockChange,
+                    Some(player.get_entity().entity_uuid),
+                    item,
+                )
+                .await;
             world.sync_world_event(WorldEvent::EndPortalFrameFill, location, 0);
 
             // Try to complete the portal.

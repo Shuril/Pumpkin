@@ -1,6 +1,10 @@
-use std::sync::{Arc, Weak};
+use std::sync::{
+    Arc, Weak,
+    atomic::{AtomicBool, Ordering},
+};
 
-use pumpkin_data::entity::EntityType;
+use pumpkin_data::{entity::EntityType, meta_data_type::MetaDataType, tracked_data::TrackedData};
+use pumpkin_protocol::java::client::play::Metadata;
 
 use crate::entity::{
     Entity, NBTStorage,
@@ -13,12 +17,16 @@ use crate::entity::{
 
 pub struct BlazeEntity {
     pub entity: Arc<MobEntity>,
+    charged: AtomicBool,
 }
 
 impl BlazeEntity {
     pub fn new(entity: Entity) -> Arc<Self> {
         let entity = Arc::new(MobEntity::new(entity));
-        let zombie = Self { entity };
+        let zombie = Self {
+            entity,
+            charged: AtomicBool::new(false),
+        };
         let mob_arc = Arc::new(zombie);
         let mob_weak: Weak<dyn Mob> = {
             let mob_arc: Arc<dyn Mob> = mob_arc.clone();
@@ -63,24 +71,23 @@ impl BlazeEntity {
         mob_arc
     }
 
-    pub const fn set_charged(&self, _charged: bool) {
-        // TODO:
-        // let flags = &self.entity.living_entity.entity.flags;
+    pub fn set_charged(&self, charged: bool) {
+        if self.charged.swap(charged, Ordering::Relaxed) == charged {
+            return;
+        }
+        self.entity.living_entity.entity.send_meta_data(
+            &[Metadata::new(
+                TrackedData::BLAZE_FLAGS,
+                MetaDataType::BYTE,
+                u8::from(charged),
+            )],
+            None,
+        );
+    }
 
-        // let new_je_flags = if charged {
-        //     flags.fetch_or(1, Ordering::Relaxed) | 1
-        // } else {
-        //     flags.fetch_and(!1, Ordering::Relaxed) & !1
-        // };
-        // self.entity
-        //     .living_entity
-        //     .entity
-        //     .send_meta_data(&[Metadata::new(
-        //         TrackedData::FLAGS_ID,
-        //         MetaDataType::BYTE,
-        //         new_je_flags,
-        //     )])
-        //     .await;
+    #[must_use]
+    pub fn is_charged(&self) -> bool {
+        self.charged.load(Ordering::Relaxed)
     }
 }
 

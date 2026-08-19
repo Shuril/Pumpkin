@@ -130,4 +130,16 @@ impl EntityBase for WindChargeEntity {
     fn cast_any(&self) -> &dyn std::any::Any {
         self
     }
+
+    fn projectile_owner_id(&self) -> Option<i32> {
+        self.thrown_item_entity.owner_id
+    }
+
+    fn on_hit(&self, hit: crate::entity::projectile::ProjectileHit) -> EntityBaseFuture<'_, ()> {
+        Box::pin(async move {
+            // Wind charges use the normal projectile hit location for their
+            // small, non-block-breaking explosion.
+            self.create_explosion(hit.hit_pos()).await;
+        })
+    }
 }

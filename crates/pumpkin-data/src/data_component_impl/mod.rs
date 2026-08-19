@@ -534,6 +534,8 @@ pub fn read_data(id: DataComponent, data: &NbtTag) -> Option<Box<dyn DataCompone
         DataComponent::CustomName => Some(CustomNameImpl::read_data(data)?.to_dyn()),
         DataComponent::ItemModel => Some(ItemModelImpl::read_data(data)?.to_dyn()),
         DataComponent::Consumable => Some(ConsumableImpl::read_data(data)?.to_dyn()),
+        DataComponent::UseEffects => Some(UseEffectsImpl::read_data(data)?.to_dyn()),
+        DataComponent::UseRemainder => Some(UseRemainderImpl::read_data(data)?.to_dyn()),
         DataComponent::Equippable => Some(EquippableImpl::read_data(data)?.to_dyn()),
         DataComponent::StoredEnchantments => {
             Some(StoredEnchantmentsImpl::read_data(data)?.to_dyn())
@@ -544,8 +546,10 @@ pub fn read_data(id: DataComponent, data: &NbtTag) -> Option<Box<dyn DataCompone
             Some(ChargedProjectilesImpl::read_data(data)?.to_dyn())
         }
         DataComponent::BlockEntityData => Some(BlockEntityDataImpl::read_data(data)?.to_dyn()),
+        DataComponent::BucketEntityData => Some(BucketEntityDataImpl::read_data(data)?.to_dyn()),
         DataComponent::BundleContents => Some(BundleContentsImpl::read_data(data)?.to_dyn()),
         DataComponent::Container => Some(ContainerImpl::read_data(data)?.to_dyn()),
+        DataComponent::PotDecorations => Some(PotDecorationsImpl::read_data(data)?.to_dyn()),
         DataComponent::WrittenBookContent => {
             Some(WrittenBookContentImpl::read_data(data)?.to_dyn())
         }

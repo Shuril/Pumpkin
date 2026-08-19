@@ -4,6 +4,7 @@ use crate::data_component_impl::{
     get_idset_hash, get_str_hash, put_idor,
 };
 use crate::effect::StatusEffect;
+use crate::item::Item;
 use crate::sound::Sound;
 use crc_fast::CrcAlgorithm::Crc32Iscsi;
 use crc_fast::Digest;
@@ -362,16 +363,110 @@ impl Hash for ConsumableImpl {
     }
 }
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct UseEffectsImpl;
-impl DataComponentImpl for UseEffectsImpl {
-    default_impl!(UseEffects);
+/// Vanilla `minecraft:use_effects` component.
+///
+/// The component is present in the common item component map even when all
+/// values are defaults (`false`, `true`, `0.2`).  Keeping those defaults in a
+/// shared static value lets generated item tables stay compact while patches
+/// and datapack/NBT payloads can still carry the complete record.
+#[derive(Clone, Debug, PartialEq)]
+pub struct UseEffectsImpl {
+    pub can_sprint: bool,
+    pub interact_vibrations: bool,
+    pub speed_multiplier: f32,
 }
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct UseRemainderImpl;
+pub const DEFAULT_USE_EFFECTS: UseEffectsImpl = UseEffectsImpl {
+    can_sprint: false,
+    interact_vibrations: true,
+    speed_multiplier: 0.2,
+};
+
+impl UseEffectsImpl {
+    pub fn read_data(data: &NbtTag) -> Option<Self> {
+        let compound = data.extract_compound()?;
+        let can_sprint = compound.get_bool("can_sprint").unwrap_or(false);
+        let interact_vibrations = compound.get_bool("interact_vibrations").unwrap_or(true);
+        let speed_multiplier = compound.get_float("speed_multiplier").unwrap_or(0.2);
+        (speed_multiplier.is_finite() && (0.0..=1.0).contains(&speed_multiplier)).then_some(Self {
+            can_sprint,
+            interact_vibrations,
+            speed_multiplier,
+        })
+    }
+}
+
+impl Hash for UseEffectsImpl {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.can_sprint.hash(state);
+        self.interact_vibrations.hash(state);
+        self.speed_multiplier.to_bits().hash(state);
+    }
+}
+
+impl DataComponentImpl for UseEffectsImpl {
+    default_impl!(UseEffects);
+    fn write_data(&self) -> NbtTag {
+        let mut compound = NbtCompound::new();
+        if self.can_sprint {
+            compound.put_bool("can_sprint", true);
+        }
+        if !self.interact_vibrations {
+            compound.put_bool("interact_vibrations", false);
+        }
+        if self.speed_multiplier.to_bits() != DEFAULT_USE_EFFECTS.speed_multiplier.to_bits() {
+            compound.put_float("speed_multiplier", self.speed_multiplier);
+        }
+        NbtTag::Compound(compound)
+    }
+    fn get_hash(&self) -> i32 {
+        let mut digest = Digest::new(Crc32Iscsi);
+        digest.update(&[self.can_sprint as u8, self.interact_vibrations as u8]);
+        digest.update(&self.speed_multiplier.to_bits().to_le_bytes());
+        digest.finalize() as i32
+    }
+}
+
+/// The item template returned when a consumable stack is exhausted.
+///
+/// Vanilla's `UseRemainder` stores an `ItemStackTemplate`.  All currently
+/// shipped vanilla remainder templates are a single, component-less item, so
+/// the registry representation keeps the same observable information without
+/// introducing a recursive `ItemStack` value into the component table.
+#[derive(Clone, Copy, Hash, PartialEq, Eq)]
+pub struct UseRemainderImpl {
+    pub remainder: &'static Item,
+    pub count: u8,
+}
 impl DataComponentImpl for UseRemainderImpl {
+    fn write_data(&self) -> NbtTag {
+        let mut compound = NbtCompound::new();
+        compound.put_string("id", format!("minecraft:{}", self.remainder.registry_key));
+        if self.count != 1 {
+            compound.put_int("count", i32::from(self.count));
+        }
+        NbtTag::Compound(compound)
+    }
     default_impl!(UseRemainder);
+}
+
+impl UseRemainderImpl {
+    pub fn read_data(data: &NbtTag) -> Option<Self> {
+        if let Some(id) = data.extract_string() {
+            return Some(Self {
+                remainder: Item::from_registry_key(id.strip_prefix("minecraft:").unwrap_or(id))?,
+                count: 1,
+            });
+        }
+        let compound = data.extract_compound()?;
+        let id = compound.get_string("id")?;
+        let id = id.strip_prefix("minecraft:").unwrap_or(id);
+        let count = compound.get_int("count").unwrap_or(1).clamp(1, 99) as u8;
+        Some(Self {
+            remainder: Item::from_registry_key(id)?,
+            count,
+        })
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -561,7 +656,7 @@ impl Hash for PotionDurationScaleImpl {
 
 #[cfg(test)]
 mod tests {
-    use super::{DataComponentImpl, PotionDurationScaleImpl};
+    use super::{DEFAULT_USE_EFFECTS, DataComponentImpl, PotionDurationScaleImpl, UseEffectsImpl};
     use crate::item::Item;
 
     #[test]
@@ -586,6 +681,28 @@ mod tests {
             .expect("tipped arrows should have a duration scale");
 
         assert_eq!(scale.scale, 0.125);
+    }
+
+    #[test]
+    fn use_effects_omits_defaults_and_restores_them_on_decode() {
+        let encoded = DEFAULT_USE_EFFECTS.write_data();
+        let decoded = UseEffectsImpl::read_data(&encoded).expect("default component decodes");
+        assert_eq!(decoded, DEFAULT_USE_EFFECTS);
+        let custom = UseEffectsImpl {
+            can_sprint: true,
+            interact_vibrations: false,
+            speed_multiplier: 0.75,
+        };
+        let encoded = custom.write_data();
+        let decoded = UseEffectsImpl::read_data(&encoded).expect("custom component decodes");
+        assert_eq!(decoded, custom);
+    }
+
+    #[test]
+    fn use_effects_rejects_out_of_range_speed() {
+        let mut encoded = pumpkin_nbt::compound::NbtCompound::new();
+        encoded.put_float("speed_multiplier", 1.01);
+        assert!(UseEffectsImpl::read_data(&pumpkin_nbt::tag::NbtTag::Compound(encoded)).is_none());
     }
 }
 

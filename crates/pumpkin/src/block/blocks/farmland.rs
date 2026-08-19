@@ -30,14 +30,20 @@ pub struct FarmlandBlock;
 impl BlockBehaviour for FarmlandBlock {
     fn on_scheduled_tick<'a>(&'a self, args: OnScheduledTickArgs<'a>) -> BlockFuture<'a, ()> {
         Box::pin(async move {
-            // TODO: push up entities
-            args.world
-                .set_block_state(
-                    args.position,
-                    Block::DIRT.default_state.id,
-                    BlockFlags::NOTIFY_ALL,
-                )
-                .await;
+            // A scheduled tick is normally queued after the block above became
+            // invalid, but scheduled ticks can also be injected by commands or
+            // plugins.  Vanilla re-checks the support predicate before turning
+            // farmland into dirt; doing the same prevents a stale tick from
+            // destroying a crop that was placed in the meantime.
+            if !can_place_at(args.world.as_ref(), args.position) {
+                args.world
+                    .set_block_state(
+                        args.position,
+                        Block::DIRT.default_state.id,
+                        BlockFlags::NOTIFY_ALL,
+                    )
+                    .await;
+            }
         })
     }
 
@@ -69,8 +75,13 @@ impl BlockBehaviour for FarmlandBlock {
 
     fn random_tick<'a>(&'a self, args: RandomTickArgs<'a>) -> BlockFuture<'a, ()> {
         Box::pin(async move {
-            // TODO: add rain check. Remember to check which one is most optimized.
-            if is_water_nearby(args.world, args.position) {
+            // Vanilla farmland is hydrated by either nearby water (including
+            // flowing/waterlogged states) or direct rain.  The latter must be
+            // checked at the block above the farmland so a roof correctly
+            // prevents hydration.
+            if is_water_nearby(args.world, args.position)
+                || args.world.is_raining_at(&args.position.up()).await
+            {
                 let mut props = FarmlandProperties::default(args.block);
                 props.moisture = 7;
                 args.world
@@ -89,7 +100,6 @@ impl BlockBehaviour for FarmlandBlock {
                         .get_block(&args.position.up())
                         .has_tag(&tag::Block::MINECRAFT_MAINTAINS_FARMLAND)
                     {
-                        //TODO push entities up
                         args.world
                             .set_block_state(
                                 args.position,
@@ -115,7 +125,8 @@ impl BlockBehaviour for FarmlandBlock {
 
 fn can_place_at(world: &dyn BlockAccessor, block_pos: &BlockPos) -> bool {
     let state = world.get_block_state(&block_pos.up());
-    !state.is_solid() // TODO: add fence gate block
+    let block = Block::from_state_id(state.id);
+    !state.is_solid() || block.has_tag(&tag::Block::MINECRAFT_FENCE_GATES)
 }
 
 fn is_water_nearby(world: &Arc<World>, block_pos: &BlockPos) -> bool {
@@ -127,8 +138,10 @@ fn is_water_nearby(world: &Arc<World>, block_pos: &BlockPos) -> bool {
                     y: dy,
                     z: dz,
                 });
-                //TODO this should use tag water. It does not seem to work rn.
-                if world.get_block(&check_pos) == &Block::WATER {
+                if world
+                    .get_fluid(&check_pos)
+                    .has_tag(&tag::Fluid::MINECRAFT_WATER)
+                {
                     return true;
                 }
             }

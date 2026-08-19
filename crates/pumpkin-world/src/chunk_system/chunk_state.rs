@@ -273,11 +273,13 @@ impl Chunk {
                 fluid_ticks: ChunkTickScheduler::default(),
                 pending_block_entities: Mutex::default(),
                 light_engine: Mutex::new(ChunkLight::default()),
+                dirty_light_sections: Mutex::default(),
                 light_populated: AtomicBool::new(false),
                 status: ChunkStatus::Empty,
                 blending_data: None,
                 dirty: AtomicBool::new(false),
                 inhabited_time: AtomicU64::new(0),
+                unknown_nbt: Mutex::default(),
             })),
         ) {
             Self::Proto(proto) => proto,
@@ -312,18 +314,20 @@ impl Chunk {
 
         let chunk = ChunkData {
             light_engine: Mutex::new(light_data),
+            dirty_light_sections: Mutex::default(),
             light_populated: AtomicBool::new(is_lit),
             section: sections,
             heightmap: Mutex::new(heightmaps),
             x: proto_chunk.x,
             z: proto_chunk.z,
             dirty: AtomicBool::new(true),
-            block_ticks: ChunkTickScheduler::default(),
+            block_ticks: ChunkTickScheduler::from_iter(proto_chunk.block_ticks),
             fluid_ticks: ChunkTickScheduler::from_iter(proto_chunk.fluid_ticks),
             pending_block_entities: Mutex::new(pending_block_entities),
             status: proto_chunk.stage.into(),
             blending_data: proto_chunk.blending_data,
-            inhabited_time: AtomicU64::new(0),
+            inhabited_time: AtomicU64::new(proto_chunk.inhabited_time),
+            unknown_nbt: Mutex::new(proto_chunk.unknown_nbt),
         };
 
         *self = Self::Level(Arc::new(chunk));

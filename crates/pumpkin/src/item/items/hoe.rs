@@ -92,17 +92,19 @@ impl ItemBehaviour for HoeItem {
                         BlockDirection::East => location.up().to_f64().add_raw(1.0, -0.4, 0.0),
                     };
                     let entity = Entity::new(world.clone(), location, &EntityType::ITEM);
-                    // TODO: Merge stacks together
                     let item_entity = Arc::new(ItemEntity::new(
                         entity,
                         ItemStack::new(1, &Item::HANGING_ROOTS),
                     ));
-                    world.spawn_entity(item_entity).await;
+                    world.spawn_entity(item_entity.clone()).await;
+                    // Vanilla's ItemEntity merge path is lock-ordered and
+                    // safe to run immediately; this avoids exposing a second
+                    // identical drop until the next periodic merge scan.
+                    item_entity.try_merge().await;
                 }
 
                 if changed && player.gamemode.load() != GameMode::Creative {
-                    // TODO: Handle DamageResult::Broken to broadcast item break and update player slot.
-                    let _ = item.damage_item(1);
+                    player.damage_item_stack_for_use(item, 1).await;
                 }
             }
         })

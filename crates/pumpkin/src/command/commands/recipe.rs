@@ -9,11 +9,11 @@ use crate::command::suggestion::provider::SuggestionProvider;
 use crate::command::suggestion::suggestions::{Suggestions, SuggestionsBuilder};
 use crate::entity::EntityBase;
 use pumpkin_data::translation;
-use pumpkin_protocol::codec::recipe::DynamicRecipe;
 use pumpkin_protocol::java::client::play::CRecipeBookAdd;
 use pumpkin_util::PermissionLvl;
 use pumpkin_util::permission::{Permission, PermissionDefault, PermissionRegistry};
 use pumpkin_util::text::TextComponent;
+use std::collections::HashSet;
 use std::future::Future;
 use std::pin::Pin;
 
@@ -22,25 +22,6 @@ const PERMISSION: &str = "minecraft:command.recipe";
 
 static ERROR_RECIPE_NOT_FOUND: CommandErrorType<1> =
     CommandErrorType::new(translation::java::RECIPE_NOTFOUND, "Unknown recipe: %s");
-
-fn get_recipe_id(recipe: &DynamicRecipe) -> String {
-    match recipe {
-        DynamicRecipe::Crafting(crafting) => match crafting {
-            pumpkin_protocol::codec::recipe::OwnedCraftingRecipe::Shaped { result, .. }
-            | pumpkin_protocol::codec::recipe::OwnedCraftingRecipe::Shapeless { result, .. } => {
-                result.item_id.clone()
-            }
-        },
-        DynamicRecipe::Cooking(cooking) => match cooking {
-            pumpkin_protocol::codec::recipe::OwnedCookingRecipeType::Smelting(r)
-            | pumpkin_protocol::codec::recipe::OwnedCookingRecipeType::Blasting(r)
-            | pumpkin_protocol::codec::recipe::OwnedCookingRecipeType::Smoking(r)
-            | pumpkin_protocol::codec::recipe::OwnedCookingRecipeType::CampfireCooking(r) => {
-                r.recipe_id.clone()
-            }
-        },
-    }
-}
 
 struct RecipeSuggestionProvider;
 
@@ -55,9 +36,14 @@ impl SuggestionProvider for RecipeSuggestionProvider {
         Box::pin(async move {
             builder = builder.suggest("*");
             if let Some(server) = server {
-                let recipes = server.recipe_manager.get_dynamic_recipes_internal().await;
-                for recipe in recipes {
-                    let id = get_recipe_id(&recipe);
+                let mut ids: Vec<_> = server
+                    .recipe_manager
+                    .valid_recipe_ids()
+                    .await
+                    .into_iter()
+                    .collect();
+                ids.sort_unstable();
+                for id in ids {
                     builder = builder.suggest(id);
                 }
             }
@@ -79,34 +65,58 @@ impl CommandExecutor for RecipeGiveExecutor {
                     .create_without_context(TextComponent::text(recipe_str.to_string()))
             })?;
 
-            let all_recipes = server.recipe_manager.get_dynamic_recipes_internal().await;
-
             let is_all = recipe_str == "*";
-            let matching_recipes = if is_all {
-                all_recipes.clone()
-            } else {
-                all_recipes
-                    .iter()
-                    .filter(|r| {
-                        let id = get_recipe_id(r);
-                        id == recipe_str
-                            || id.strip_prefix("minecraft:").unwrap_or(&id) == recipe_str
-                    })
-                    .cloned()
-                    .collect::<Vec<_>>()
-            };
-
-            if !is_all && matching_recipes.is_empty() {
+            let all_dynamic = server.recipe_manager.get_dynamic_recipes_internal().await;
+            let builtins = crate::server::recipe::RecipeManager::built_in_recipe_ids();
+            let valid = server.recipe_manager.valid_recipe_ids().await;
+            let requested_id = (!is_all)
+                .then(|| crate::server::recipe::canonicalize_recipe_id(recipe_str))
+                .filter(|id| valid.contains(id));
+            if !is_all && requested_id.is_none() {
                 return Err(ERROR_RECIPE_NOT_FOUND
                     .create_without_context(TextComponent::text(recipe_str.to_string())));
             }
 
-            let recipe_count = matching_recipes.len();
+            let matching_builtin_ids: HashSet<String> = if is_all {
+                builtins.clone()
+            } else if builtins.contains(requested_id.as_ref().expect("validated recipe id")) {
+                [requested_id.clone().expect("validated recipe id")]
+                    .into_iter()
+                    .collect()
+            } else {
+                HashSet::new()
+            };
+            let matching_recipes: Vec<_> = if is_all {
+                all_dynamic.clone()
+            } else {
+                all_dynamic
+                    .iter()
+                    .filter(|recipe| {
+                        crate::server::recipe::recipe_id(recipe)
+                            == requested_id.as_deref().expect("validated recipe id")
+                    })
+                    .cloned()
+                    .collect()
+            };
+            let recipe_count = if is_all { valid.len() } else { 1 };
 
             for player in &targets {
+                if is_all {
+                    for id in &valid {
+                        player.unlock_recipe(id).await;
+                    }
+                } else if let Some(id) = requested_id.as_ref() {
+                    player.unlock_recipe(id).await;
+                }
                 if let crate::net::ClientPlatform::Java(java_client) = player.client.as_ref() {
+                    // `give` is an additive packet.  Do not resend every
+                    // generated recipe; send exactly the requested displays.
                     java_client
-                        .send_packet_now(&CRecipeBookAdd::new(false, &matching_recipes))
+                        .send_packet_now(&CRecipeBookAdd::new_filtered(
+                            false,
+                            &matching_recipes,
+                            &matching_builtin_ids,
+                        ))
                         .await;
                 }
             }
@@ -152,45 +162,49 @@ impl CommandExecutor for RecipeTakeExecutor {
                     .create_without_context(TextComponent::text(recipe_str.to_string()))
             })?;
 
-            let all_recipes = server.recipe_manager.get_dynamic_recipes_internal().await;
-
             let is_all = recipe_str == "*";
-
-            let mut matched = false;
-            let remaining_recipes = if is_all {
-                matched = true;
-                Vec::new()
-            } else {
-                all_recipes
-                    .iter()
-                    .filter(|r| {
-                        let id = get_recipe_id(r);
-                        let is_match = id == recipe_str
-                            || id.strip_prefix("minecraft:").unwrap_or(&id) == recipe_str;
-                        if is_match {
-                            matched = true;
-                        }
-                        !is_match
-                    })
-                    .cloned()
-                    .collect::<Vec<_>>()
-            };
-
-            if !matched {
+            let all_recipes = server.recipe_manager.get_dynamic_recipes_internal().await;
+            let all_builtin_ids = crate::server::recipe::RecipeManager::built_in_recipe_ids();
+            let valid = server.recipe_manager.valid_recipe_ids().await;
+            let requested_id = (!is_all)
+                .then(|| crate::server::recipe::canonicalize_recipe_id(recipe_str))
+                .filter(|id| valid.contains(id));
+            if !is_all && requested_id.is_none() {
                 return Err(ERROR_RECIPE_NOT_FOUND
                     .create_without_context(TextComponent::text(recipe_str.to_string())));
             }
 
-            let taken_count = if is_all {
-                all_recipes.len()
+            let removed_ids: HashSet<String> = if is_all {
+                valid.clone()
             } else {
-                all_recipes.len() - remaining_recipes.len()
+                [requested_id.clone().expect("validated recipe id")]
+                    .into_iter()
+                    .collect()
             };
+            let taken_count = removed_ids.len();
 
             for player in &targets {
+                for id in &removed_ids {
+                    player.revoke_recipe(id).await;
+                }
                 if let crate::net::ClientPlatform::Java(java_client) = player.client.as_ref() {
+                    let known_recipes = player.known_recipes().await;
+                    let recipes_to_keep = all_recipes
+                        .iter()
+                        .filter(|recipe| {
+                            known_recipes.contains(&crate::server::recipe::recipe_id(recipe))
+                        })
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    let mut builtin_to_keep: HashSet<String> =
+                        all_builtin_ids.difference(&removed_ids).cloned().collect();
+                    builtin_to_keep.retain(|id| known_recipes.contains(id));
                     java_client
-                        .send_packet_now(&CRecipeBookAdd::new(true, &remaining_recipes))
+                        .send_packet_now(&CRecipeBookAdd::new_filtered(
+                            true,
+                            &recipes_to_keep,
+                            &builtin_to_keep,
+                        ))
                         .await;
                 }
             }

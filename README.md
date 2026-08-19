@@ -106,6 +106,11 @@ Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md)
 
 Pumpkin's documentation can be found at <https://pumpkinmc.org/>
 
+For the local implementation map, extension cookbook, data-flow diagrams and
+vanilla-parity backlog, see [the repository engineering docs](docs/README.md).
+The publishable intermediate checkpoint and its explicit unfinished-items list
+are documented in [docs/INTERMEDIATE_RELEASE.md](docs/INTERMEDIATE_RELEASE.md).
+
 ## Communication
 
 Consider joining [our Discord server](https://discord.gg/wT8XjrjKkf) to stay up-to-date on events, updates, and connect with other members.

@@ -17,13 +17,14 @@ impl HostRecipeManager for PluginHostState {
     async fn register_shaped(
         &mut self,
         _res: Resource<WitRecipeManager>,
-        _id: String,
+        id: String,
         recipe: WitShapedRecipe,
     ) -> wasmtime::Result<()> {
         let result_stack = self.get_item_stack(&recipe.output)?;
         let result_stack = result_stack.lock().await;
 
         let owned_recipe = OwnedCraftingRecipe::Shaped {
+            recipe_id: crate::server::recipe::canonicalize_recipe_id(&id),
             category: RecipeCategoryTypes::Misc, // TODO: Allow specifying category
             group: recipe.group,
             show_notification: true,
@@ -36,6 +37,7 @@ impl HostRecipeManager for PluginHostState {
             result: OwnedRecipeResult {
                 item_id: result_stack.item.registry_key.to_string(),
                 count: result_stack.item_count,
+                components: None,
             },
         };
 
@@ -53,13 +55,14 @@ impl HostRecipeManager for PluginHostState {
     async fn register_shapeless(
         &mut self,
         _res: Resource<WitRecipeManager>,
-        _id: String,
+        id: String,
         recipe: WitShapelessRecipe,
     ) -> wasmtime::Result<()> {
         let result_stack = self.get_item_stack(&recipe.output)?;
         let result_stack = result_stack.lock().await;
 
         let owned_recipe = OwnedCraftingRecipe::Shapeless {
+            recipe_id: crate::server::recipe::canonicalize_recipe_id(&id),
             category: RecipeCategoryTypes::Misc,
             group: recipe.group,
             ingredients: recipe
@@ -70,6 +73,7 @@ impl HostRecipeManager for PluginHostState {
             result: OwnedRecipeResult {
                 item_id: result_stack.item.registry_key.to_string(),
                 count: result_stack.item_count,
+                components: None,
             },
         };
 
@@ -104,6 +108,7 @@ impl HostRecipeManager for PluginHostState {
             result: OwnedRecipeResult {
                 item_id: result_stack.item.registry_key.to_string(),
                 count: result_stack.item_count,
+                components: None,
             },
         };
 

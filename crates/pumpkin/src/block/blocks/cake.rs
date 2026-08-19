@@ -41,10 +41,10 @@ impl CakeBlock {
                     return BlockActionResult::Pass;
                 }
                 player.hunger_manager.level.store(20.min(hunger_level + 2));
-                player
-                    .hunger_manager
-                    .saturation
-                    .store(player.hunger_manager.saturation.load() + 0.4);
+                // Cake follows the same bounded saturation path as every
+                // other food source. Directly writing the atomic could exceed
+                // the newly increased food level or preserve malformed data.
+                player.hunger_manager.add_saturation(0.4);
                 player.send_health().await;
             }
             GameMode::Creative | GameMode::Spectator => {}

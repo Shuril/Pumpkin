@@ -43,6 +43,8 @@ impl TreeDecorator {
         &self,
         chunk: &mut T,
         block_registry: &dyn WorldPortalExt,
+        min_y: i8,
+        height: u16,
         random: &mut RandomGenerator,
         root_positions: &[BlockPos],
         log_positions: &[BlockPos],
@@ -53,15 +55,35 @@ impl TreeDecorator {
                 TrunkVineTreeDecorator::generate(chunk, random, log_positions);
             }
             Self::LeaveVine(decorator) => decorator.generate(chunk, random, foliage_positions),
-            Self::PaleMoss(_decorator) => {}
-            Self::CreakingHeart(_decorator) => {}
-            Self::Cocoa(_decorator) => {}
-            Self::Beehive(_decorator) => {}
-            Self::AlterGround(_decorator) => {}
+            Self::PaleMoss(decorator) => {
+                decorator.generate(
+                    chunk,
+                    block_registry,
+                    min_y,
+                    height,
+                    random,
+                    log_positions,
+                    foliage_positions,
+                );
+            }
+            Self::CreakingHeart(decorator) => {
+                decorator.generate(chunk, random, log_positions);
+            }
+            Self::Cocoa(decorator) => {
+                decorator.generate(chunk, random, log_positions);
+            }
+            Self::Beehive(decorator) => {
+                decorator.generate(chunk, random, foliage_positions, log_positions);
+            }
+            Self::AlterGround(decorator) => {
+                decorator.generate(chunk, block_registry, random, root_positions, log_positions);
+            }
             Self::PlaceOnGround(decorator) => {
                 decorator.generate(chunk, block_registry, random, root_positions, log_positions);
             }
-            Self::AttachedToLeaves(_decorator) => {}
+            Self::AttachedToLeaves(decorator) => {
+                decorator.generate(chunk, block_registry, random, foliage_positions);
+            }
             Self::AttachedToLogs(decorator) => {
                 decorator.generate(chunk, block_registry, random, log_positions);
             }

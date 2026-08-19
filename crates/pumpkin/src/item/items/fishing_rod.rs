@@ -63,8 +63,10 @@ impl ItemBehaviour for FishingRodItem {
                     if let Some(bobber) =
                         bobber_base.cast_any().downcast_ref::<FishingBobberEntity>()
                     {
-                        let _result = bobber.reel_in(player).await;
-                        // TODO: give items
+                        let durability = bobber.reel_in(player).await;
+                        if durability > 0 {
+                            player.damage_held_item(durability).await;
+                        }
                     }
                     bobber_base.get_entity().remove().await;
                 }
@@ -76,6 +78,45 @@ impl ItemBehaviour for FishingRodItem {
                     &player.position(),
                 );
             }
+        })
+    }
+
+    fn normal_use_with_hand<'a>(
+        &'a self,
+        _item: &'a Item,
+        player: &'a Player,
+        hand: pumpkin_util::Hand,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+        Box::pin(async move {
+            let world = player.world();
+            let bobber_id = player.fishing_bobber.load(Ordering::Relaxed);
+            if bobber_id == -1 {
+                self.normal_use(_item, player).await;
+                return;
+            }
+
+            if let Some(bobber_base) = world.get_entity_by_id(bobber_id) {
+                if let Some(bobber) = bobber_base.cast_any().downcast_ref::<FishingBobberEntity>() {
+                    let durability = bobber.reel_in(player).await;
+                    if durability > 0 {
+                        let equipment_slot = if hand == pumpkin_util::Hand::Right {
+                            pumpkin_data::data_component_impl::EquipmentSlot::MAIN_HAND
+                        } else {
+                            pumpkin_data::data_component_impl::EquipmentSlot::OFF_HAND
+                        };
+                        player
+                            .damage_item_in_slot(&equipment_slot, durability)
+                            .await;
+                    }
+                }
+                bobber_base.get_entity().remove().await;
+            }
+            player.fishing_bobber.store(-1, Ordering::Relaxed);
+            world.play_sound(
+                Sound::EntityFishingBobberRetrieve,
+                SoundCategory::Neutral,
+                &player.position(),
+            );
         })
     }
 

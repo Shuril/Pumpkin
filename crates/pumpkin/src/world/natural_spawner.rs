@@ -5,10 +5,10 @@ use arc_swap::ArcSwap;
 use pumpkin_data::biome::Spawner;
 use pumpkin_data::chunk::Biome;
 use pumpkin_data::entity::{EntityType, MobCategory, SpawnLocation};
-use pumpkin_data::tag::Block::MINECRAFT_PREVENT_MOB_SPAWNING_INSIDE;
 use pumpkin_data::tag::Fluid::{MINECRAFT_LAVA, MINECRAFT_WATER};
 use pumpkin_data::tag::Taggable;
 use pumpkin_data::tag::WorldgenBiome::MINECRAFT_REDUCE_WATER_AMBIENT_SPAWNS;
+use pumpkin_data::tag::{self, Block::MINECRAFT_PREVENT_MOB_SPAWNING_INSIDE};
 use pumpkin_data::{Block, BlockDirection, BlockState};
 use pumpkin_util::GameMode;
 use pumpkin_util::math::boundingbox::{BoundingBox, EntityDimensions};
@@ -16,12 +16,10 @@ use pumpkin_util::math::get_section_cord;
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector2::Vector2;
 use pumpkin_util::math::vector3::Vector3;
-use pumpkin_util::random::xoroshiro128::Xoroshiro;
-use pumpkin_util::random::{RandomImpl, get_seed};
+use pumpkin_util::random::{RandomGenerator, RandomImpl};
 use pumpkin_world::chunk::{ChunkData, ChunkHeightmapType};
 use pumpkin_world::generation::proto_chunk::GenerationCache;
-use rand::seq::IndexedRandom;
-use rand::{RngExt, rng};
+use pumpkin_world::generation::structure::structures::create_chunk_random;
 use std::fmt;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -63,7 +61,8 @@ impl MobCounts {
 
     #[inline]
     pub fn remove(&self, category: &'static MobCategory) {
-        self.0[category.id].fetch_sub(1, Relaxed);
+        let _ = self.0[category.id]
+            .fetch_update(Relaxed, Relaxed, |value| Some(value.saturating_sub(1)));
     }
     #[inline]
     pub fn can_spawn(&self, category: &'static MobCategory) -> bool {
@@ -118,10 +117,10 @@ impl LocalMobCapCalculator {
     }
 
     fn get_players_near(&self, world: &World, chunk_pos: Vector2<i32>) -> Vec<i32> {
-        if let Some(players) = self.players_near_chunk.get(&chunk_pos) {
-            return players.value().clone();
-        }
-
+        // Player positions are mutable every tick.  Vanilla's
+        // LocalMobCapCalculator is refreshed from the current chunk/player
+        // map; retaining the first result forever would leave a moved player
+        // contributing caps to the old chunk and never to the new one.
         let mut players = Vec::new();
         for player in world.players.load().iter() {
             if player.gamemode.load() == GameMode::Spectator {
@@ -185,7 +184,15 @@ struct PointCharge(Vector3<f64>, f64);
 impl PointCharge {
     fn get_potential_change(&self, pos: &BlockPos) -> f64 {
         let dst = self.0.sub(&pos.to_f64()).length();
-        self.1 / dst
+        // NaturalSpawner's PotentialCalculator treats a charge at the exact
+        // candidate position as zero potential.  Returning 0 here avoids an
+        // infinity/NaN that would otherwise permanently reject every spawn in
+        // that block and is also safe for malformed duplicate charge data.
+        if dst <= f64::EPSILON {
+            0.0
+        } else {
+            self.1 / dst
+        }
     }
 }
 
@@ -298,8 +305,11 @@ impl SpawnState {
         if !entity_type.mob || entity_type.category == &MobCategory::MISC {
             return;
         }
+        if base_entity.persistence_required.load(Relaxed) {
+            return;
+        }
         let entity_pos = base_entity.block_pos.load();
-        let biome = base_entity.current_biome.load();
+        let biome = world.level.get_rough_biome(&entity_pos);
         if let Some(cost) = biome.spawn_costs.get(entity_type.resource_name) {
             self.spawn_potential.add_charge(&entity_pos, cost.charge);
         }
@@ -319,8 +329,11 @@ impl SpawnState {
         if !entity_type.mob || entity_type.category == &MobCategory::MISC {
             return;
         }
+        if base_entity.persistence_required.load(Relaxed) {
+            return;
+        }
         let entity_pos = base_entity.block_pos.load();
-        let biome = base_entity.current_biome.load();
+        let biome = world.level.get_rough_biome(&entity_pos);
         if let Some(cost) = biome.spawn_costs.get(entity_type.resource_name) {
             self.spawn_potential.remove_charge(&entity_pos, cost.charge);
         }
@@ -347,7 +360,13 @@ impl SpawnState {
             let entity = entity.get_entity();
             let entity_type = entity.entity_type;
             if !entity_type.mob || entity_type.category == &MobCategory::MISC {
-                // TODO (mob.isPersistenceRequired() || mob.requiresCustomPersistence())
+                continue;
+            }
+            // Vanilla's NaturalSpawner excludes mobs marked
+            // `PersistenceRequired` from natural-spawn caps.  Name tags and
+            // other interactions set this bit; counting those mobs would
+            // incorrectly suppress unrelated natural spawns.
+            if entity.persistence_required.load(Relaxed) {
                 continue;
             }
             let chunk_pos = entity.chunk_pos.load();
@@ -355,7 +374,7 @@ impl SpawnState {
                 continue;
             }
             let entity_pos = entity.block_pos.load();
-            let biome = entity.current_biome.load();
+            let biome = world.level.get_rough_biome(&entity_pos);
             if let Some(cost) = biome.spawn_costs.get(entity_type.resource_name) {
                 potential.add_charge(&entity_pos, cost.charge);
             }
@@ -482,12 +501,19 @@ pub fn spawn_for_chunk(
     spawn_state: &SpawnState,
     spawn_list: &Vec<&'static MobCategory>,
     is_thundering: bool,
+    world_age: i64,
 ) -> Vec<Arc<dyn EntityBase>> {
     // debug!("spawn for chunk {:?}", chunk_pos);
     let mut entities = Vec::new();
+    // ServerLevel owns one random source, but Pumpkin processes chunks in a
+    // JoinSet.  A shared/thread-local RNG would therefore make spawn results
+    // depend on task scheduling.  Derive one stream per chunk and tick so the
+    // complete candidate order is stable even when chunks run concurrently.
+    let mut random = spawn_random(world.level.seed.0, world_age, chunk_pos);
     for category in spawn_list {
         if spawn_state.can_spawn_for_category_local(world, category, chunk_pos) {
-            let random_pos = get_random_pos_within(world.min_y, &chunk_pos, chunk);
+            let random_pos =
+                get_random_pos_within_with_random(world.min_y, &chunk_pos, chunk, &mut random);
             if random_pos.0.y > world.min_y {
                 entities.extend(spawn_category_for_position(
                     category,
@@ -496,6 +522,7 @@ pub fn spawn_for_chunk(
                     &chunk_pos,
                     spawn_state,
                     is_thundering,
+                    &mut random,
                 ));
             }
         }
@@ -507,17 +534,31 @@ pub fn get_random_pos_within(
     chunk_pos: &Vector2<i32>,
     chunk: &Arc<ChunkData>,
 ) -> BlockPos {
-    let mut rng = Xoroshiro::from_seed(get_seed());
+    // Kept as a stable helper for callers outside the regular server tick.
+    // The active natural-spawn path uses `get_random_pos_within_with_random` below,
+    // because it must share the per-chunk tick stream with group spawning.
+    let mut random =
+        RandomGenerator::Legacy(pumpkin_util::random::legacy_rand::LegacyRand::from_seed(
+            ((i64::from(chunk_pos.x) << 32) ^ i64::from(chunk_pos.y)) as u64,
+        ));
+    get_random_pos_within_with_random(min_y, chunk_pos, chunk, &mut random)
+}
 
-    let x = (chunk_pos.x << 4) + rng.next_bounded_i32(16);
-    let z = (chunk_pos.y << 4) + rng.next_bounded_i32(16);
+fn get_random_pos_within_with_random(
+    min_y: i32,
+    chunk_pos: &Vector2<i32>,
+    chunk: &Arc<ChunkData>,
+    random: &mut RandomGenerator,
+) -> BlockPos {
+    let x = (chunk_pos.x << 4) + random.next_bounded_i32(16);
+    let z = (chunk_pos.y << 4) + random.next_bounded_i32(16);
     let temp_y = chunk
         .heightmap
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .get(ChunkHeightmapType::WorldSurface, x, z, chunk.section.min_y)
         + 1;
-    let y = rng.next_inbetween_i32(min_y, temp_y);
+    let y = random.next_inbetween_i32(min_y, temp_y);
     BlockPos::new(x, y, z)
 }
 
@@ -528,6 +569,14 @@ pub fn spawn_mobs_for_chunk_generation(
     chunk_x: i32,
     chunk_z: i32,
 ) {
+    // Vanilla's chunk-generation path is still gated by the global mob
+    // spawning gamerule.  Without this guard, newly generated chunks could
+    // silently populate passive mobs even after `/gamerule doMobSpawning
+    // false`, while the normal tick path correctly remained empty.
+    if !world.level_info.load().game_rules.spawn_mobs {
+        return;
+    }
+
     let mob_settings = &biome.spawners;
     let creatures = &mob_settings.creature;
 
@@ -538,13 +587,19 @@ pub fn spawn_mobs_for_chunk_generation(
     let xo = chunk_x << 4;
     let zo = chunk_z << 4;
 
-    while rand::random::<f32>() < biome.creature_spawn_probability {
-        let Some(spawner_data) = creatures.choose(&mut rand::rng()) else {
-            continue;
-        };
+    // Chunk-generation spawning must be reproducible from the world seed.  The
+    // old implementation used the process-global `rand` generator here, which
+    // made the contents of a newly generated chunk depend on thread scheduling
+    // and could produce different mobs after a restart.  Vanilla derives one
+    // population RNG from the world seed and chunk coordinates; using the same
+    // chunk-local stream also keeps all random choices in this loop stable.
+    let mut random = chunk_generation_random(world.level.seed.0, chunk_x, chunk_z);
+
+    while random.next_f32() < biome.creature_spawn_probability {
+        let spawner_data = &creatures[random.next_bounded_i32(creatures.len() as i32) as usize];
 
         let count = spawner_data.min_count
-            + rand::random_range(0..(1 + spawner_data.max_count - spawner_data.min_count).max(1));
+            + random.next_bounded_i32((1 + spawner_data.max_count - spawner_data.min_count).max(1));
         let name = spawner_data
             .r#type
             .strip_prefix("minecraft:")
@@ -553,8 +608,8 @@ pub fn spawn_mobs_for_chunk_generation(
             return;
         };
 
-        let mut x = xo + rand::random_range(0..16);
-        let mut z = zo + rand::random_range(0..16);
+        let mut x = xo + random.next_bounded_i32(16);
+        let mut z = zo + random.next_bounded_i32(16);
         let start_x = x;
         let start_z = z;
 
@@ -569,7 +624,30 @@ pub fn spawn_mobs_for_chunk_generation(
 
                 let pos = get_top_non_colliding_pos(world, cache, entity_type, x, z);
 
-                if is_spawn_position_ok_cache(cache, &pos, entity_type) {
+                // Chunk-population spawning used to stop after the cache
+                // support check. That allowed generated mobs to bypass the
+                // same difficulty/light/biome predicates used by the live
+                // natural-spawn path, and it could place a mob into a
+                // collision volume when a heightmap was stale. Keep all
+                // decisions on this chunk-local RNG stream so generation is
+                // reproducible across worker scheduling.
+                let dimensions = EntityDimensions {
+                    width: entity_type.dimension[0],
+                    height: entity_type.dimension[1],
+                    eye_height: entity_type.eye_height,
+                };
+                let spawn_box = BoundingBox::new_from_pos(
+                    f64::from(pos.0.x) + 0.5,
+                    f64::from(pos.0.y),
+                    f64::from(pos.0.z) + 0.5,
+                    &dimensions,
+                );
+                if is_spawn_position_ok_cache(cache, &pos, entity_type)
+                    && is_within_world_border_sync(world, &pos)
+                    && entity_type.summonable
+                    && check_spawn_rules(entity_type, world, &pos, false, &mut random)
+                    && world.is_space_empty(spawn_box)
+                {
                     let spawn_pos_f64 = Vector3::new(
                         f64::from(pos.0.x) + 0.5,
                         f64::from(pos.0.y),
@@ -579,14 +657,14 @@ pub fn spawn_mobs_for_chunk_generation(
                     let entity = from_type(entity_type, spawn_pos_f64, world, Uuid::new_v4());
                     entity
                         .get_entity()
-                        .set_rotation(rand::random::<f32>() * 360., 0.);
+                        .set_rotation(random.next_f32() * 360., 0.);
                     world.spawn_entity_non_save(&entity);
                     success = true;
                 }
 
                 // Random jitter for the next mob in the group
-                x += rand::random_range(0..5) - rand::random_range(0..5);
-                z += rand::random_range(0..5) - rand::random_range(0..5);
+                x += random.next_bounded_i32(5) - random.next_bounded_i32(5);
+                z += random.next_bounded_i32(5) - random.next_bounded_i32(5);
 
                 // Keep group within the chunk bounds
                 if x < xo || x >= xo + 16 || z < zo || z >= zo + 16 {
@@ -595,6 +673,62 @@ pub fn spawn_mobs_for_chunk_generation(
                 }
             }
         }
+    }
+}
+
+/// Returns the deterministic population stream used by chunk-generation mob
+/// spawning.  Keeping this derivation in one function makes it impossible for
+/// callers to accidentally fall back to a process-global RNG and gives the
+/// seed contract a small, isolated unit-test surface.
+fn chunk_generation_random(
+    world_seed: u64,
+    chunk_x: i32,
+    chunk_z: i32,
+) -> pumpkin_util::random::RandomGenerator {
+    create_chunk_random(world_seed as i64, chunk_x, chunk_z)
+}
+
+/// Returns the random stream used by one natural-spawn pass.  The age salt is
+/// deliberately mixed before `create_chunk_random`: a chunk gets a fresh
+/// vanilla-style stream every server tick, while two chunks never consume the
+/// same shared state.  Wrapping arithmetic is intentional for the signed
+/// Minecraft seed domain.
+pub(crate) fn spawn_random(
+    world_seed: u64,
+    world_age: i64,
+    chunk_pos: Vector2<i32>,
+) -> RandomGenerator {
+    let tick_seed = world_seed ^ (world_age as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    create_chunk_random(tick_seed as i64, chunk_pos.x, chunk_pos.y)
+}
+
+#[cfg(test)]
+mod generation_random_tests {
+    use super::{chunk_generation_random, spawn_random};
+    use pumpkin_util::math::vector2::Vector2;
+    use pumpkin_util::random::RandomImpl;
+
+    #[test]
+    fn chunk_generation_population_random_is_reproducible_and_chunk_local() {
+        let mut first = chunk_generation_random(0x5eed, 12, -4);
+        let mut second = chunk_generation_random(0x5eed, 12, -4);
+        assert_eq!(first.next_i64(), second.next_i64());
+        assert_eq!(first.next_i64(), second.next_i64());
+
+        let mut other_chunk = chunk_generation_random(0x5eed, 13, -4);
+        assert_ne!(first.next_i64(), other_chunk.next_i64());
+    }
+
+    #[test]
+    fn natural_spawn_stream_is_reproducible_but_changes_per_tick() {
+        let chunk = Vector2::new(-8, 19);
+        let mut first = spawn_random(0x5eed, 400, chunk);
+        let mut second = spawn_random(0x5eed, 400, chunk);
+        assert_eq!(first.next_i64(), second.next_i64());
+        assert_eq!(first.next_i64(), second.next_i64());
+
+        let mut next_tick = spawn_random(0x5eed, 401, chunk);
+        assert_ne!(first.next_i64(), next_tick.next_i64());
     }
 }
 
@@ -645,9 +779,10 @@ pub fn spawn_category_for_position(
     category: &'static MobCategory,
     world: &Arc<World>,
     pos: BlockPos,
-    chunk_pos: &Vector2<i32>,
+    _chunk_pos: &Vector2<i32>,
     spawn_state: &SpawnState,
     is_thundering: bool,
+    random: &mut RandomGenerator,
 ) -> Vec<Arc<dyn EntityBase>> {
     let mut batch_buffer = vec![];
     let mut spawn_cluster_size = 0;
@@ -657,21 +792,22 @@ pub fn spawn_category_for_position(
         let mut new_x = pos.0.x;
         let mut new_z = pos.0.z;
 
-        let mut random_group_size = (rng().random::<f32>() * 4.).ceil() as i32;
+        let mut random_group_size = random.next_inbetween_i32(1, 4);
         let mut inc = 0;
         let mut current_spawner = None;
 
         'spawn_loop: while inc < random_group_size {
-            new_x += rng().random_range(0..6) - rng().random_range(0..6);
-            new_z += rng().random_range(0..6) - rng().random_range(0..6);
+            new_x += random.next_bounded_i32(6) - random.next_bounded_i32(6);
+            new_z += random.next_bounded_i32(6) - random.next_bounded_i32(6);
             let mut new_pos = BlockPos::new(new_x, pos.0.y, new_z);
 
             if current_spawner.is_none() {
-                let Some(spawner) = get_random_spawn_mob_at(world, category, &new_pos) else {
+                let Some(spawner) = get_random_spawn_mob_at(world, category, &new_pos, random)
+                else {
                     break 'spawn_loop;
                 };
                 current_spawner = Some(spawner);
-                random_group_size = rng().random_range(spawner.min_count..=spawner.max_count);
+                random_group_size = random.next_inbetween_i32(spawner.min_count, spawner.max_count);
             }
 
             let Some(spawner) = current_spawner else {
@@ -694,7 +830,12 @@ pub fn spawn_category_for_position(
             );
 
             let player_distance = get_nearest_player(&spawn_pos_f64, &player_positions);
-            if !is_right_distance_to_player_and_spawn_point(&new_pos, player_distance, chunk_pos) {
+            if !is_right_distance_to_player_and_spawn_point_for_chunk(
+                world,
+                &new_pos,
+                player_distance,
+                Some(*_chunk_pos),
+            ) {
                 inc += 1;
                 continue;
             }
@@ -706,6 +847,7 @@ pub fn spawn_category_for_position(
                 entity_type,
                 player_distance,
                 is_thundering,
+                random,
             ) {
                 inc += 1;
                 continue;
@@ -718,7 +860,7 @@ pub fn spawn_category_for_position(
             let entity = from_type(entity_type, spawn_pos_f64, world, Uuid::new_v4());
             entity
                 .get_entity()
-                .set_rotation(rng().random::<f32>() * 360., 0.);
+                .set_rotation(random.next_f32() * 360., 0.);
 
             spawn_cluster_size += 1;
             batch_buffer.push(entity);
@@ -748,21 +890,52 @@ pub fn get_nearest_player(pos: &Vector3<f64>, player_positions: &[Vector3<f64>])
 
 #[must_use]
 pub fn is_right_distance_to_player_and_spawn_point(
+    world: &World,
     pos: &BlockPos,
     distance: f64,
-    chunk_pos: &Vector2<i32>,
+) -> bool {
+    is_right_distance_to_player_and_spawn_point_for_chunk(world, pos, distance, None)
+}
+
+/// Vanilla permits a candidate in the chunk currently being processed even
+/// when that chunk is not yet in the active-chunk set.  A jittered group may
+/// cross into a neighbouring chunk; those candidates must use
+/// `canSpawnEntitiesInChunk` (the active set in Pumpkin).  Keeping the origin
+/// chunk explicit avoids accidentally allowing every neighbouring chunk.
+fn is_right_distance_to_player_and_spawn_point_for_chunk(
+    world: &World,
+    pos: &BlockPos,
+    distance: f64,
+    origin_chunk: Option<Vector2<i32>>,
 ) -> bool {
     if distance <= 24. * 24. {
         return false;
     }
-    // TODO getSharedSpawnPos/WorldSpawnPoint
-    if pos.to_centered_f64().squared_distance_to(0., 0., 0.) <= 24. * 24. {
-        return false;
+
+    // NaturalSpawner checks the world's actual respawn data, not the origin.
+    // The previous origin shortcut incorrectly suppressed spawning near a
+    // moved world spawn and allowed it near the real spawn point.  Spawn data
+    // is shared by the enabled dimensions in Pumpkin, so only apply it to the
+    // overworld world where vanilla's respawn dimension is defined.
+    if world.dimension == pumpkin_data::dimension::Dimension::OVERWORLD {
+        let info = world.level_info.load();
+        let spawn = Vector3::new(
+            f64::from(info.spawn_x) + 0.5,
+            f64::from(info.spawn_y),
+            f64::from(info.spawn_z) + 0.5,
+        );
+        if pos.to_centered_f64().squared_distance_to_vec(&spawn) < 24. * 24. {
+            return false;
+        }
     }
-    #[expect(clippy::nonminimal_bool)]
-    {
-        chunk_pos == &Vector2::new(get_section_cord(pos.0.x), get_section_cord(pos.0.z)) || false // TODO canSpawnEntitiesInChunk(ChunkPos chunkPos)
-    }
+
+    // A jittered group may cross the starting chunk.  Vanilla permits the
+    // attempt in the chunk currently being processed, and otherwise requires
+    // `ServerLevel::canSpawnEntitiesInChunk`; active_chunks is that runtime
+    // equivalent here.
+    let candidate_chunk = pos.chunk_position();
+    origin_chunk.is_some_and(|origin| origin == candidate_chunk)
+        || world.active_chunks.load().contains(&candidate_chunk)
 }
 
 #[must_use]
@@ -770,18 +943,19 @@ pub fn get_random_spawn_mob_at(
     world: &Arc<World>,
     category: &'static MobCategory,
     block_pos: &BlockPos,
+    random: &mut RandomGenerator,
 ) -> Option<&'static Spawner> {
     // TODO Holder<Biome> holder = level.getBiome(pos);
     let biome = world.level.get_rough_biome(block_pos);
     if category == &MobCategory::WATER_AMBIENT
         && biome.has_tag(&MINECRAFT_REDUCE_WATER_AMBIENT_SPAWNS)
-        && rng().random::<f32>() < 0.98f32
+        && random.next_f32() < 0.98f32
     {
         None
     } else {
         // TODO isInNetherFortressBounds(pos, level, cetagory, structureManager) then NetherFortressStructure.FORTRESS_ENEMIES
         // TODO structureManager.getAllStructuresAt(pos); ChunkGenerator::getMobsAt
-        match category.id {
+        let spawners = match category.id {
             id if id == MobCategory::MONSTER.id => biome.spawners.monster,
             id if id == MobCategory::CREATURE.id => biome.spawners.creature,
             id if id == MobCategory::AMBIENT.id => biome.spawners.ambient,
@@ -793,8 +967,12 @@ pub fn get_random_spawn_mob_at(
             id if id == MobCategory::WATER_AMBIENT.id => biome.spawners.water_ambient,
             id if id == MobCategory::MISC.id => biome.spawners.misc,
             _ => biome.spawners.misc,
+        };
+        if spawners.is_empty() {
+            None
+        } else {
+            spawners.get(random.next_bounded_i32(spawners.len() as i32) as usize)
         }
-        .choose(&mut rng())
     }
 }
 
@@ -805,7 +983,16 @@ pub fn is_valid_spawn_position_for_type(
     entity_type: &'static EntityType,
     distance: f64,
     is_thundering: bool,
+    random: &mut RandomGenerator,
 ) -> bool {
+    // SpawnPlacementTypes checks the current border before fluid/ground
+    // predicates.  Use the block's south-west corner, matching
+    // WorldBorder.isWithinBounds(BlockPos) rather than requiring the whole
+    // one-block square to fit inside the border.
+    if !is_within_world_border_sync(world, block_pos) {
+        return false;
+    }
+
     // TODO !SpawnPlacements.checkSpawnRules(entityType, level, EntitySpawnReason.NATURAL, pos, level.random)
     if category == &MobCategory::MISC {
         return false;
@@ -823,7 +1010,7 @@ pub fn is_valid_spawn_position_for_type(
     if !is_spawn_position_ok(world, block_pos, entity_type) {
         return false;
     }
-    if !check_spawn_rules(entity_type, world, block_pos, is_thundering) {
+    if !check_spawn_rules(entity_type, world, block_pos, is_thundering, random) {
         return false;
     }
     // TODO: we should use getSpawnBox, but this is only modified for slimes and magma slimes
@@ -842,6 +1029,77 @@ pub fn is_valid_spawn_position_for_type(
     true
 }
 
+/// Synchronous counterpart used by chunk-generation spawning.  World border
+/// commands briefly hold the async mutex; if that happens while a generation
+/// worker is probing a candidate, leave the candidate for the next pass rather
+/// than blocking the generation thread on an async lock.
+pub(crate) fn is_within_world_border_sync(world: &World, block_pos: &BlockPos) -> bool {
+    world
+        .worldborder
+        .try_lock()
+        .map(|border| border.contains(f64::from(block_pos.0.x), f64::from(block_pos.0.z)))
+        // A command may briefly hold the async mutex while changing the
+        // border.  Rejecting this one synchronous candidate is conservative
+        // (the next spawn pass retries it); allowing it through could violate
+        // the newly reduced border.
+        .unwrap_or(false)
+}
+
+/// Vanilla `Mob#checkDespawn` decision for a naturally spawned mob. The
+/// nearest-player lookup is intentionally outside this pure helper: callers
+/// must exclude spectators and may provide the exact squared distance they
+/// observed in the current world tick. Persistent, named, or leashed mobs
+/// are never removed by distance despawn.
+#[must_use]
+pub fn should_despawn_mob(
+    entity_type: &'static EntityType,
+    persistence_required: bool,
+    has_custom_name: bool,
+    is_leashed: bool,
+    nearest_player_distance_squared: Option<f64>,
+    random_roll: u16,
+) -> bool {
+    if !entity_type.mob
+        || entity_type.category == &MobCategory::MISC
+        || persistence_required
+        || has_custom_name
+        || is_leashed
+    {
+        return false;
+    }
+
+    let Some(distance_squared) = nearest_player_distance_squared else {
+        // `ServerLevel#getNearestPlayer` returns no candidate outside the
+        // category's despawn radius; without a candidate the mob stays alive.
+        return false;
+    };
+    let despawn_distance = f64::from(entity_type.category.despawn_distance);
+    if distance_squared > despawn_distance * despawn_distance {
+        return true;
+    }
+
+    distance_squared > f64::from(MobCategory::NO_DESPAWN_DISTANCE).powi(2) && random_roll == 0
+}
+
+/// Produces the per-tick 0..=799 despawn roll without touching a process
+/// global RNG.  Vanilla consumes `ServerLevel.random` while ticking entities;
+/// Pumpkin ticks entities concurrently, so deriving the roll from the
+/// authoritative world age and stable entity id avoids a scheduling-dependent
+/// result while preserving the one-in-800 probability.
+#[must_use]
+pub const fn natural_despawn_roll(world_age: i64, entity_id: i32) -> u16 {
+    let mut value = (world_age as u64)
+        .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+        .wrapping_add(entity_id as u32 as u64)
+        .wrapping_add(0xD1B5_4A32_D192_ED03);
+    value ^= value >> 30;
+    value = value.wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    value ^= value >> 27;
+    value = value.wrapping_mul(0x94D0_49BB_1331_11EB);
+    value ^= value >> 31;
+    (value % 800) as u16
+}
+
 pub fn is_spawn_position_ok(
     world: &Arc<World>,
     block_pos: &BlockPos,
@@ -850,17 +1108,24 @@ pub fn is_spawn_position_ok(
     match entity_type.spawn_restriction.location {
         SpawnLocation::InLava => world.get_fluid(block_pos).has_tag(&MINECRAFT_LAVA),
         SpawnLocation::InWater => {
-            // TODO !level.getBlockState(blockPos).isRedstoneConductor(level, blockPos)
             let above_state = world.get_block_state(&block_pos.up());
-            world.get_fluid(block_pos).has_tag(&MINECRAFT_WATER) && !above_state.is_full_cube()
+            // Vanilla's default isRedstoneConductor predicate is
+            // isCollisionShapeFullBlock.  Use the generated collision shape,
+            // not the coarser solid-block flag, so slabs, stairs and
+            // waterlogged states remain valid spawn spaces.
+            world.get_fluid(block_pos).has_tag(&MINECRAFT_WATER)
+                && !above_state.is_collision_shape_full_block()
         }
         SpawnLocation::OnGround => {
             let down = world.get_block_state(&block_pos.down());
             let up = world.get_block_state(&block_pos.up());
             let cur = world.get_block_state(block_pos);
-            // TODO: blockState.allowsSpawning
-            let is_valid_spawn_below =
-                down.is_side_solid(BlockDirection::Up) && down.luminance < 14;
+            // SpawnPlacementTypes.ON_GROUND delegates to the support state's
+            // per-block `isValidSpawn` predicate.  Pumpkin does not yet expose
+            // that predicate in generated block metadata, so side sturdiness is
+            // the conservative common denominator; entity-specific rules below
+            // still decide the biome/light/difficulty restrictions.
+            let is_valid_spawn_below = is_valid_spawn_support(down);
 
             if is_valid_spawn_below {
                 is_valid_empty_spawn_block(cur) && is_valid_empty_spawn_block(up)
@@ -892,7 +1157,7 @@ pub fn is_spawn_position_ok_cache(
 
             state.is_liquid()
                 && Block::from_state_id(state.id).has_tag(&MINECRAFT_WATER)
-                && !above_state.is_full_cube()
+                && !above_state.is_collision_shape_full_block()
         }
         SpawnLocation::OnGround => {
             let down_pos = block_pos.down().0;
@@ -901,9 +1166,10 @@ pub fn is_spawn_position_ok_cache(
             let down = GenerationCache::get_block_state(cache, &down_pos).to_state();
             let up = GenerationCache::get_block_state(cache, &up_pos).to_state();
 
-            // Logic: solid surface below and low enough light level (if applicable in generation)
-            let is_valid_spawn_below =
-                down.is_side_solid(BlockDirection::Up) && down.luminance < 14;
+            // Keep this in sync with the runtime path.  The generated cache has
+            // no per-block `isValidSpawn` callback, so use side sturdiness until
+            // that metadata is modelled explicitly.
+            let is_valid_spawn_below = is_valid_spawn_support(&down);
 
             if is_valid_spawn_below {
                 is_valid_empty_spawn_block(state) && is_valid_empty_spawn_block(up)
@@ -928,7 +1194,7 @@ pub fn adjust_spawn_position_cache(
         let below = pos.down();
         let state = GenerationCache::get_block_state(cache, &below.0).to_state();
 
-        if !state.is_full_cube() && !state.is_liquid() {
+        if !state.is_collision_shape_full_block() && !state.is_liquid() {
             return below;
         }
     }
@@ -947,7 +1213,7 @@ pub fn adjust_spawn_position(
         let below = pos.down();
         let state = world.get_block_state(&below);
         // Approximation of isPathfindable(LAND)
-        if !state.is_full_cube() && !state.is_liquid() {
+        if !state.is_collision_shape_full_block() && !state.is_liquid() {
             return below;
         }
     }
@@ -956,12 +1222,16 @@ pub fn adjust_spawn_position(
 
 #[must_use]
 pub fn is_valid_empty_spawn_block(state: &'static BlockState) -> bool {
-    if state.is_full_cube() {
+    // NaturalSpawner.isValidEmptySpawnBlock uses the actual collision shape,
+    // not the generated full-cube/render flag.  This matters for trapdoors,
+    // slabs, panes, and custom states whose collision and rendering metadata
+    // intentionally differ.
+    if state.is_collision_shape_full_block() {
         return false;
     }
-    // if state.is_signal_source() {
-    //     return false;
-    // }
+    if is_signal_source(state) {
+        return false;
+    }
     if state.is_liquid() {
         return false;
     }
@@ -969,7 +1239,164 @@ pub fn is_valid_empty_spawn_block(state: &'static BlockState) -> bool {
         return false;
     }
 
-    // TODO: !entityType.isBlockDangerous(blockState)
-    // (e.g., preventing spawns inside Sweet Berry Bushes, Wither Roses, or Fire)
-    true
+    // EntityType#isBlockDangerous is subtype data in Mojang.  These blocks are
+    // dangerous for every naturally spawned mob and must never be treated as
+    // an empty spawn volume by the generic path.
+    let block = Block::from_state_id(state.id);
+    block != &Block::FIRE
+        && block != &Block::SOUL_FIRE
+        && block != &Block::SWEET_BERRY_BUSH
+        && block != &Block::WITHER_ROSE
+        && block != &Block::CACTUS
+}
+
+/// Default `BlockBehaviour` implementation of `BlockState.isValidSpawn` for
+/// the support block below an on-ground mob.  The vanilla predicate requires
+/// an upward sturdy face and light emission below 14; using only side
+/// sturdiness would incorrectly allow mobs on maximum-luminance blocks such
+/// as glowstone and sea lanterns.
+#[must_use]
+fn is_valid_spawn_support(state: &BlockState) -> bool {
+    state.is_side_solid(BlockDirection::Up) && state.luminance < 14
+}
+
+/// Vanilla's `NaturalSpawner.isValidEmptySpawnBlock` rejects every state from
+/// a block whose behaviour is a redstone signal source.  That predicate lives
+/// on Pumpkin's behaviour registry and is asynchronous, while spawning has to
+/// make this decision synchronously for thousands of candidates.  Keep the
+/// registry-independent part here using the generated vanilla tags and the
+/// small set of non-tagged signal-source blocks.
+#[must_use]
+fn is_signal_source(state: &'static BlockState) -> bool {
+    let block = Block::from_state_id(state.id);
+    block.has_tag(&tag::Block::MINECRAFT_BUTTONS)
+        || block.has_tag(&tag::Block::MINECRAFT_PRESSURE_PLATES)
+        || block == &Block::COMPARATOR
+        || block == &Block::DAYLIGHT_DETECTOR
+        || block == &Block::DETECTOR_RAIL
+        || block == &Block::LIGHTNING_ROD
+        || block == &Block::OBSERVER
+        || block == &Block::REDSTONE_BLOCK
+        || block == &Block::REDSTONE_TORCH
+        || block == &Block::REPEATER
+        || block == &Block::REDSTONE_WIRE
+        || block == &Block::SCULK_SENSOR
+        || block == &Block::CALIBRATED_SCULK_SENSOR
+        || block == &Block::TARGET
+        || block == &Block::TRIPWIRE_HOOK
+        || block == &Block::LEVER
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        PointCharge, is_signal_source, is_valid_empty_spawn_block, is_valid_spawn_support,
+        natural_despawn_roll, should_despawn_mob,
+    };
+    use pumpkin_data::Block;
+    use pumpkin_data::entity::EntityType;
+    use pumpkin_util::math::position::BlockPos;
+
+    #[test]
+    fn dangerous_blocks_are_not_empty_spawn_volumes() {
+        for block in [
+            &Block::FIRE,
+            &Block::SOUL_FIRE,
+            &Block::SWEET_BERRY_BUSH,
+            &Block::WITHER_ROSE,
+            &Block::CACTUS,
+        ] {
+            assert!(!is_valid_empty_spawn_block(block.default_state));
+        }
+        assert!(is_valid_empty_spawn_block(Block::AIR.default_state));
+    }
+
+    #[test]
+    fn redstone_signal_sources_are_not_empty_spawn_volumes() {
+        for block in [
+            &Block::REDSTONE_BLOCK,
+            &Block::REDSTONE_TORCH,
+            &Block::REPEATER,
+            &Block::TARGET,
+            &Block::LEVER,
+        ] {
+            assert!(is_signal_source(block.default_state));
+            assert!(!is_valid_empty_spawn_block(block.default_state));
+        }
+        assert!(!is_signal_source(Block::AIR.default_state));
+    }
+
+    #[test]
+    fn on_ground_support_matches_default_vanilla_predicate() {
+        assert!(is_valid_spawn_support(Block::GRASS_BLOCK.default_state));
+        assert!(!is_valid_spawn_support(Block::GLOWSTONE.default_state));
+        assert!(!is_valid_spawn_support(Block::AIR.default_state));
+    }
+
+    #[test]
+    fn coincident_spawn_charge_has_finite_zero_potential() {
+        let charge = PointCharge(BlockPos::new(3, 64, -2).to_f64(), 12.0);
+        assert_eq!(charge.get_potential_change(&BlockPos::new(3, 64, -2)), 0.0);
+    }
+
+    #[test]
+    fn natural_mob_despawn_respects_persistence_name_leash_and_distance() {
+        let zombie = &EntityType::ZOMBIE;
+        assert!(!should_despawn_mob(
+            zombie,
+            true,
+            false,
+            false,
+            Some(200.0),
+            0
+        ));
+        assert!(!should_despawn_mob(
+            zombie,
+            false,
+            true,
+            false,
+            Some(200.0),
+            0
+        ));
+        assert!(!should_despawn_mob(
+            zombie,
+            false,
+            false,
+            true,
+            Some(200.0),
+            0
+        ));
+        assert!(should_despawn_mob(
+            zombie,
+            false,
+            false,
+            false,
+            Some(129.0 * 129.0),
+            1
+        ));
+        assert!(!should_despawn_mob(
+            zombie,
+            false,
+            false,
+            false,
+            Some(33.0 * 33.0),
+            1
+        ));
+        assert!(should_despawn_mob(
+            zombie,
+            false,
+            false,
+            false,
+            Some(33.0 * 33.0),
+            0
+        ));
+    }
+
+    #[test]
+    fn natural_despawn_roll_is_stable_per_tick_and_entity() {
+        assert_eq!(natural_despawn_roll(20, 42), natural_despawn_roll(20, 42));
+        assert_ne!(natural_despawn_roll(20, 42), natural_despawn_roll(21, 42));
+        assert_ne!(natural_despawn_roll(20, 42), natural_despawn_roll(20, 43));
+        assert!(natural_despawn_roll(20, 42) < 800);
+    }
 }

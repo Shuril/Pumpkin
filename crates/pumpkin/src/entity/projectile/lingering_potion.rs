@@ -107,6 +107,10 @@ impl EntityBase for LingeringPotionEntity {
         self
     }
 
+    fn projectile_owner_id(&self) -> Option<i32> {
+        self.thrown.owner_id
+    }
+
     fn on_hit(&self, hit: crate::entity::projectile::ProjectileHit) -> EntityBaseFuture<'_, ()> {
         Box::pin(async move {
             let world = self.get_entity().world.load();

@@ -57,13 +57,16 @@ impl VarUInt {
         Ok(())
     }
 
-    // TODO: Validate that the first byte will not overflow a i32
     #[inline]
     pub fn decode(read: &mut impl Read) -> Result<Self, ReadingError> {
         let mut val = 0;
         for i in 0..Self::MAX_SIZE.get() {
             let byte = read.get_u8()?;
-            val |= (u32::from(byte) & 0x7F) << (i * 7);
+            let payload = u32::from(byte & 0x7F);
+            if i == Self::MAX_SIZE.get() - 1 && payload > 0x0F {
+                return Err(ReadingError::TooLarge("VarUInt".to_string()));
+            }
+            val |= payload << (i * 7);
             if byte & 0x80 == 0 {
                 return Ok(Self(val));
             }
@@ -83,7 +86,11 @@ impl VarUInt {
                     ReadingError::Incomplete(err.to_string())
                 }
             })?;
-            val |= (u32::from(byte) & 0x7F) << (i * 7);
+            let payload = u32::from(byte & 0x7F);
+            if i == Self::MAX_SIZE.get() - 1 && payload > 0x0F {
+                return Err(ReadingError::TooLarge("VarUInt".to_string()));
+            }
+            val |= payload << (i * 7);
             if byte & 0x80 == 0 {
                 return Ok(Self(val));
             }
@@ -167,7 +174,14 @@ impl PacketRead for VarUInt {
         let mut val = 0;
         for i in 0..Self::MAX_SIZE.get() {
             let byte = u8::read(reader)?;
-            val |= (u32::from(byte) & 0x7F) << (i * 7);
+            let payload = u32::from(byte & 0x7F);
+            if i == Self::MAX_SIZE.get() - 1 && payload > 0x0F {
+                return Err(Error::new(
+                    ErrorKind::InvalidData,
+                    "VarUInt payload overflows u32",
+                ));
+            }
+            val |= payload << (i * 7);
             if byte & 0x80 == 0 {
                 return Ok(Self(val));
             }

@@ -7,7 +7,7 @@ use pumpkin_data::block_properties::{
     BlockProperties, ChestLikeProperties, ChestType, HorizontalFacing,
 };
 use pumpkin_data::chest_loot_table::get_chest_loot_table;
-use pumpkin_data::entity::EntityPose;
+use pumpkin_data::entity::{EntityPose, EntityType};
 use pumpkin_data::{Block, BlockDirection, translation};
 use pumpkin_inventory::double::DoubleInventory;
 use pumpkin_inventory::generic_container_screen_handler::{create_generic_9x3, create_generic_9x6};
@@ -17,7 +17,7 @@ use pumpkin_inventory::screen_handler::{
 };
 use pumpkin_macros::{pumpkin_block, pumpkin_block_from_tag};
 use pumpkin_util::GameMode;
-use pumpkin_util::math::position::BlockPos;
+use pumpkin_util::math::{boundingbox::BoundingBox, position::BlockPos, vector3::Vector3};
 use pumpkin_util::text::TextComponent;
 use pumpkin_world::inventory::Inventory;
 use pumpkin_world::world::BlockFlags;
@@ -29,7 +29,9 @@ use crate::block::{
 };
 use crate::entity::EntityBase;
 use crate::world::World;
-use crate::world::loot::fill_chest_inventory;
+use crate::world::loot::{
+    fill_chest_inventory, fill_chest_inventory_items, generate_datapack_chest_loot,
+};
 use crate::{
     block::{BlockBehaviour, registry::BlockActionResult},
     entity::player::Player,
@@ -179,12 +181,50 @@ async fn normal_use_chest_impl(args: NormalUseArgs<'_>) -> BlockActionResult {
     // Unpack deferred loot table on first open (non-spectator only).
     if let Some(ref entity) = first_chest
         && let Some((loot_key, seed)) = entity.take_loot_table()
-        && let Some(table) = get_chest_loot_table(&loot_key)
         && let Some(inv) = entity.clone().get_inventory()
     {
-        fill_chest_inventory(&inv, table, seed).await;
-        // Mark the block entity dirty so the generated items persist.
-        inv.mark_dirty();
+        let canonical_key = if loot_key.contains(':') {
+            loot_key.clone()
+        } else {
+            format!("minecraft:{loot_key}")
+        };
+        let mut generated = false;
+
+        // Datapack resources have priority over generated vanilla tables,
+        // including an override of a minecraft:* table.  The snapshot is
+        // cloned atomically, so reload cannot change the table halfway
+        // through generation.
+        if let Some(server) = args.world.server.upgrade() {
+            let resources = server.recipe_manager.datapack_resources().await;
+            if resources.loot_tables.contains_key(&canonical_key) {
+                match generate_datapack_chest_loot(&resources, &canonical_key, seed) {
+                    Ok(items) => {
+                        fill_chest_inventory_items(&inv, items, seed).await;
+                        generated = true;
+                    }
+                    Err(error) => {
+                        tracing::warn!(
+                            "Could not evaluate datapack loot table {canonical_key} at {}: {error}",
+                            args.position
+                        );
+                    }
+                }
+            }
+        }
+
+        if !generated && let Some(table) = get_chest_loot_table(&canonical_key) {
+            fill_chest_inventory(&inv, table, seed).await;
+            generated = true;
+        }
+
+        if generated {
+            // Mark the block entity dirty so the generated items persist.
+            inv.mark_dirty();
+        } else {
+            // Unknown/future tables must remain deferred instead of being
+            // consumed and silently turning into an empty chest.
+            entity.restore_loot_table(loot_key, seed);
+        }
     }
 
     let Some(first_inventory) = first_chest.and_then(BlockEntity::get_inventory) else {
@@ -659,13 +699,34 @@ fn get_chest_properties_if_can_connect(
 }
 
 fn is_chest_blocked(world: &World, block_pos: &BlockPos) -> bool {
-    // TODO: Block opening when a cat is sitting on top.
-    has_block_on_top(world, block_pos)
+    has_block_on_top(world, block_pos) || has_sitting_cat_on_top(world, block_pos)
+}
+
+/// Vanilla `ChestBlock.isCatSittingOnTop` checks the entity volume above the
+/// chest, rather than merely looking for any cat nearby.  Use the live entity
+/// bounding boxes so a cat straddling an edge still blocks the chest exactly
+/// when its hitbox overlaps the top block volume.
+fn has_sitting_cat_on_top(world: &World, block_pos: &BlockPos) -> bool {
+    let min = Vector3::new(
+        f64::from(block_pos.0.x),
+        f64::from(block_pos.0.y + 1),
+        f64::from(block_pos.0.z),
+    );
+    let max = Vector3::new(min.x + 1.0, min.y + 1.0, min.z + 1.0);
+    let above = BoundingBox { min, max };
+    world.get_entities_at_box(&above).into_iter().any(|entity| {
+        let base = entity.get_entity();
+        base.entity_type == &EntityType::CAT
+            && base.is_alive()
+            && base.pose.load() == EntityPose::Sitting
+    })
 }
 fn has_block_on_top(world: &World, block_pos: &BlockPos) -> bool {
     let above_pos = block_pos.up();
     let above_state = world.get_block_state(&above_pos);
-    above_state.is_solid_block()
+    // ChestBlock delegates to BlockState.isRedstoneConductor, whose default
+    // predicate is a full collision shape rather than the legacy solid flag.
+    above_state.is_collision_shape_full_block()
 }
 
 trait ChestTypeExt {

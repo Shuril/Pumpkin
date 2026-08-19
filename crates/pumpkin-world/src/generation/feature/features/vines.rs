@@ -6,6 +6,18 @@ use crate::world::WorldPortalExt;
 
 pub struct VinesFeature;
 
+#[inline]
+fn is_acceptable_neighbour(
+    state: &pumpkin_data::BlockState,
+    direction_to_neighbour: BlockDirection,
+) -> bool {
+    // MultifaceBlock.canAttachTo checks a full support/collision face on the
+    // neighbour's side facing the vine.  The generated side flags are the
+    // same constant-time representation and are less strict than requiring a
+    // full cube (slabs and other full-face shapes remain valid supports).
+    state.is_side_solid(direction_to_neighbour.opposite())
+}
+
 impl VinesFeature {
     pub fn generate<T: GenerationCache>(
         chunk: &mut T,
@@ -20,11 +32,12 @@ impl VinesFeature {
             return false;
         }
         for dir in BlockDirection::all() {
-            // TODO
             if dir == BlockDirection::Down
-                || !GenerationCache::get_block_state(chunk, &pos.offset(dir.to_offset()).0)
-                    .to_state()
-                    .is_full_cube()
+                || !is_acceptable_neighbour(
+                    GenerationCache::get_block_state(chunk, &pos.offset(dir.to_offset()).0)
+                        .to_state(),
+                    dir,
+                )
             {
                 continue;
             }
@@ -39,5 +52,24 @@ impl VinesFeature {
             return true;
         }
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use pumpkin_data::Block;
+
+    use super::is_acceptable_neighbour;
+
+    #[test]
+    fn vines_use_the_neighbour_face_instead_of_full_cube_flag() {
+        assert!(is_acceptable_neighbour(
+            Block::STONE.default_state,
+            pumpkin_data::BlockDirection::North
+        ));
+        assert!(!is_acceptable_neighbour(
+            Block::OAK_LEAVES.default_state,
+            pumpkin_data::BlockDirection::North
+        ));
     }
 }

@@ -45,9 +45,10 @@ impl ItemBehaviour for WindChargeItem {
             let (yaw, pitch) = player.rotation();
 
             wind_charge.set_velocity_from(player.get_entity(), pitch, yaw, 0.0, POWER, 1.0);
-            // TODO: player.incrementStat(Stats.USED)
+            let mut stack = player.inventory.held_item().await;
+            stack.decrement_unless_creative(player.gamemode.load(), 1);
+            player.inventory.set_held_item(stack).await;
 
-            // TODO: Implement that the projectile will explode on impact
             world
                 .spawn_entity(Arc::new(WindChargeEntity::new_normal(wind_charge)))
                 .await;

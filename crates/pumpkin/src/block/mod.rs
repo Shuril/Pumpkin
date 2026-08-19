@@ -19,6 +19,7 @@ pub mod viewer;
 
 use crate::block::registry::BlockActionResult;
 use crate::entity::EntityBase;
+use crate::entity::projectile::ProjectileHit;
 use crate::server::Server;
 use pumpkin_data::BlockDirection;
 use pumpkin_data::block_rotation::{Mirror, Rotation};
@@ -169,6 +170,15 @@ pub trait BlockBehaviour: Send + Sync {
     }
 
     fn on_scheduled_tick<'a>(&'a self, _args: OnScheduledTickArgs<'a>) -> BlockFuture<'a, ()> {
+        Box::pin(async {})
+    }
+
+    /// Handles a projectile impacting this block.  This is the block-side
+    /// equivalent of vanilla `Block#onProjectileHit`; the world dispatches it
+    /// before the projectile's own hit callback so a block can update its
+    /// state (for example, a target block's redstone power) while the exact
+    /// impact coordinates are still available.
+    fn on_projectile_hit<'a>(&'a self, _args: OnProjectileHitArgs<'a>) -> BlockFuture<'a, ()> {
         Box::pin(async {})
     }
 
@@ -357,6 +367,10 @@ pub struct UpdateEntityMovementAfterFallOnArgs<'a> {
 pub struct BrokenArgs<'a> {
     pub block: &'a Block,
     pub player: &'a Arc<Player>,
+    /// The tool used for the break.  Vanilla `spawnAfterBreak` handlers use
+    /// the exact stack (not just the player's game mode) for enchantment-gated
+    /// side effects such as infested-block silverfish spawning.
+    pub tool: &'a ItemStack,
     pub position: &'a BlockPos,
     pub server: &'a Server,
     pub world: &'a Arc<World>,
@@ -393,6 +407,15 @@ pub struct OnScheduledTickArgs<'a> {
     pub world: &'a Arc<World>,
     pub block: &'a Block,
     pub position: &'a BlockPos,
+}
+
+pub struct OnProjectileHitArgs<'a> {
+    pub world: &'a Arc<World>,
+    pub block: &'a Block,
+    pub state: &'a BlockState,
+    pub position: &'a BlockPos,
+    pub hit: &'a ProjectileHit,
+    pub projectile: &'a dyn EntityBase,
 }
 
 pub struct OnStateReplacedArgs<'a> {
@@ -443,22 +466,63 @@ pub async fn drop_loot(
     block: &Block,
     pos: &BlockPos,
     experience: bool,
-    params: LootContextParameters,
+    mut params: LootContextParameters,
 ) {
+    // Vanilla's `doTileDrops` gamerule applies to the central loot-table path,
+    // including explosions and blocks broken by non-player causes. Keeping
+    // the guard here avoids duplicating it at those call sites and also
+    // suppresses block experience, which is part of the same rule.
+    if !world.level_info.load().game_rules.block_drops {
+        return;
+    }
+
+    // Silk Touch suppresses block experience in vanilla, even when the block
+    // itself has an experience range.  Capture this before consuming the loot
+    // context below; all block-break and explosion callers share this gate.
+    let silk_touch = params
+        .tool
+        .as_ref()
+        .is_some_and(|tool| tool.get_enchantment_level(&pumpkin_data::Enchantment::SILK_TOUCH) > 0);
+    // Keep the experience roll tied to the same authoritative operation as
+    // the item loot.  Using `get_seed()` here made two replays of the same
+    // block break disagree even when the loot context had an explicit seed,
+    // and also allowed concurrent drops to perturb one another.  XP gets its
+    // own fixed salt so it does not consume or alias the item-loot stream.
+    let experience_seed = derive_experience_seed(params.random_seed);
+    params.attach_biome_resolver(world);
+
     if let Some(loot_table) = &block.loot_table {
         for stack in loot_table.get_loot(params) {
             world.drop_stack(pos, stack).await;
         }
     }
 
-    if experience && let Some(experience) = &block.experience {
-        let mut random = RandomGenerator::Xoroshiro(Xoroshiro::from_seed(get_seed()));
+    if block_experience_allowed(experience, silk_touch)
+        && let Some(experience) = &block.experience
+    {
+        let mut random = RandomGenerator::Xoroshiro(Xoroshiro::from_seed(experience_seed));
         let amount = experience.experience.get(&mut random);
-        // TODO: Silk touch gives no exp
         if amount > 0 {
             ExperienceOrbEntity::spawn(world, pos.to_f64(), amount as u32).await;
         }
     }
+}
+
+/// Vanilla's block-break experience gate: the action must request experience
+/// and Silk Touch must not be active on the tool.  Keeping this pure avoids
+/// accidentally applying the rule only to player breaks while explosions and
+/// other block-destruction paths use the same `drop_loot` function.
+#[must_use]
+pub const fn block_experience_allowed(requested: bool, silk_touch: bool) -> bool {
+    requested && !silk_touch
+}
+
+/// Derives the independent RNG stream used for a block's experience amount.
+/// `None` is retained for legacy/plugin callers that do not provide a loot
+/// context seed; world-bound paths always pass `Some`.
+#[must_use]
+pub fn derive_experience_seed(seed: Option<u64>) -> u64 {
+    seed.map_or_else(get_seed, |seed| seed ^ 0x455850455249454e_u64)
 }
 
 pub async fn calc_block_breaking(
@@ -525,4 +589,24 @@ pub async fn calculate_comparator_output(
     let percentage = fill_sum / (size as f32);
     let output = 1.0 + percentage * 14.0;
     output.floor() as u8
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{block_experience_allowed, derive_experience_seed};
+
+    #[test]
+    fn silk_touch_suppresses_block_experience_for_every_break_source() {
+        assert!(block_experience_allowed(true, false));
+        assert!(!block_experience_allowed(true, true));
+        assert!(!block_experience_allowed(false, false));
+    }
+
+    #[test]
+    fn block_experience_seed_is_stable_and_separate_from_loot_seed() {
+        let first = derive_experience_seed(Some(0x1234));
+        assert_eq!(first, derive_experience_seed(Some(0x1234)));
+        assert_ne!(first, 0x1234);
+        assert_ne!(first, derive_experience_seed(Some(0x1235)));
+    }
 }

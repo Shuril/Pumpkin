@@ -10,6 +10,7 @@ use pumpkin_util::math::{boundingbox::BoundingBox, position::BlockPos};
 use pumpkin_world::{tick::TickPriority, world::BlockFlags};
 
 use crate::block::BlockFuture;
+use crate::entity::EntityBase;
 use crate::{
     block::{
         BlockBehaviour, BrokenArgs, GetStateForNeighborUpdateArgs, OnEntityCollisionArgs,
@@ -96,8 +97,20 @@ impl BlockBehaviour for TripwireBlock {
                         BlockFlags::empty(),
                     )
                     .await;
-                // TODO world.emitGameEvent(player, GameEvent.SHEAR, pos);
-                // TODO: Deduct 1 durability from held shears (skip in Creative mode).
+                args.world
+                    .emit_game_event(
+                        *args.position,
+                        crate::world::game_event::GameEventKind::Shear,
+                    )
+                    .await;
+                // Shears are damaged only in survival/adventure; the player
+                // helper also sends the break animation and slot update.
+                args.player
+                    .damage_item_in_slot(
+                        &pumpkin_data::data_component_impl::EquipmentSlot::MAIN_HAND,
+                        1,
+                    )
+                    .await;
             }
         })
     }
@@ -132,10 +145,17 @@ impl BlockBehaviour for TripwireBlock {
             }
 
             let aabb = BoundingBox::from_block(args.position);
-            // TODO entity.canAvoidTraps()
-            if args.world.get_entities_at_box(&aabb).is_empty()
-                && args.world.get_players_at_box(&aabb).is_empty()
-            {
+            let entity_triggered = args.world.get_entities_at_box(&aabb).iter().any(|entity| {
+                !entity.is_spectator()
+                    && !entity.is_ignoring_block_triggers()
+                    && !entity.get_entity().is_removed()
+            });
+            let player_triggered = args
+                .world
+                .get_players_at_box(&aabb)
+                .iter()
+                .any(|player| !player.is_spectator() && !player.get_entity().is_removed());
+            if !entity_triggered && !player_triggered {
                 props.powered = false;
                 let state_id = props.to_state_id(args.block);
                 args.world

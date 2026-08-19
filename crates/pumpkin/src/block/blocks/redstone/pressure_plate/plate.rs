@@ -1,7 +1,7 @@
 use pumpkin_data::{
     Block, BlockDirection, BlockId, BlockState, BlockStateId,
     block_properties::BlockProperties,
-    tag::{self},
+    tag::{self, Taggable},
 };
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::world::BlockFlags;
@@ -98,11 +98,21 @@ impl PressurePlate for PressurePlateBlock {
         if props.powered { 15 } else { 0 }
     }
 
-    async fn calculate_redstone_output(&self, world: &World, _block: &Block, pos: &BlockPos) -> u8 {
+    async fn calculate_redstone_output(&self, world: &World, block: &Block, pos: &BlockPos) -> u8 {
         let aabb = detection_box_at(pos);
-        if !world.get_entities_at_box(&aabb).is_empty()
-            || !world.get_players_at_box(&aabb).is_empty()
-        {
+        let triggered = if block.has_tag(&tag::Block::MINECRAFT_STONE_PRESSURE_PLATES) {
+            // Stone plates use the MOBS sensitivity: players and living mobs,
+            // unlike wooden plates which also react to items and vehicles.
+            !world.get_players_at_box(&aabb).is_empty()
+                || world
+                    .get_entities_at_box(&aabb)
+                    .into_iter()
+                    .any(|entity| entity.get_living_entity().is_some())
+        } else {
+            !world.get_entities_at_box(&aabb).is_empty()
+                || !world.get_players_at_box(&aabb).is_empty()
+        };
+        if triggered {
             return 15;
         }
         0

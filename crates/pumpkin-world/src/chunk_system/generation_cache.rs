@@ -4,6 +4,7 @@ use crate::chunk::ChunkHeightmapType;
 use crate::generation::generator;
 use crate::generation::height_limit::HeightLimitView;
 use crate::generation::proto_chunk::GenerationCache;
+use crate::tick::{ScheduledTick, TickPriority};
 use crate::world::{BlockAccessor, WorldPortalExt};
 use pumpkin_config::lighting::LightingEngineConfig;
 use pumpkin_data::biome::Biome;
@@ -194,6 +195,38 @@ impl GenerationCache for Cache {
         }
     }
 
+    fn schedule_block_tick(
+        &mut self,
+        pos: &Vector3<i32>,
+        block: &'static Block,
+        delay: u32,
+        priority: TickPriority,
+    ) {
+        let dx = (pos.x >> 4) - self.x;
+        let dz = (pos.z >> 4) - self.z;
+        if !(dx < self.size && dz < self.size && dx >= 0 && dz >= 0) {
+            debug!(
+                "illegal schedule_block_tick {pos:?} cache pos ({}, {}) size {}",
+                self.x, self.z, self.size
+            );
+            return;
+        }
+        match &mut self.chunks[(dx * self.size + dz) as usize] {
+            Chunk::Proto(data) => data.block_ticks.push(ScheduledTick {
+                delay,
+                priority,
+                position: BlockPos::new(pos.x, pos.y, pos.z),
+                value: block,
+            }),
+            Chunk::Level(_) => {
+                // Feature generation normally targets proto chunks. A loaded
+                // level chunk is already governed by the authoritative world
+                // scheduler and cannot be mutably borrowed through this cache.
+                debug!("schedule_block_tick on non-proto chunk at {pos:?}");
+            }
+        }
+    }
+
     fn add_block_entity(&mut self, pos: &Vector3<i32>, nbt: NbtCompound) {
         let dx = (pos.x >> 4) - self.x;
         let dz = (pos.z >> 4) - self.z;
@@ -339,6 +372,10 @@ impl GenerationCache for Cache {
             Chunk::Proto(chunk) => chunk.blending_data.as_ref(),
             Chunk::Level(data) => data.blending_data.as_ref(),
         }
+    }
+
+    fn sea_level(&self) -> i32 {
+        self.get_center_chunk().sea_level()
     }
 
     fn is_air(&self, local_pos: &Vector3<i32>) -> bool {
@@ -498,7 +535,7 @@ impl Cache {
             },
             StagedChunkEnum::Lighting => {
                 let mut engine = crate::lighting::LightEngine::new();
-                engine.initialize_light(self, lighting_config);
+                engine.initialize_light(self, lighting_config, generator.dimension().has_skylight);
                 // Only set stage to Lighting if it wasn't already at Lighting or higher
                 // (initialize_light may short-circuit for already-lit chunks)
                 let chunk = self.chunks[mid].get_proto_chunk_mut();

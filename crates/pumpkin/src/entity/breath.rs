@@ -111,7 +111,14 @@ impl BreathManager {
         }
     }
 
-    fn is_eye_in_water(player: &Player) -> bool {
+    /// Returns whether the player's eye position is submerged in a water fluid.
+    ///
+    /// This is deliberately based on the eye position and the fluid surface,
+    /// matching vanilla's `isEyeInFluid(FluidTags.WATER)` semantics.  Checking
+    /// the entity's feet or its broad `touching_water` flag is insufficient for
+    /// mining speed and drowning: a player may stand in shallow water while
+    /// their eyes remain above the surface.
+    pub(crate) fn is_eye_in_water(player: &Player) -> bool {
         let e = &player.get_entity();
         let pos = e.pos.load();
         let eye_y = e.get_eye_y();
@@ -166,6 +173,10 @@ impl BreathManager {
 
     pub fn send_air_supply(&self, player: &Player) {
         let air = self.air_supply.load(Ordering::Relaxed).clamp(0, MAX_AIR);
+        // Keep the common Entity data tracker in sync with the player-specific
+        // breath manager so Entity::write_nbt emits the same canonical `Air`
+        // value before Player adds its compatibility `AirSupply` alias.
+        player.get_entity().air_supply.store(air, Ordering::Relaxed);
 
         let mut bedrock_meta =
             pumpkin_protocol::bedrock::client::set_actor_data::EntityMetadata::new();

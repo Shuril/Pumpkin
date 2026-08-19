@@ -470,6 +470,27 @@ pub trait FlowingFluid: Send + Sync {
         state_id: BlockStateId,
     ) -> impl std::future::Future<Output = ()> + Send + 'a {
         async move {
+            // LiquidBlockContainer semantics: water flows into a dry
+            // waterloggable block by changing only its `waterlogged` property.
+            // It must not destroy the block and replace it with a full water
+            // block (the old implementation did exactly that).
+            let current_state = world.get_block_state(pos);
+            let current_block = Block::from_state_id(current_state.id);
+            if let Some(waterlogged_state) =
+                physics::waterlogged_state(current_state, current_block, fluid)
+            {
+                world
+                    .set_block_state(pos, waterlogged_state, BlockFlags::NOTIFY_ALL)
+                    .await;
+                world.schedule_fluid_tick(
+                    fluid,
+                    *pos,
+                    self.get_flow_speed(world),
+                    TickPriority::Normal,
+                );
+                return;
+            }
+
             let new_props = FlowingFluidProperties::from_state_id(state_id, fluid);
             self.apply_spread(world, fluid, pos, state_id, new_props)
                 .await;

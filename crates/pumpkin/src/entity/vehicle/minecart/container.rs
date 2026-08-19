@@ -16,7 +16,10 @@ use pumpkin_world::inventory::{Clearable, Inventory, InventoryFuture};
 use tokio::sync::{Mutex, RwLock};
 
 use crate::entity::{Entity, EntityBase, player::Player};
-use crate::world::loot::fill_chest_inventory;
+use crate::server::datapack::DataPackResources;
+use crate::world::loot::{
+    fill_chest_inventory, fill_chest_inventory_items, generate_datapack_chest_loot,
+};
 use pumpkin_data::chest_loot_table::get_chest_loot_table;
 
 pub(super) struct MinecartInventory {
@@ -73,18 +76,59 @@ impl MinecartInventory {
         self.loot_table.lock().await.is_some()
     }
 
-    pub(super) async fn unpack_loot(self: &Arc<Self>) {
+    /// Unpack the deferred table using the current datapack snapshot when one
+    /// is available.  The snapshot is owned by the caller so a `/reload`
+    /// cannot replace a table half-way through this evaluation.  Unknown or
+    /// unsupported tables remain deferred, matching vanilla's ability to
+    /// preserve a future table instead of turning it into an empty inventory.
+    pub(super) async fn unpack_loot_with_resources(
+        self: &Arc<Self>,
+        resources: Option<DataPackResources>,
+    ) {
         let loot_table = self.loot_table.lock().await.take();
         let Some((loot_table, seed)) = loot_table else {
             return;
         };
-        let Some(table) = get_chest_loot_table(&loot_table) else {
-            *self.loot_table.lock().await = Some((loot_table, seed));
-            return;
-        };
 
         let inventory: Arc<dyn Inventory> = self.clone();
-        fill_chest_inventory(&inventory, table, seed).await;
+        let canonical_key = if loot_table.contains(':') {
+            loot_table.clone()
+        } else {
+            format!("minecraft:{loot_table}")
+        };
+
+        // A datapack override wins over generated vanilla data, including an
+        // override of a minecraft:* table.  Evaluate it before the first
+        // await, then place the already-evaluated items using the same
+        // deterministic split/shuffle pass as built-in tables.
+        if let Some(resources) = resources.as_ref()
+            && resources.loot_tables.contains_key(&canonical_key)
+        {
+            match generate_datapack_chest_loot(resources, &canonical_key, seed) {
+                Ok(items) => {
+                    fill_chest_inventory_items(&inventory, items, seed).await;
+                    return;
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        "Could not evaluate datapack minecart loot table {canonical_key}: {error}"
+                    );
+                }
+            }
+        }
+
+        if let Some(table) = get_chest_loot_table(&canonical_key) {
+            fill_chest_inventory(&inventory, table, seed).await;
+            return;
+        }
+
+        // Do not consume an unknown/future table.  It will be serialized back
+        // to LootTable/LootTableSeed and can be retried after a datapack reload.
+        *self.loot_table.lock().await = Some((loot_table, seed));
+    }
+
+    pub(super) async fn unpack_loot(self: &Arc<Self>) {
+        self.unpack_loot_with_resources(None).await;
     }
 }
 
@@ -184,7 +228,17 @@ pub(super) async fn open(
         return false;
     }
     if !player.is_spectator() {
-        inventory.unpack_loot().await;
+        let resources = entity
+            .world
+            .load()
+            .server
+            .upgrade()
+            .map(|server| async move { server.recipe_manager.datapack_resources().await });
+        let resources = match resources {
+            Some(future) => Some(future.await),
+            None => None,
+        };
+        inventory.unpack_loot_with_resources(resources).await;
     }
 
     player
@@ -223,10 +277,12 @@ pub(super) async fn velocity(
 #[cfg(test)]
 mod tests {
     use super::MinecartInventory;
+    use crate::server::datapack::DataPackResources;
     use pumpkin_data::item::Item;
     use pumpkin_data::item_stack::ItemStack;
     use pumpkin_nbt::compound::NbtCompound;
     use pumpkin_world::inventory::Inventory;
+    use serde_json::json;
 
     #[tokio::test]
     async fn deferred_mineshaft_loot_is_preserved_until_unpacked() {
@@ -272,5 +328,40 @@ mod tests {
         let stack = restored.get_stack(8).await;
         assert_eq!(stack.get_item().id, Item::POWERED_RAIL.id);
         assert_eq!(stack.item_count, 3);
+    }
+
+    #[tokio::test]
+    async fn datapack_minecart_loot_override_is_evaluated_before_static_table() {
+        let inventory = std::sync::Arc::new(MinecartInventory::new(27));
+        let mut source = NbtCompound::new();
+        source.put_string("LootTable", "example:minecart".to_owned());
+        source.put_long("LootTableSeed", 9876);
+        inventory.read_nbt(&source).await;
+
+        let mut resources = DataPackResources::default();
+        resources.loot_tables.insert(
+            "example:minecart".to_owned(),
+            json!({
+                "type": "minecraft:chest",
+                "pools": [{
+                    "rolls": 1,
+                    "entries": [{
+                        "type": "minecraft:item",
+                        "name": "minecraft:diamond"
+                    }]
+                }]
+            }),
+        );
+
+        inventory.unpack_loot_with_resources(Some(resources)).await;
+        let mut total = 0;
+        for slot in 0..inventory.size() {
+            let stack = inventory.get_stack(slot).await;
+            if *stack.item == Item::DIAMOND {
+                total += stack.item_count as usize;
+            }
+        }
+        assert_eq!(total, 1);
+        assert!(!inventory.has_loot_table().await);
     }
 }

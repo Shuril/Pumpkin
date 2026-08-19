@@ -2,11 +2,11 @@ use std::sync::Arc;
 
 use crate::block::{
     BlockBehaviour, BlockFuture, EmitsRedstonePowerArgs, GetRedstonePowerArgs, OnPlaceArgs,
-    OnScheduledTickArgs,
+    OnScheduledTickArgs, PlacedArgs,
 };
 use crate::world::World;
-use pumpkin_data::block_properties::{BlockProperties, Facing, LightningRodLikeProperties};
-use pumpkin_data::{BlockDirection, BlockStateId, FacingExt};
+use pumpkin_data::block_properties::{BlockProperties, LightningRodLikeProperties};
+use pumpkin_data::{BlockStateId, FacingExt};
 use pumpkin_macros::pumpkin_block;
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::tick::TickPriority;
@@ -47,17 +47,28 @@ impl LightningRodBlock {
 impl BlockBehaviour for LightningRodBlock {
     fn on_place<'a>(&'a self, args: OnPlaceArgs<'a>) -> BlockFuture<'a, BlockStateId> {
         Box::pin(async move {
-            let facing = match args.direction {
-                BlockDirection::North => Facing::North,
-                BlockDirection::South => Facing::South,
-                BlockDirection::East => Facing::East,
-                BlockDirection::West => Facing::West,
-                BlockDirection::Up => Facing::Up,
-                BlockDirection::Down => Facing::Down,
-            };
             let mut props = LightningRodLikeProperties::default(args.block);
-            props.facing = facing;
+            // The placement context points from the new block toward the
+            // clicked support.  A lightning rod's FACING points outward, so
+            // it is the opposite direction (unlike cocoa, whose FACING
+            // points at its support).
+            props.facing = args.direction.to_facing().opposite();
+            props.waterlogged = args.replacing.water_source();
             props.to_state_id(args.block)
+        })
+    }
+
+    fn placed<'a>(&'a self, args: PlacedArgs<'a>) -> BlockFuture<'a, ()> {
+        Box::pin(async move {
+            let props = LightningRodLikeProperties::from_state_id(args.state_id, args.block);
+            if props.waterlogged {
+                args.world.schedule_fluid_tick(
+                    &pumpkin_data::fluid::Fluid::WATER,
+                    *args.position,
+                    5,
+                    TickPriority::Normal,
+                );
+            }
         })
     }
 

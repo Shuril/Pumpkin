@@ -1,0 +1,1625 @@
+# Machine-readable vanilla parity ledger.
+#
+# The inventory tool validates source paths and test names.  A contract must
+# never be promoted to `complete` without a boundary test; `partial` rows are
+# intentionally visible until the corresponding implementation batch lands.
+
+version = "26.2"
+generated_by = "tools/parity_inventory.py"
+
+[[contract]]
+id = "chunk.loading_ticket_recovery"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/server/level/ChunkMap.java", "net/minecraft/server/level/DistanceManager.java"]
+pumpkin_sources = ["crates/pumpkin-world/src/chunk_system/chunk_loading.rs"]
+status = "mostly"
+observable_contracts = ["ticket removal never aborts the server when the derived level map is stale", "a missing derived level is rebuilt from the authoritative ticket set", "repaired level transitions are published to chunk workers", "duplicate tickets retain the lowest remaining level after one source is removed"]
+tests = ["removing_a_ticket_repairs_a_missing_derived_level_without_panicking", "cargo test -p pumpkin-world --lib chunk_system::chunk_loading"]
+dependencies = ["entity.tracking_chunk_barrier", "persistence.proto_chunk_resume"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "block.piston_break_authority"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/block/piston/PistonHeadBlock.java", "net/minecraft/world/level/block/piston/MovingPistonBlock.java"]
+pumpkin_sources = ["crates/pumpkin/src/block/blocks/piston/piston_head.rs", "crates/pumpkin/src/block/blocks/piston/piston_extension.rs"]
+status = "mostly"
+observable_contracts = ["breaking a piston head or moving piston removes a matching extended base", "the original player is passed through the base break path", "SKIP_DROPS prevents duplicate piston-base drops while preserving break ownership"]
+tests = ["cargo check -p pumpkin --lib"]
+dependencies = ["block.break_context", "block.piston"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "mob.spawn_water_conductor_shape"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/entity/SpawnPlacementTypes.java", "net/minecraft/world/level/block/state/BlockBehaviour.java"]
+pumpkin_sources = ["crates/pumpkin/src/world/natural_spawner.rs"]
+status = "mostly"
+observable_contracts = ["water spawns require a water-tagged fluid at the candidate", "the block above is rejected only when its collision shape is a full block", "runtime and generation-cache spawn predicates use the same collision-shape rule"]
+tests = ["cargo check -p pumpkin --lib"]
+dependencies = ["world.fluid_state", "block.collision_shape", "world.natural_spawner"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "entity.falling_block_legacy_fluid"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/entity/item/FallingBlockEntity.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/falling.rs"]
+status = "mostly"
+observable_contracts = ["falling conversion removes the source block", "a waterlogged source leaves a water legacy block", "a lava source leaves a lava legacy block", "ordinary dry falling blocks leave air"]
+tests = ["cargo check -p pumpkin --lib"]
+dependencies = ["entity.falling_block", "fluid.state", "world.block_accessor"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "entity.falling_block_dry_carried_state"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/entity/item/FallingBlockEntity.java", "net/minecraft/world/level/block/Block.java"]
+pumpkin_sources = ["crates/pumpkin-data/src/blocks.rs", "crates/pumpkin/src/entity/falling.rs"]
+status = "mostly"
+observable_contracts = ["a falling waterlogged block leaves its source fluid behind", "the carried entity state has waterlogged=false", "landing does not recreate a second source solely because the original block was waterlogged", "non-waterloggable states retain their original state id"]
+tests = ["waterlogged_state_can_be_normalized_back_to_dry", "non_waterloggable_state_is_preserved", "cargo check -p pumpkin --lib"]
+dependencies = ["entity.falling_block", "block.state_properties", "fluid.state"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "entity.arrow_piercing_targets"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/entity/projectile/arrow/AbstractArrow.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/projectile/arrow.rs"]
+status = "mostly"
+observable_contracts = ["a piercing arrow can hit at most pierce-level plus one distinct entities", "an entity already hit by the same arrow is ignored on later collision segments", "a piercing arrow remains active after a valid entity hit and resumes collision processing on the next tick", "non-piercing arrows retain single-hit removal semantics"]
+tests = ["cargo check -p pumpkin --lib"]
+dependencies = ["entity.projectile_collision", "entity.damage_pipeline", "item.enchantment"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "block.ender_chest_waterlogging"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/block/EnderChestBlock.java"]
+pumpkin_sources = ["crates/pumpkin/src/block/blocks/ender_chest.rs"]
+status = "mostly"
+observable_contracts = ["placement preserves a water source as waterlogged=true", "placement still uses the player's opposite horizontal facing", "the resulting state is selected through generated EnderChest properties"]
+tests = ["cargo check -p pumpkin --lib"]
+dependencies = ["block.placement", "fluid.waterlogging", "block.state_properties"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "protocol.use_effects_component"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/item/component/UseEffects.java", "net/minecraft/core/component/DataComponents.java"]
+pumpkin_sources = ["crates/pumpkin-data/src/data_component_impl/food.rs", "crates/pumpkin-protocol/src/codec/data_component.rs", "crates/pumpkin/src/entity/living.rs", "crates/pumpkin/src/world/game_event.rs", "crates/pumpkin/src/world/mod.rs", "crates/pumpkin/src/block/registry.rs", "crates/pumpkin/src/item/items/boat.rs", "crates/pumpkin/src/item/items/minecart.rs", "crates/pumpkin/src/item/items/armor_stand.rs", "crates/pumpkin/src/item/items/lead.rs", "crates/pumpkin/src/item/items/firework_rocket.rs", "crates/pumpkin/src/item/items/end_crystal.rs", "crates/pumpkin/src/item/items/spawn_egg.rs", "crates/pumpkin/src/item/items/ender_eye.rs", "tools/pumpkin-codegen/src/item.rs"]
+status = "mostly"
+observable_contracts = ["minecraft:use_effects stores can_sprint, interact_vibrations and speed_multiplier", "default fields are omitted from persistent component NBT and restored on read", "network component uses BOOL, BOOL, FLOAT stream order and rejects non-finite/out-of-range multipliers", "active use applies speed_multiplier in air and fluids and disables sprinting when can_sprint is false", "item-originated block/entity placement and attachment actions suppress only their own vibration when interact_vibrations is false; absent component defaults to enabled", "dispenser projectile launch emits PROJECTILE_SHOOT through the consumed source stack and honors the same vibration opt-out"]
+tests = ["use_effects_omits_defaults_and_restores_them_on_decode", "use_effects_rejects_out_of_range_speed", "use_effects_component_round_trips_all_fields", "use_effect_speed_multiplier_only_scales_active_item_motion", "item_vibration_component_defaults_to_enabled", "cargo test -p pumpkin-protocol --lib codec::data_component"]
+dependencies = ["persistence.item_components", "protocol.generated_components"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "entity.ai_target_predicate"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/entity/ai/goal/target/NearestAttackableTargetGoal.java", "net/minecraft/world/entity/ai/goal/MeleeAttackGoal.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/predicate/mod.rs", "crates/pumpkin/src/entity/ai/goal/melee_attack.rs"]
+status = "mostly"
+observable_contracts = ["ordinary and survival/adventure player targets remain eligible for melee goals", "creative and spectator player targets are rejected", "non-player entities are not rejected by a player-only predicate"]
+tests = ["except_creative_or_spectator_matches_vanilla_target_filter", "cargo test -p pumpkin --lib entity::predicate::tests"]
+dependencies = ["entity.lifecycle"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "protocol.item_use_cooldown_gate"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/item/ItemCooldowns.java", "net/minecraft/server/network/ServerGamePacketListenerImpl.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/player.rs", "crates/pumpkin/src/net/java/play.rs", "crates/pumpkin/src/net/bedrock/play.rs"]
+status = "mostly"
+observable_contracts = ["serverbound Java use-item packets are rejected while the resolved use-cooldown group is active", "rejected packets do not fire item-use/plugin hooks or mutate the held stack", "Java and Bedrock paths use the same group fallback to the item registry key"]
+tests = ["cargo check -p pumpkin --lib", "cargo test -p pumpkin --lib"]
+dependencies = ["protocol.use_effects_component", "persistence.player_unknown_nbt"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "protocol.entity_interact_hand_and_cooldown"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/server/network/ServerGamePacketListenerImpl.java", "net/minecraft/world/entity/player/Player.java"]
+pumpkin_sources = ["crates/pumpkin-protocol/src/java/server/play/interact.rs", "crates/pumpkin/src/net/java/play.rs"]
+status = "mostly"
+observable_contracts = ["Interact and InteractAt resolve the packet hand instead of always using the selected hotbar stack", "invalid or missing interaction hands are rejected before entity callbacks", "the resolved main- or off-hand stack is checked against its use-cooldown group before plugin and entity-use hooks", "the mutated stack is written back to the same hand that initiated the interaction"]
+tests = ["cargo check -p pumpkin --lib", "cargo test -p pumpkin --lib"]
+dependencies = ["protocol.item_use_cooldown_gate", "entity.interaction"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "block.beehive_release_occupants"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/block/entity/BeehiveBlockEntity.java", "net/minecraft/core/dispenser/ShearsDispenseItemBehavior.java"]
+pumpkin_sources = ["crates/pumpkin/src/block/entities/beehive.rs", "crates/pumpkin/src/block/blocks/redstone/dispenser.rs"]
+status = "mostly"
+observable_contracts = ["shears dispensing against a full nest is attempted before entity shearing in the target box", "shears dispensing against a full nest resets honey and releases stored bee occupants", "stored modern entity_data and legacy direct entity compounds are both accepted", "released bees keep their UUID when present and exit through the nest facing side", "unknown or malformed occupants remain persisted instead of being discarded"]
+tests = ["occupant_data_accepts_modern_wrapped_and_legacy_direct_forms", "malformed_occupant_is_not_released", "occupant_timer_uses_vanilla_strict_boundary", "occupant_timer_defaults_to_nectar_duration", "cargo check -p pumpkin --lib", "cargo test -p pumpkin --lib"]
+dependencies = ["block.entity_persistence", "entity.bee", "block.dispenser"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "block.beehive_server_tick"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/block/entity/BeehiveBlockEntity.java", "net/minecraft/world/entity/animal/bee/Bee.java"]
+pumpkin_sources = ["crates/pumpkin/src/block/entities/beehive.rs", "crates/pumpkin/src/world/mod.rs"]
+status = "mostly"
+observable_contracts = ["active block-entity ticking advances persisted hive occupants only in simulation chunks", "bees release after the strict vanilla min_ticks_in_hive boundary", "a blocked front collision shape retains the occupant for a later retry", "released bees preserve UUID, flower_pos and HasNectar data", "nectar delivery raises the hive honey level with vanilla cap and occasional double increment", "unknown occupant fields survive each timer tick"]
+tests = ["occupant_timer_uses_vanilla_strict_boundary", "occupant_timer_defaults_to_nectar_duration", "cargo check -p pumpkin --lib", "cargo test -p pumpkin --lib block::entities::beehive"]
+dependencies = ["block.entity_persistence", "entity.bee", "world.active_chunk_ticking"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "block.dispenser_glass_bottle_sources"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/core/dispenser/DispenseItemBehavior.java", "net/minecraft/world/level/block/entity/BeehiveBlockEntity.java"]
+pumpkin_sources = ["crates/pumpkin/src/block/blocks/redstone/dispenser.rs", "crates/pumpkin/src/block/entities/beehive.rs"]
+status = "mostly"
+observable_contracts = ["a dispenser glass bottle collects any water fluid state without deleting the source block", "a dispenser glass bottle does not treat a water cauldron as a fluid source", "a full hive releases its occupants before producing a honey bottle", "the resulting potion uses the canonical water PotionContents component", "failed collection falls back to the ordinary item-eject behavior"]
+tests = ["cargo check -p pumpkin --lib", "cargo test -p pumpkin --lib"]
+dependencies = ["block.beehive_server_tick", "fluid.state", "block.dispenser"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "protocol.max_damage_component"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/core/component/DataComponents.java", "net/minecraft/network/codec/StreamCodec.java"]
+pumpkin_sources = ["crates/pumpkin-protocol/src/codec/data_component.rs", "crates/pumpkin-data/src/data_component_impl/basic.rs"]
+status = "mostly"
+observable_contracts = ["minecraft:max_damage encodes and decodes as the component VarInt", "negative max-damage values are rejected instead of wrapping", "component values no longer fall through the generic TODO branch"]
+tests = ["max_damage_component_round_trips_as_varint", "max_damage_component_rejects_negative_values", "cargo test -p pumpkin-protocol --lib codec::data_component"]
+dependencies = ["persistence.item_components"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "protocol.item_component_codecs"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/core/component/DataComponentPatch.java", "net/minecraft/world/item/component/CustomData.java"]
+pumpkin_sources = ["crates/pumpkin-protocol/src/codec/data_component.rs", "crates/pumpkin-protocol/src/codec/item_stack_seralizer.rs"]
+status = "mostly"
+observable_contracts = ["custom_data compound NBT round-trips through the Java network codec including CESU-8 strings", "custom_name uses the Java ComponentSerialization NBT stream rather than a plain UTF-8 prefix", "entity variant components use their vanilla string payloads", "numeric and unit components do not fall through the generic TODO branch", "consumable apply-effects lists are read before their probability float", "negative or oversized consumable effect counts return a decode error before allocation", "malformed component payloads and overflowing item-stack counts/IDs return a decode error", "length-prefixed component payloads are bounded before allocation"]
+tests = ["custom_data_component_round_trips_compound_nbt", "custom_name_component_uses_the_java_nbt_stream_codec", "entity_variant_components_round_trip_as_namespaced_strings", "apply_effects_consume_codec_reads_effects_before_probability", "consumable_rejects_negative_effect_count_without_allocating", "bundle_contents_use_the_unprefixed_component_stream_codec", "regular_item_stack_uses_the_unprefixed_component_stream_codec", "item_stack_rejects_component_ids_that_do_not_fit_u8", "item_stack_rejects_counts_that_do_not_fit_u8", "length_prefixed_component_rejects_unbounded_payloads", "cargo test -p pumpkin-protocol --lib codec::data_component"]
+dependencies = ["protocol.generated_components", "persistence.item_components"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "block.conduit_server_tick"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/block/entity/ConduitBlockEntity.java", "net/minecraft/world/level/block/ConduitBlock.java"]
+pumpkin_sources = ["crates/pumpkin/src/block/entities/conduit.rs", "crates/pumpkin/src/world/mod.rs"]
+status = "mostly"
+observable_contracts = ["the 3x3x3 water shell and 42-block axial frame control activation", "active conduits grant Conduit Power to wet players in the vanilla range", "active conduits select and damage only entities implementing vanilla Enemy semantics (not merely the MONSTER category)", "active conduits select and damage eligible hostile targets in the vanilla attack range", "target UUID and active state survive block-entity NBT round-trip"]
+tests = ["conduit_frame_has_vanilla_axial_ring_size", "cargo test -p pumpkin --lib block::entities::conduit"]
+dependencies = ["entity.damage_pipeline", "entity.tracking_chunk_barrier", "persistence.chunk_unknown_nbt"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "entity.fishing_retrieval_damage"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/item/FishingRodItem.java", "net/minecraft/world/entity/projectile/FishingHook.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/projectile/fishing_bobber.rs", "crates/pumpkin/src/item/items/fishing_rod.rs", "crates/pumpkin/src/item/registry.rs", "crates/pumpkin/src/world/loot.rs"]
+status = "mostly"
+observable_contracts = ["fishing retrieval applies 3 durability for an item entity, 5 for another hooked entity, 1 for a caught loot result and 2 when the bobber is on ground", "on-ground durability takes precedence", "Java retrieval damages the rod in the hand that initiated the use", "built-in fish/junk/treasure pool weights and the open-water gate are deterministic", "a supported datapack minecraft:gameplay/fishing table overrides the built-in table through the shared evaluator, while unsupported conditions/functions fail closed", "fish results increment FishCaught once per fish stack while every result triggers FishedItem"]
+tests = ["fishing_retrieval_damage_matches_vanilla_outcomes", "builtin_fishing_loot_is_seeded_and_not_cod_only", "deferred_subset_rejects_conditions_instead_of_ignoring_them", "cargo test -p pumpkin --lib entity::projectile::fishing_bobber", "cargo test -p pumpkin --lib world::loot::tests::builtin_fishing_loot_is_seeded_and_not_cod_only"]
+dependencies = ["entity.damage_pipeline", "entity.projectile_collision"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "entity.tracking_equipment_barrier"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/server/level/ChunkMap.java", "net/minecraft/server/level/ServerEntity.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/living.rs", "crates/pumpkin/src/world/mod.rs"]
+status = "mostly"
+observable_contracts = ["equipment changes are sent only after the recipient has received the entity spawn and target chunk", "Java armor updates are version-grouped and never sent to unloaded watchers", "Bedrock equipment retains its edition-specific packet mapping"]
+tests = ["entity_visibility_transition_only_changes_at_the_boundary", "cargo check -p pumpkin --lib"]
+dependencies = ["entity.tracking_chunk_barrier", "protocol.entity_metadata"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "entity.minecart_subtypes"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/entity/vehicle/minecart/MinecartCommandBlock.java", "net/minecraft/world/entity/vehicle/minecart/MinecartSpawner.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/vehicle/minecart.rs", "crates/pumpkin/src/block/entities/mob_spawner.rs"]
+status = "mostly"
+observable_contracts = ["command and spawner minecarts have dedicated runtime state", "command minecarts execute on powered activator rails no more often than every four ticks", "command and spawner state survives entity NBT round-trip", "TrackOutput is not overwritten during command-minecart save", "moving spawner carts use their current block position for range and spawn checks", "minecart rail movement updates position, block position and chunk position atomically through the common movement path"]
+tests = ["command_minecart_activation_cooldown_is_four_ticks", "command_minecart_nbt_preserves_command_state", "command_minecart_nbt_preserves_track_output_flag", "entity_spawner_payload_omits_block_entity_coordinates", "cargo test -p pumpkin --lib entity::vehicle::minecart::tests"]
+dependencies = ["entity.mob_spawner_timer", "persistence.chunk_unknown_nbt"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "persistence.player_inventory"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/entity/player/Inventory.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/player.rs", "crates/pumpkin-inventory/src/player/player_inventory.rs"]
+status = "mostly"
+observable_contracts = ["Inventory slots 0..35 and armor/off-hand slots round-trip through vanilla Inventory NBT"]
+tests = ["player_inventory_vanilla_slot_round_trip"]
+dependencies = ["persistence.item_components"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "persistence.player_unknown_nbt"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/entity/player/Player.java", "net/minecraft/server/level/ServerPlayer.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/player.rs", "crates/pumpkin/src/data/player_server.rs"]
+status = "mostly"
+observable_contracts = ["unknown root player-data tags survive load and periodic/autosave writes", "known runtime fields override stale opaque values"]
+tests = ["player_nbt_keeps_unknown_root_extensions_out_of_known_serializer_fields"]
+dependencies = ["persistence.player_inventory", "persistence.item_components"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "persistence.data_file_extensions"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/storage/LevelStorageSource.java", "net/minecraft/world/level/saveddata/SavedData.java"]
+pumpkin_sources = ["crates/pumpkin-world/src/world_info/anvil.rs", "crates/pumpkin-world/src/world_info/data_files.rs"]
+status = "mostly"
+observable_contracts = ["unknown root and data-file tags survive weather and game-rule rewrites", "recognized values are updated without replacing the extensible NBT document", "custom boss-event and scheduled-event files are upgraded to the current DataVersion without deleting unknown entries", "missing scheduled-event data gets the vanilla empty events list", "custom boss bars load and save Name, Visible, Value, Max, Color, Overlay, flags and Players through the live server manager", "removed known boss bars are deleted while unrecognized boss-event entries remain lossless"]
+tests = ["weather_rewrite_preserves_unknown_root_and_data_tags", "game_rules_rewrite_preserves_unknown_rule_keys", "global_event_files_upgrade_version_without_losing_unknown_data"]
+dependencies = ["persistence.level_metadata"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "entity.arrow_damage_parameter"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/entity/projectile/arrow/AbstractArrow.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/projectile/arrow.rs"]
+status = "mostly"
+observable_contracts = ["plugin/enchantment base-damage changes are used by the arrow hit formula"]
+tests = ["cargo test -p pumpkin --lib entity::projectile::arrow"]
+dependencies = ["entity.damage_pipeline"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "entity.mob_experience_reward"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/entity/Mob.java", "net/minecraft/world/entity/LivingEntity.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/mob/mod.rs", "crates/pumpkin/src/entity/mod.rs", "crates/pumpkin/src/entity/living.rs"]
+status = "mostly"
+observable_contracts = ["baby mobs do not award experience", "base experience remains zero when the entity type has no reward", "non-empty non-saddle equipment with drop chance <= 1 adds one-to-three experience per slot", "equipment and drop-chance maps are snapshotted before death-orb spawning"]
+tests = ["equipment_bonus_matches_vanilla_bounds", "cargo test -p pumpkin --lib entity::mob::experience_tests::equipment_bonus_matches_vanilla_bounds"]
+dependencies = ["entity.equipment_persistence", "entity.damage_pipeline"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "entity.mob_spawner_timer"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/BaseSpawner.java", "net/minecraft/world/level/block/entity/SpawnerBlockEntity.java"]
+pumpkin_sources = ["crates/pumpkin/src/block/entities/mob_spawner.rs"]
+status = "mostly"
+observable_contracts = ["zero delay attempts spawning immediately", "player-range and nearby-entity gates prevent invalid attempts", "the nearby-entity cap uses the inflated block AABB rather than a radial sphere", "malformed negative NBT ranges are clamped", "delay and core spawn parameters round-trip through NBT", "SpawnPotentials are selected by non-negative vanilla weights and their entity compounds survive NBT round-trip", "next delays use Mojang's half-open minSpawnDelay..maxSpawnDelay interval", "each requested mob gets three integer X/Z attempts and a one-block vertical ON_TOP_OF_COLLIDER search with world-border validation before spawn rules and collision checks"]
+tests = ["spawner_is_ready_at_zero_and_for_negative_legacy_values", "spawner_delay_uses_vanilla_half_open_bounds", "spawn_potentials_use_non_negative_weighted_ranges", "spawn_potentials_round_trip_without_losing_entity_data", "cargo test -p pumpkin --lib block::entities::mob_spawner::tests"]
+dependencies = ["entity.spawn_placements", "persistence.chunk_unknown_nbt"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "persistence.saved_tick_delay"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/ticks/SavedTick.java", "net/minecraft/world/level/chunk/storage/SerializableChunkData.java"]
+pumpkin_sources = ["crates/pumpkin-world/src/tick/mod.rs", "crates/pumpkin-world/src/tick/scheduler.rs", "crates/pumpkin-world/src/chunk/format/mod.rs"]
+status = "mostly"
+observable_contracts = ["SavedTick delay remains a signed-safe integer rather than wrapping at 256 ticks", "long-delay ticks execute at their original game time", "Anvil round-trips delay and priority without loss"]
+tests = ["long_delays_do_not_wrap_through_a_256_tick_wheel", "cargo test -p pumpkin-world --lib"]
+dependencies = ["persistence.proto_chunk_resume", "redstone.scheduler_order"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "persistence.chunk_unknown_nbt"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/chunk/storage/SerializableChunkData.java", "net/minecraft/world/level/chunk/storage/RegionFileStorage.java"]
+pumpkin_sources = ["crates/pumpkin-world/src/chunk/mod.rs", "crates/pumpkin-world/src/chunk/format/mod.rs"]
+status = "mostly"
+observable_contracts = ["unknown chunk root tags survive Anvil load/save", "block entities, scheduled ticks, blending data, light state and inhabited time round-trip", "block and fluid scheduled ticks outside the owning chunk are ignored on load", "known runtime keys override opaque values without deleting future fields"]
+tests = ["unknown_root_nbt_survives_chunk_round_trip", "vanilla_chunk_auxiliary_data_round_trips_without_loss", "foreign scheduled ticks are filtered by chunk ownership", "cargo test -p pumpkin-world --lib"]
+dependencies = ["persistence.proto_chunk_resume", "tick.fluid_inflight"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "persistence.entity_region_unknown_nbt"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/chunk/storage/EntityStorage.java", "net/minecraft/world/level/chunk/storage/SimpleRegionStorage.java"]
+pumpkin_sources = ["crates/pumpkin-world/src/chunk/mod.rs", "crates/pumpkin-world/src/chunk/format/mod.rs", "crates/pumpkin/src/entity/mod.rs"]
+status = "mostly"
+observable_contracts = ["entity-region root metadata survives load/save", "entity list and canonical Position survive round-trip", "unknown entity-root fields survive Pumpkin entity unload/reload", "vanilla FallDistance and Air keys are used for live entities while legacy aliases remain readable", "unknown block-entity ids are returned to pending chunk NBT instead of being deleted", "explicit block-entity removal clears both live and pending copies so a broken block cannot resurrect after reload"]
+tests = ["entity_region_unknown_root_nbt_survives_round_trip", "entity_opaque_nbt_retains_future_fields_but_excludes_runtime_keys", "cargo test -p pumpkin-world --lib", "cargo test -p pumpkin --lib entity::tests"]
+dependencies = ["persistence.chunk_unknown_nbt", "persistence.entity_lifecycle"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "worldgen.coral_direction_rng"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/levelgen/feature/CoralClawFeature.java", "net/minecraft/world/level/levelgen/feature/CoralTreeFeature.java", "net/minecraft/world/level/levelgen/feature/CoralMushroomFeature.java"]
+pumpkin_sources = ["crates/pumpkin-world/src/generation/feature/features/coral/coral_claw.rs", "crates/pumpkin-world/src/generation/feature/features/coral/coral_tree.rs", "crates/pumpkin-world/src/generation/feature/features/coral/coral_mushroom.rs"]
+status = "mostly"
+observable_contracts = ["branch directions use vanilla horizontal order", "Fisher-Yates consumes the same RNG draws before branch placement", "coral claw excludes the opposite direction", "coral mushroom uses the vanilla origin-relative coordinates, dimensions, sink and corner/shell predicate"]
+tests = ["claw_shuffle_uses_only_forward_and_side_directions"]
+dependencies = ["worldgen.fixed_seed_feature_snapshots"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "worldgen.attached_logs_decorator"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/levelgen/feature/treedecorators/AttachedToLogsDecorator.java"]
+pumpkin_sources = ["crates/pumpkin-world/src/generation/feature/features/tree/decorator/attached_to_logs.rs"]
+status = "mostly"
+observable_contracts = ["log positions are processed in a seeded Fisher-Yates shuffled copy", "each log chooses a fresh direction from the configured direction set", "probability and air checks are applied after the vanilla shuffle/direction RNG draws", "an empty direction set is a safe no-op"]
+tests = ["attached_log_order_is_seeded_permutation", "attached_log_direction_selection_uses_declared_set", "cargo test -p pumpkin-world --lib generation::feature::features::tree::decorator::attached_to_logs::tests"]
+dependencies = ["worldgen.deterministic_rng"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "worldgen.twisting_vines_feature"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/levelgen/feature/TwistingVinesFeature.java"]
+pumpkin_sources = ["crates/pumpkin-world/src/generation/feature/features/twisting_vines.rs"]
+status = "mostly"
+observable_contracts = ["spread offsets are inclusive in [-spread, spread]", "the one-in-six double-height and one-in-five single-height gates consume vanilla RNG draws", "columns may start only on netherrack, warped nylium or warped wart block", "the head uses a generated twisting-vines AGE state in the inclusive 17..25 range", "plant sections use the age-less twisting-vines plant state"]
+tests = ["twisting_vines_head_age_round_trips_for_vanilla_range", "twisting_vines_head_has_all_26_age_states", "cargo test -p pumpkin-world --lib generation::feature::features::twisting_vines::tests"]
+dependencies = ["worldgen.deterministic_rng", "data.generated_block_shapes"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "worldgen.weeping_vines_feature"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/levelgen/feature/WeepingVinesFeature.java"]
+pumpkin_sources = ["crates/pumpkin-world/src/generation/feature/features/weeping_vines.rs"]
+status = "mostly"
+observable_contracts = ["the origin requires air below netherrack or nether wart block", "the origin and nearby roof patches use the vanilla 200/100 attempt counts and draw ranges", "roof wart patches require exactly one adjacent roof-support block", "weeping-vine columns use the 1..8 height, 1/6 double-height and 1/5 single-height gates", "heads use AGE 17..25 and plant sections use the age-less plant state"]
+tests = ["weeping_vines_support_matches_vanilla_roof_blocks", "weeping_vines_head_age_round_trips_for_vanilla_range", "cargo test -p pumpkin-world --lib generation::feature::features::weeping_vines::tests"]
+dependencies = ["worldgen.deterministic_rng", "data.generated_block_shapes"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "worldgen.place_on_ground_decorator"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/levelgen/feature/treedecorators/PlaceOnGroundDecorator.java"]
+pumpkin_sources = ["crates/pumpkin-world/src/generation/feature/features/tree/decorator/place_on_ground.rs"]
+status = "mostly"
+observable_contracts = ["the decorator samples the bounding box around the lowest trunk/root positions", "the target block above is air or vine", "support uses vanilla solid-render and non-leaf checks", "the no-leaves motion-blocking heightmap prevents placement below the tree canopy"]
+tests = ["place_on_ground_requires_solid_non_leaf_support_and_heightmap_clearance", "cargo test -p pumpkin-world --lib generation::feature::features::tree::decorator::place_on_ground::tests"]
+dependencies = ["worldgen.deterministic_rng", "data.generated_block_shapes"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "worldgen.vines_feature"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/levelgen/feature/VinesFeature.java", "net/minecraft/world/level/block/MultifaceBlock.java"]
+pumpkin_sources = ["crates/pumpkin-world/src/generation/feature/features/vines.rs"]
+status = "mostly"
+observable_contracts = ["the origin must be empty", "directions are checked in vanilla Direction.values order and DOWN is rejected", "a vine attaches when the neighbour exposes a full support or collision face toward the vine rather than only when it is a full cube", "the placed state has exactly the selected face set"]
+tests = ["vines_use_the_neighbour_face_instead_of_full_cube_flag", "cargo test -p pumpkin-world --lib generation::feature::features::vines::tests"]
+dependencies = ["data.generated_block_shapes"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "worldgen.cocoa_decorator"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/levelgen/feature/treedecorators/CocoaDecorator.java"]
+pumpkin_sources = ["crates/pumpkin-world/src/generation/feature/features/tree/decorator/cocoa.rs", "tools/pumpkin-codegen/src/configured_feature.rs"]
+status = "mostly"
+observable_contracts = ["the configured probability is applied once before processing logs", "only logs at height <= two above the first log are considered", "each horizontal side consumes an independent 25% attempt", "cocoa is placed only into air with a uniformly selected age 0..2 and outward-facing direction", "generated jungle-tree configuration preserves the vanilla probability field"]
+tests = ["cocoa_state_round_trips_age_and_outward_facing", "cargo test -p pumpkin-world --lib generation::feature::features::tree::decorator::cocoa::tests"]
+dependencies = ["worldgen.deterministic_rng", "data.generated_block_states"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "worldgen.state_providers"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/levelgen/feature/stateproviders/RandomizedIntStateProvider.java", "net/minecraft/world/level/levelgen/feature/stateproviders/RotatedBlockProvider.java"]
+pumpkin_sources = ["crates/pumpkin-world/src/generation/block_state_provider.rs"]
+status = "mostly"
+observable_contracts = ["randomized integer providers sample their configured IntProvider", "only the selected property changes and all other source-state properties survive", "rotated block providers consume one feature-RNG axis choice and write x/y/z when the state exposes axis", "malformed custom states fail closed without replacing the source state"]
+tests = ["randomized_property_preserves_unmodified_properties", "randomized_property_rejects_unknown_property", "cargo test -p pumpkin-world --lib generation::block_state_provider::tests"]
+dependencies = ["worldgen.deterministic_rng", "data.generated_block_states"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "worldgen.attached_leaves_decorator"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/levelgen/feature/treedecorators/AttachedToLeavesDecorator.java"]
+pumpkin_sources = ["crates/pumpkin-world/src/generation/feature/features/tree/decorator/attached_to_leaves.rs", "tools/pumpkin-codegen/src/configured_feature.rs"]
+status = "mostly"
+observable_contracts = ["foliage positions are processed as a seeded shuffled copy", "each candidate consumes a direction draw and applies the strict probability gate", "required empty blocks are checked one-based along the selected direction", "successful placement blacklists the inclusive exclusion cuboid", "generated data preserves probability, radii, provider, required distance and direction list"]
+tests = ["required_empty_range_is_directional_and_one_based", "exclusion_box_is_inclusive", "cargo test -p pumpkin-world --lib generation::feature::features::tree::decorator::attached_to_leaves"]
+dependencies = ["worldgen.deterministic_rng", "worldgen.state_providers"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "worldgen.creaking_heart_decorator"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/levelgen/feature/treedecorators/CreakingHeartDecorator.java"]
+pumpkin_sources = ["crates/pumpkin-world/src/generation/feature/features/tree/decorator/creaking_heart.rs", "tools/pumpkin-codegen/src/configured_feature.rs"]
+status = "mostly"
+observable_contracts = ["the configured probability is checked before any log shuffle", "candidate logs are searched in a seeded Fisher-Yates shuffled copy", "all six neighbouring blocks must be in minecraft:logs", "the placed state is a vertical, natural, dormant creaking heart", "generated pale-oak configuration preserves the probability field"]
+tests = ["creaking_heart_uses_natural_dormant_vertical_state", "only_log_tagged_states_are_valid_neighbours", "cargo test -p pumpkin-world --lib generation::feature::features::tree::decorator::creaking_heart::tests"]
+dependencies = ["worldgen.deterministic_rng", "data.generated_block_states"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "worldgen.beehive_decorator"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/levelgen/feature/treedecorators/BeehiveDecorator.java", "net/minecraft/world/level/block/entity/BeehiveBlockEntity.java"]
+pumpkin_sources = ["crates/pumpkin-world/src/generation/feature/features/tree/decorator/beehive.rs", "crates/pumpkin/src/block/entities/beehive.rs"]
+status = "mostly"
+observable_contracts = ["the configured probability is checked before hive-Y selection", "hive candidates use vanilla SOUTH-facing placement and shuffled horizontal spawn positions", "both the hive position and its SOUTH-facing exit block must be air", "the placed block is a honey-level-zero bee nest", "two or three occupants use modern typed entity-data, ticks-in-hive and minimum-ticks NBT", "legacy uppercase Bees data remains readable"]
+tests = ["generated_occupant_uses_modern_beehive_schema", "cargo test -p pumpkin-world --lib generation::feature::features::tree::decorator::beehive::tests", "cargo check -p pumpkin --lib"]
+dependencies = ["worldgen.deterministic_rng", "data.generated_block_states", "persistence.block_entities"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "worldgen.pale_moss_decorator"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/levelgen/feature/treedecorators/PaleMossDecorator.java"]
+pumpkin_sources = ["crates/pumpkin-world/src/generation/feature/features/tree/decorator/pale_moss.rs", "tools/pumpkin-codegen/src/configured_feature.rs"]
+status = "mostly"
+observable_contracts = ["configured leaves/trunk/ground probabilities are preserved by codegen", "logs are shuffled before selecting the lowest origin", "the ground pass invokes the configured pale moss patch with the decorator RNG", "trunk and foliage hangers use the vanilla half-continuation draw", "hanging moss uses explicit non-tip and tip block states"]
+tests = ["hanging_moss_tip_property_round_trips", "cargo test -p pumpkin-world --lib generation::feature::features::tree::decorator::pale_moss::tests"]
+dependencies = ["worldgen.deterministic_rng", "worldgen.vegetation_patch", "data.generated_block_states"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "worldgen.alter_ground_decorator"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/levelgen/feature/treedecorators/AlterGroundDecorator.java"]
+pumpkin_sources = ["crates/pumpkin-world/src/generation/feature/features/tree/decorator/alter_ground.rs", "tools/pumpkin-codegen/src/configured_feature.rs"]
+status = "mostly"
+observable_contracts = ["lowest trunk/root positions are selected at the minimum Y", "four fixed 5x5 circles and five edge-random circles use vanilla offsets", "circle corners are excluded", "each column scans Y offsets 2 down to -3 and stops on provider fallback absence below ground", "the configured rule provider is evaluated with the feature RNG and chunk context"]
+tests = ["cargo check -p pumpkin-world --lib", "cargo run -p pumpkin-codegen --quiet -- configured_features_generated"]
+dependencies = ["worldgen.state_providers", "worldgen.deterministic_rng"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "worldgen.simple_block_feature"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/levelgen/feature/SimpleBlockFeature.java"]
+pumpkin_sources = ["crates/pumpkin-world/src/generation/feature/features/simple_block.rs", "crates/pumpkin-world/src/generation/proto_chunk.rs", "crates/pumpkin-world/src/chunk_system/generation_cache.rs"]
+status = "mostly"
+observable_contracts = ["the provider is evaluated with chunk context and placement uses can_place_at", "successful placements retain the configured block state", "double plants place lower and upper halves atomically and reject an occupied upper cell", "pale moss carpet delegates to vanilla-style base/wall support checks and can place a randomized non-base topper only when it has a surviving face", "schedule_tick=true persists a one-tick normal block tick in proto-chunk generation data", "out-of-cache positions are rejected without panicking"]
+tests = ["pale_moss_topper_requires_a_surviving_wall_face", "cargo check -p pumpkin-world --lib", "cargo test -p pumpkin-world --lib generation::proto_chunk_test"]
+dependencies = ["worldgen.state_providers", "persistence.proto_chunk_resume"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "worldgen.pointed_dripstone_feature"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/levelgen/feature/LargeDripstoneFeature.java", "net/minecraft/world/level/block/PointedDripstoneBlock.java"]
+pumpkin_sources = ["crates/pumpkin-world/src/generation/feature/features/drip_stone/mod.rs", "crates/pumpkin-world/src/generation/feature/features/drip_stone/small.rs", "tools/pumpkin-codegen/src/configured_feature.rs"]
+status = "mostly"
+observable_contracts = ["the feature selects an up/down tip direction from the two valid base sides", "the configured patch probabilities and random-direction draws are preserved", "taller columns are gated by the next position being air or water", "pointed columns use vanilla base/middle/frustum/tip thickness states and retain waterlogged tips"]
+tests = ["pointed_column_states_follow_vanilla_order", "cargo test -p pumpkin-world --lib generation::feature::features::drip_stone::tests"]
+dependencies = ["worldgen.deterministic_rng", "data.generated_block_states"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "worldgen.dimension_sea_level"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/levelgen/NoiseBasedChunkGenerator.java", "net/minecraft/world/level/levelgen/feature/BlueIceFeature.java", "net/minecraft/world/level/levelgen/feature/IcebergFeature.java", "net/minecraft/world/level/levelgen/feature/BasaltColumnsFeature.java", "net/minecraft/world/level/levelgen/feature/SnowAndFreezeFeature.java"]
+pumpkin_sources = ["crates/pumpkin-world/src/generation/proto_chunk.rs", "crates/pumpkin-world/src/chunk_system/generation_cache.rs", "crates/pumpkin-world/src/generation/feature/features/blue_ice.rs", "crates/pumpkin-world/src/generation/feature/features/iceberg.rs", "crates/pumpkin-world/src/generation/feature/features/basalt_columns.rs", "crates/pumpkin-world/src/generation/feature/features/freeze_top_layer.rs"]
+status = "mostly"
+observable_contracts = ["feature generation reads sea level from the owning generator context instead of a global Overworld constant", "Overworld and Nether proto chunks expose 63 and 32 respectively", "blue ice, iceberg, basalt columns and freeze-top-layer use the cache sea level for their vertical and temperature gates"]
+tests = ["proto_chunk_exposes_dimension_specific_sea_level", "cargo test -p pumpkin-world --lib generation::proto_chunk_test::test::proto_chunk_exposes_dimension_specific_sea_level"]
+dependencies = ["worldgen.deterministic_rng"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "spawning.bat"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/entity/ambient/Bat.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/mob/bat.rs"]
+status = "mostly"
+observable_contracts = ["natural bat spawn uses the vanilla random half-gate", "the support block is checked below the spawn position", "roosting metadata and BatFlags persistence agree"]
+tests = ["cargo test -p pumpkin --lib"]
+dependencies = ["spawning.spawn_placements"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "spawning.shared_predicates"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/entity/animal/Animal.java", "net/minecraft/world/entity/animal/fish/WaterAnimal.java", "net/minecraft/world/entity/ambient/Bat.java", "net/minecraft/world/entity/monster/Monster.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/type.rs", "crates/pumpkin/src/entity/mob/mod.rs", "crates/pumpkin/src/entity/mob/bat.rs", "crates/pumpkin/src/world/natural_spawner.rs"]
+status = "mostly"
+observable_contracts = ["animal support tags and brightness are enforced", "pandas use the registered Animal.checkAnimalSpawnRules predicate despite their unrestricted placement type", "surface water mobs obey sea-level and water-volume rules", "natural spawn candidates are rejected outside the active WorldBorder before placement checks", "chunk-generation spawning also applies the registered spawn rules and collision-volume gate before adding an entity", "armadillo/camel/fox/goat/parrot, polar-bear, turtle and ocelot predicates match vanilla", "lush-cave tropical fish and glow squid use their special biome/depth rules", "monster thunder brightness is dimension-aware", "any-light blaze/breeze/zoglin and surface husk/camel-husk/parched predicates are dispatched explicitly", "stray spawning accounts for powder-snow sky obstruction", "surface slime spawning uses the biome tag, Y range and moon-phase chance table", "on-ground support uses an upward sturdy face and the default light-emission < 14 predicate", "LAND spawn adjustment uses collision-shape emptiness for pathfindability", "naturally spawned mobs despawn beyond category distance or by the vanilla 1/800 random gate, while persistent/named/leashed mobs and spectators are protected", "despawn rolls are stable for an entity within a world tick and independent of concurrent entity scheduling", "thunder strikes and skeleton-horse rolls use the same isolated world-age/chunk stream as the enclosing spawn pass", "empty spawn volumes reject redstone signal-source states as NaturalSpawner does", "chunk-generation spawning is disabled by doMobSpawning=false", "jittered groups admit the current chunk and gate only neighbouring chunks through the active-chunk set", "ordinary natural-spawn group selection, light/structure-independent special gates, water-ambient suppression, jitter and rotation consume one reproducible per-world-age/per-chunk stream independent of JoinSet scheduling", "chunk-generation group selection, count, jitter and rotation use a deterministic world-seed/chunk-local population stream", "local mob-cap player membership is recomputed from current player positions instead of a stale first-seen chunk cache", "spawn-cost energy uses the rough biome at the candidate/entity position"]
+tests = ["cargo test -p pumpkin --lib world::natural_spawner::tests", "world::natural_spawner::generation_random_tests::chunk_generation_population_random_is_reproducible_and_chunk_local", "world::natural_spawner::generation_random_tests::natural_spawn_stream_is_reproducible_but_changes_per_tick", "natural_mob_despawn_respects_persistence_name_leash_and_distance", "natural_despawn_roll_is_stable_per_tick_and_entity", "redstone_signal_sources_are_not_empty_spawn_volumes", "on_ground_support_matches_default_vanilla_predicate", "spawning_requires_the_current_active_chunk_snapshot"]
+dependencies = ["spawning.spawn_placements"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "spawning.drowned"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/entity/monster/zombie/Drowned.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/type.rs", "crates/pumpkin/src/entity/mob/mod.rs"]
+status = "mostly"
+observable_contracts = ["drowned require water at the spawn cell and below", "natural spawn chance is biome/depth dependent", "peaceful and bright positions are rejected"]
+tests = ["cargo test -p pumpkin --lib world::natural_spawner::tests"]
+dependencies = ["spawning.spawn_placements"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "entity.cave_spider_poison"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/entity/monster/spider/CaveSpider.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/mob/cave_spider.rs", "crates/pumpkin/src/entity/mob/mod.rs", "crates/pumpkin/src/entity/ai/goal/melee_attack.rs"]
+status = "mostly"
+observable_contracts = ["Poison is applied only after a successful melee hit", "Normal lasts 7 seconds and Hard lasts 15 seconds", "Easy and Peaceful do not apply the effect"]
+tests = ["cave_spider_poison_duration_matches_vanilla_difficulty", "cargo check -p pumpkin --lib"]
+dependencies = ["entity.damage_pipeline"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "entity.firework_components"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/entity/projectile/FireworkRocketEntity.java", "net/minecraft/world/item/FireworkRocketItem.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/projectile/firework_rocket.rs", "crates/pumpkin/src/item/items/firework_rocket.rs", "crates/pumpkin/src/block/blocks/redstone/dispenser.rs"]
+status = "mostly"
+observable_contracts = ["fireworks component controls lifetime", "ID_FIREWORKS_ITEM metadata preserves the launched stack", "hand-launched elytra rockets pass the exact held stack including flight and explosion components", "use-on-block rockets spawn at click position plus the 0.15 face offset and defer while fall-flying", "dispenser launches preserve component payload", "Life/LifeTime and FireworksItem survive entity NBT round-trip", "rockets with explosion components damage visible living targets within five blocks using vanilla distance scaling"]
+tests = ["lifetime_uses_vanilla_flight_duration_and_random_bounds", "item_component_controls_flight_duration", "placement_position_matches_click_and_face_offset", "explosion_damage_matches_vanilla_radius_and_scaling", "cargo check -p pumpkin --lib"]
+dependencies = ["protocol.entity_metadata", "persistence.item_components"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "item.boat_exact_raycast"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/item/BoatItem.java", "net/minecraft/world/phys/BlockHitResult.java"]
+pumpkin_sources = ["crates/pumpkin/src/item/items/boat.rs", "crates/pumpkin/src/world/mod.rs"]
+status = "mostly"
+observable_contracts = ["boat and raft placement use the ray/AABB entry point rather than the target block centre", "the returned face remains the face of the first intersected outline shape", "legacy block-only raycast callers retain their existing result type"]
+tests = ["raycast_aabb_returns_exact_entry_point_and_face", "cargo test -p pumpkin --lib world::tests::raycast_aabb_returns_exact_entry_point_and_face"]
+dependencies = ["world.raycast", "entity.boat"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "protocol.bedrock_actor_compound_metadata"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/network/protocol/game/ClientboundSetEntityDataPacket.java", "net/minecraft/network/syncher/SynchedEntityData.java"]
+pumpkin_sources = ["crates/pumpkin-protocol/src/bedrock/client/set_actor_data.rs", "crates/pumpkin-nbt/src/serializer.rs"]
+status = "mostly"
+observable_contracts = ["Bedrock CompoundTag entity metadata is encoded with network little-endian/varint NBT instead of returning a stub error", "metadata type id 5 remains stable", "compound values are serialized without mutating the source map"]
+tests = ["compound_tag_metadata_uses_bedrock_network_nbt", "cargo test -p pumpkin-protocol --lib bedrock::client::set_actor_data::tests"]
+dependencies = ["protocol.entity_metadata"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "registry.identifier"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/resources/Identifier.java"]
+pumpkin_sources = ["crates/pumpkin-util/src/identifier.rs"]
+status = "mostly"
+observable_contracts = ["unqualified identifiers use the explicit minecraft namespace", "namespace and path are non-empty and contain only vanilla resource-location characters", "explicit empty namespace/path forms are rejected by parsing and serde codecs", "canonical display always includes the namespace"]
+tests = ["parse", "codec", "cargo test -p pumpkin-util --lib identifier::test"]
+dependencies = []
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "registry.datapack_tags"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/server/packs/resources/ResourceManager.java", "net/minecraft/tags/TagLoader.java", "net/minecraft/server/ReloadableServerResources.java"]
+pumpkin_sources = ["crates/pumpkin/src/server/datapack.rs", "crates/pumpkin/src/server/recipe.rs", "crates/pumpkin/src/server/mod.rs", "crates/pumpkin/src/world/loot.rs", "crates/pumpkin/src/block/blocks/chests.rs", "crates/pumpkin/src/block/entities/mod.rs", "crates/pumpkin/src/command/commands/loot.rs"]
+status = "mostly"
+observable_contracts = ["directory and ZIP datapacks parse data/<namespace>/tags resources", "directory and ZIP datapacks parse data/<namespace>/function/*.mcfunction resources without extracting ZIP files", "an explicitly enabled file pack is reported missing instead of silently replacing the active snapshot with an empty one", "function files strip comments/BOM and reject NUL, oversized lines and oversized command counts before publication", "pack priority appends entries and replace=true clears lower-priority definitions", "later packs override a function with the same canonical resource location", "function tags preserve declaration order, de-duplicate entries, and reject missing required functions", "optional elements and tag references do not abort a reload when absent", "required missing references and cyclic tag graphs abort before the runtime snapshot is published", "recipes, tags and functions are published under one RecipeManager runtime lock with a monotonic generation", "/function executes a function or ordered function tag, continues after a line failure, and caps nested invocation depth", "minecraft:load runs once after startup and every successful reload, while minecraft:tick runs once per normal server tick", "/schedule function supports replace/append, tag callbacks and clear, executes due events in trigger/insertion order, and persists vanilla callback NBT while preserving unknown callbacks"]
+tests = ["tags_follow_pack_priority_replace_and_optional_entries", "tags_reject_required_missing_references_and_cycles_before_publish", "missing_datapack_directory_does_not_clear_an_explicit_pack", "loads_recipe_from_zip_datapack_without_extracting_it", "functions_override_by_pack_priority_and_reject_unsafe_lines", "function_tags_preserve_order_and_require_existing_functions", "canonical_function_id_accepts_namespaced_and_minecraft_short_forms", "replace_append_clear_and_due_follow_timer_queue_rules", "tag_ids_are_distinct_from_function_ids_for_clear_and_listing", "scheduled_function_callbacks_round_trip_and_preserve_unknown_events", "canonicalizes_function_and_function_tag_targets", "cargo test -p pumpkin --lib server::datapack::tests", "cargo test -p pumpkin --lib command::commands::function::tests", "cargo test -p pumpkin --lib server::function_scheduler::tests", "cargo test -p pumpkin-world --lib world_info::data_files::tests"]
+dependencies = ["registry.recipe_keys", "persistence.level_metadata"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "registry.datapack_resources"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/server/packs/resources/ResourceManager.java", "net/minecraft/world/level/storage/loot/entries/DynamicLoot.java", "net/minecraft/advancements/Advancement.java", "net/minecraft/world/level/levelgen/structure/templatesystem/StructureTemplateManager.java"]
+pumpkin_sources = ["crates/pumpkin/src/server/datapack.rs", "crates/pumpkin/src/server/recipe.rs", "crates/pumpkin/src/server/mod.rs"]
+status = "mostly"
+observable_contracts = ["directory and ZIP packs load loot tables, predicates, advancements and binary named/gzip NBT structures", "canonical resource IDs are namespace/path validated and later enabled packs override earlier resources", "malformed JSON shape and invalid/oversized structure NBT reject the complete candidate before publication", "recipes, tags, functions and raw resources publish through one immutable RecipeManager snapshot", "deferred chests and storage minecarts resolve datapack tables before generated vanilla tables, including datapack overrides of minecraft:* keys", "the /loot loot command uses the same datapack table registry and deterministic seed", "unsupported or recursive dynamic loot is rejected without consuming the saved LootTable key"]
+tests = ["loads_raw_resources_and_overrides_them_transactionally", "malformed_raw_resource_rejects_the_entire_candidate", "loads_recipe_from_zip_datapack_without_extracting_it", "datapack_resources_publish_atomically_with_the_recipe_generation", "datapack_chest_loot_is_seeded_and_applies_count_functions", "datapack_chest_loot_rejects_recursive_tables_without_partial_output", "deferred_loot_table_can_be_restored_without_losing_seed", "datapack_minecart_loot_override_is_evaluated_before_static_table", "cargo test -p pumpkin --lib server::datapack::tests"]
+dependencies = ["registry.datapack_tags", "persistence.chunk_unknown_nbt"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "recipe.place_cooking"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/server/network/ServerGamePacketListenerImpl.java", "net/minecraft/world/inventory/RecipeBookMenu.java"]
+pumpkin_sources = ["crates/pumpkin/src/net/java/play.rs", "crates/pumpkin/src/net/java/recipe_helper.rs", "crates/pumpkin-inventory/src/furnace_like/furnace_like_screen_handler.rs"]
+status = "mostly"
+observable_contracts = ["PlaceRecipe fills the single input slot for smelting, blasting and smoking displays", "generated and datapack cooking recipes are accepted only by their matching menu type", "campfire-only displays are not placed into unsupported menus", "use_max and repeat-placement paths use the same inventory transaction as crafting"]
+tests = ["cargo check -p pumpkin --lib", "cargo test -p pumpkin --lib"]
+dependencies = ["recipe.server_book", "inventory.atomic_transaction"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "recipe.server_book"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/stats/ServerRecipeBook.java", "net/minecraft/server/level/ServerPlayer.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/player.rs", "crates/pumpkin/src/server/recipe.rs", "crates/pumpkin/src/command/commands/recipe.rs"]
+status = "mostly"
+observable_contracts = ["known recipes survive player NBT", "recipe command updates server and Java client state", "limited crafting blocks both result-slot commits and serverbound place-recipe requests until the canonical recipe key is known", "player loads and datapack reloads prune recipe-book keys absent from the active vanilla+datapack registry", "Java recipe-book add packets contain only the player's discovered generated and dynamic displays while retaining stable global display IDs", "recipe give/take supports generated vanilla IDs as well as datapack IDs"]
+tests = ["recipe_ids_are_namespaced_for_vanilla_nbt", "limited_crafting_requires_the_canonical_known_recipe_key", "valid_recipe_snapshot_contains_vanilla_and_dynamic_keys", "filtered_recipe_book_keeps_canonical_display_ids"]
+dependencies = ["registry.recipe_keys"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "item.use_remainder"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/item/ItemStack.java", "net/minecraft/world/item/component/UseRemainder.java", "net/minecraft/world/item/ItemStackTemplate.java"]
+pumpkin_sources = ["crates/pumpkin-data/src/data_component_impl/food.rs", "crates/pumpkin-data/src/item_stack/mod.rs", "crates/pumpkin/src/entity/living.rs"]
+status = "mostly"
+observable_contracts = ["vanilla remainder templates are decoded from item data", "the remainder appears only when the final survival stack is consumed", "creative and non-final-stack uses do not create a remainder"]
+tests = ["use_remainder_converts_only_the_exhausted_survival_stack"]
+dependencies = ["persistence.item_components", "recipe.server_book"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "player.hunger_bounds"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/food/FoodData.java", "net/minecraft/world/effect/MobEffect.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/hunger.rs", "crates/pumpkin/src/entity/living.rs"]
+status = "mostly"
+observable_contracts = ["food additions saturate at the 20-point bar even for high datapack values", "saturation and exhaustion reject NaN/negative values and remain within vanilla bounds", "malformed player food NBT cannot wrap counters or create an invalid timer", "cake slices add saturation through the same level-bounded path as other food"]
+tests = ["food_bar_addition_is_saturating_for_datapack_values", "malformed_food_floats_are_bounded", "manual_saturation_respects_current_food_level"]
+dependencies = ["persistence.player_inventory"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "recipe.crafter"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/block/CrafterBlock.java", "net/minecraft/world/level/block/entity/CrafterBlockEntity.java"]
+pumpkin_sources = ["crates/pumpkin/src/block/blocks/redstone/crafter.rs", "crates/pumpkin/src/block/entities/crafter.rs", "crates/pumpkin-inventory/src/crafting/crafting_screen_handler.rs"]
+status = "mostly"
+observable_contracts = ["redstone edge triggers one craft", "placement while powered schedules the same four-tick edge", "falling power clears TRIGGERED and CRAFTING while the block entity mirror follows the state", "vanilla and dynamic crafting recipes are matched", "component-bearing decorated-pot and transmute outputs preserve vanilla result data", "input consumption validates a complete slot snapshot in one write transaction", "use_remainder components take precedence over the generated legacy remainder table and preserve their count", "the crafted result is emitted before one output-path remainder for each consumed ingredient", "output is emitted in orientation direction", "adjacent sided containers receive output only through an allowed insertion face", "hopper insertion rejects disabled slots and follows vanilla lower-count slot ordering", "successful crafting keeps CRAFTING visible for six block-entity ticks and then updates comparator neighbours", "failed pulses never enter the crafting animation", "disabled_slots is written as the vanilla int-array and a non-empty insertion re-enables that slot"]
+tests = ["crafter_inventory_and_disabled_slots_round_trip", "placing_item_reenables_a_disabled_slot", "crafter_uses_vanilla_container_remainders", "crafter_prefers_component_remainder_and_preserves_count", "cargo test -p pumpkin --lib block::entities::crafter"]
+dependencies = ["recipe.runtime_model", "inventory.atomic_transaction"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "redstone.scheduler_order"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/ticks/LevelTicks.java", "net/minecraft/world/level/redstone/NeighborUpdater.java"]
+pumpkin_sources = ["crates/pumpkin-world/src/tick/scheduler.rs", "crates/pumpkin/src/world/mod.rs"]
+status = "mostly"
+observable_contracts = ["scheduled ticks preserve game-time, priority and insertion order", "is_scheduled includes queued and in-flight work", "all overdue entries are drained on a step, so zero-delay callbacks cannot strand a tick in a consumed time bucket"]
+tests = ["scheduler_preserves_priority_and_order", "inflight_tick_still_appears_scheduled", "overdue_zero_delay_tick_runs_on_the_next_step"]
+dependencies = ["world.atomic_mutation"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "world.iterative_neighbor_updates"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/redstone/CollectingNeighborUpdater.java", "net/minecraft/world/level/redstone/NeighborUpdater.java"]
+pumpkin_sources = ["crates/pumpkin/src/world/mod.rs"]
+status = "mostly"
+observable_contracts = ["nested neighbour callbacks are queued instead of recursively growing async futures", "shape-state neighbour replacements use a separate FIFO queue instead of recursively growing through set_block_state", "six-direction update order remains west/east/down/up/north/south", "the chained-update limit drops excess work with a diagnostic instead of overflowing the process"]
+tests = ["cargo test -p pumpkin --lib world::natural_spawner::tests", "cargo check -p pumpkin --lib"]
+dependencies = ["redstone.scheduler_order", "world.atomic_mutation"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "worldgen.structures"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/levelgen/structure/Structure.java"]
+pumpkin_sources = ["crates/pumpkin-world/src/generation/structure"]
+status = "mostly"
+observable_contracts = ["fixed-seed structure placement is deterministic", "template blocks and block entities survive generation"]
+tests = ["structure_fixed_seed_snapshot"]
+dependencies = ["worldgen.rng"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "entity.tracking_chunk_barrier"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/server/level/ChunkMap.java", "net/minecraft/server/level/ServerEntity.java"]
+pumpkin_sources = ["crates/pumpkin/src/world/mod.rs", "crates/pumpkin/src/entity/player.rs", "crates/pumpkin/src/net/mod.rs"]
+status = "mostly"
+observable_contracts = ["entity spawn is not sent before the target chunk", "boundary transitions remove and respawn watchers", "paired IDs suppress duplicate replay", "unload and removal clear paired IDs", "movement, rotation, head-yaw, velocity and metadata deltas require an existing paired ID", "relative movement switches to absolute teleport when fixed-point range overflows", "cancelled chunk sends are retried", "empty/expired chunk batches do not consume the Java ACK window", "generic chunk broadcasts require delivered chunk state", "unload and tracker membership use the live block position rather than a stale cached chunk"]
+tests = ["entity_visibility_transition_only_changes_at_the_boundary", "relative_move_range_uses_teleport_at_fixed_point_overflow", "empty_chunk_batch_does_not_consume_the_ack_window"]
+dependencies = ["protocol.entity_packets"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "persistence.proto_chunk_resume"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/chunk/ProtoChunk.java", "net/minecraft/world/level/chunk/LevelChunk.java"]
+pumpkin_sources = ["crates/pumpkin-world/src/generation/proto_chunk.rs", "crates/pumpkin-world/src/chunk_system/chunk_state.rs"]
+status = "mostly"
+observable_contracts = ["block and fluid scheduled ticks survive ProtoChunk promotion", "pending block entities survive generation resume", "InhabitedTime and forward-compatible root NBT survive the conversion"]
+tests = ["scheduler_block_entities_and_unknown_nbt_survive_proto_resume"]
+dependencies = ["persistence.chunk_unknown_nbt", "tick.fluid_inflight"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "weather.persistence_and_dimensions"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/server/level/ServerLevel.java", "net/minecraft/world/level/saveddata/WeatherData.java"]
+pumpkin_sources = ["crates/pumpkin/src/world/weather.rs", "crates/pumpkin/src/world/mod.rs", "crates/pumpkin-world/src/world_info/data_files.rs"]
+status = "mostly"
+observable_contracts = ["rain and thunder timers survive restart", "forced-clear countdown follows vanilla", "Nether/End/ceiling dimensions cannot have weather"]
+tests = ["weather_data_round_trip_preserves_all_vanilla_fields", "forced_clear_keeps_vanilla_timer_semantics"]
+dependencies = ["persistence.level_metadata"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "inventory.hopper_sided_transfer"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/block/entity/HopperBlockEntity.java", "net/minecraft/world/WorldlyContainer.java", "net/minecraft/world/level/block/entity/AbstractFurnaceBlockEntity.java", "net/minecraft/world/level/block/entity/BrewingStandBlockEntity.java", "net/minecraft/world/level/block/entity/ShulkerBoxBlockEntity.java"]
+pumpkin_sources = ["crates/pumpkin-world/src/inventory/inventory.rs", "crates/pumpkin/src/block/entities/hopper.rs", "crates/pumpkin/src/block/entities/furnace_like_block_entity.rs", "crates/pumpkin/src/block/entities/brewing_stand.rs", "crates/pumpkin/src/block/entities/shulker_box.rs", "crates/pumpkin/src/entity/vehicle/minecart/hopper.rs"]
+status = "mostly"
+observable_contracts = ["hopper insertion/extraction receives the vanilla face direction", "furnace, brewing stand and shulker sided rules are enforced", "storage minecart transfers use the same atomic one-item operation", "full collision blocks above grid-aligned hoppers stop entity pickup unless tagged does_not_block_hoppers"]
+tests = ["cargo test -p pumpkin --lib block::entities::hopper", "cargo test -p pumpkin --lib", "cargo test -p pumpkin-world --lib"]
+dependencies = ["inventory.atomic_transfer"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "inventory.drag_transactions"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/inventory/AbstractContainerMenu.java"]
+pumpkin_sources = ["crates/pumpkin-inventory/src/screen_handler.rs", "crates/pumpkin-inventory/src/slot.rs"]
+status = "mostly"
+observable_contracts = ["quick-craft start/select/end follows the vanilla three-state protocol", "malformed or interleaved clicks reset an unfinished drag without mutating slots", "duplicate selected slots are ignored and full slots still count toward vanilla division", "left drags preserve the exact remainder", "right and creative drags respect per-slot, component, and item max-stack limits", "double-click pickup-all honors button direction and performs partial stacks before full stacks", "malformed oversized counts are widened before stack-combination arithmetic and cannot wrap into duplication"]
+tests = ["cargo test -p pumpkin-inventory --lib"]
+dependencies = ["inventory.atomic_transfer"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "inventory.number_key_swap"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/inventory/AbstractContainerMenu.java", "net/minecraft/world/inventory/Slot.java"]
+pumpkin_sources = ["crates/pumpkin-inventory/src/screen_handler.rs", "crates/pumpkin-inventory/src/slot.rs"]
+status = "mostly"
+observable_contracts = ["number-key swaps exchange non-empty source and hotbar stacks", "oversized stacks are split without duplicating the hotbar remainder", "self-slot number-key actions are no-ops"]
+tests = ["cargo check -p pumpkin-inventory"]
+dependencies = ["inventory.atomic_transfer", "inventory.drag_transactions"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "inventory.menu_lifecycle"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/inventory/AbstractContainerMenu.java", "net/minecraft/world/inventory/StonecutterMenu.java", "net/minecraft/world/inventory/AbstractFurnaceMenu.java", "net/minecraft/world/inventory/BrewingStandMenu.java"]
+pumpkin_sources = ["crates/pumpkin-inventory/src/stonecutter_screen_handler.rs", "crates/pumpkin-inventory/src/furnace_like/furnace_like_screen_handler.rs", "crates/pumpkin-inventory/src/brewing/brewing_screen_handler.rs"]
+status = "mostly"
+observable_contracts = ["owned furnace and brewing inventories receive on_open and on_close around menu lifetime", "stonecutter preview output is cleared on menu removal", "stonecutter input is returned or dropped exactly once on close"]
+tests = ["cargo test -p pumpkin-inventory --lib"]
+dependencies = ["inventory.drag_transactions"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "inventory.click_bounds"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/inventory/AbstractContainerMenu.java", "net/minecraft/network/protocol/game/ServerboundContainerClickPacket.java"]
+pumpkin_sources = ["crates/pumpkin-inventory/src/screen_handler.rs"]
+status = "mostly"
+observable_contracts = ["stale non-negative slot indices are rejected and trigger a resynchronization", "only vanilla cursor/outside sentinels -1 and -999 are accepted as negative slots", "property indices at or beyond the tracked-property length are ignored without indexing or panicking"]
+tests = ["slot_validation_accepts_only_vanilla_sentinels_and_real_slots", "cargo test -p pumpkin-inventory --lib"]
+dependencies = ["inventory.drag_transactions"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "inventory.menu_distance"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/inventory/AbstractContainerMenu.java", "net/minecraft/world/entity/player/Inventory.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/player.rs", "crates/pumpkin-inventory/src/screen_handler.rs"]
+status = "mostly"
+observable_contracts = ["block-backed menus reject slot mutations outside the eye-to-block-AABB interaction range", "the range includes the vanilla blockInteractionRange plus the four-block menu buffer", "block-backed menus reject interaction after their original block is replaced or destroyed", "a rejected interaction resynchronizes the menu instead of indexing or mutating it", "direct/plugin menus without a block position are not accidentally distance-gated"]
+tests = ["cargo test -p pumpkin --lib", "cargo test -p pumpkin-inventory --lib"]
+dependencies = ["inventory.click_bounds", "entity.tracking_chunk_barrier"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "fluid.waterlogging"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/material/FluidState.java", "net/minecraft/world/level/block/LiquidBlockContainer.java", "net/minecraft/world/level/block/SlabBlock.java"]
+pumpkin_sources = ["crates/pumpkin/src/block/fluid/physics.rs", "crates/pumpkin/src/block/fluid/flowing_trait.rs"]
+status = "mostly"
+observable_contracts = ["water fills dry waterloggable states without losing properties", "double slabs and lava are rejected", "a fluid tick is scheduled after waterlogging"]
+tests = ["water_can_fill_dry_waterloggable_states_without_losing_properties", "double_slabs_and_lava_do_not_waterlog"]
+dependencies = ["tick.fluid_inflight"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "dispenser.respawn_anchor_charge"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/block/RespawnAnchorBlock.java", "net/minecraft/core/dispenser/DefaultDispenseItemBehavior.java"]
+pumpkin_sources = ["crates/pumpkin/src/block/blocks/respawn_anchor.rs", "crates/pumpkin/src/block/blocks/redstone/dispenser.rs"]
+status = "mostly"
+observable_contracts = ["glowstone charges a respawn anchor only in the Nether and below four charges", "the player and Dispenser paths share the same state mutation and sound", "failed charge attempts do not consume glowstone"]
+tests = ["cargo check -p pumpkin --lib", "cargo test -p pumpkin --lib"]
+dependencies = []
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "dispenser.spawn_egg_collision"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/core/dispenser/SpawnEggItemBehavior.java", "net/minecraft/util/SpawnUtil.java"]
+pumpkin_sources = ["crates/pumpkin/src/block/blocks/redstone/dispenser.rs"]
+status = "mostly"
+observable_contracts = ["spawn eggs use the centered target block", "a full collision volume rejects the spawn before consuming the egg", "a rejected spawn follows the ordinary dispenser eject path"]
+tests = ["cargo check -p pumpkin --lib", "cargo test -p pumpkin --lib"]
+dependencies = ["spawning.collision_shape_empty_block"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "dispenser.brush"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/item/BrushItem.java"]
+pumpkin_sources = ["crates/pumpkin/src/block/blocks/redstone/dispenser.rs", "crates/pumpkin/src/item/items/brush.rs"]
+status = "mostly"
+observable_contracts = ["a dispenser brushes only suspicious sand/gravel in the target block", "dusted stages advance 0..3 and completion replaces the block and emits archaeology loot", "brush durability is consumed only after a successful special behavior; failed targets eject the brush unchanged"]
+tests = ["suspicious_block_dusted_stage_round_trips_without_losing_state", "cargo test -p pumpkin --lib"]
+dependencies = []
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "fluid.mob_bucket_components"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/item/MobBucketItem.java", "net/minecraft/world/entity/Bucketable.java"]
+pumpkin_sources = ["crates/pumpkin/src/item/items/bucket.rs", "crates/pumpkin/src/item/items/spawn_egg.rs", "crates/pumpkin/src/entity/passive/axolotl.rs", "crates/pumpkin/src/entity/passive/salmon.rs", "crates/pumpkin/src/entity/passive/tropical_fish.rs", "crates/pumpkin-data/src/data_component_impl/block_entity.rs", "crates/pumpkin/src/block/blocks/redstone/dispenser.rs"]
+status = "mostly"
+observable_contracts = ["player and dispenser mob buckets spawn the fish/axolotl/tadpole entity after fluid placement", "bucket entity variant and custom NBT data are restored before spawn", "axolotl variants, salmon sizes and tropical-fish packed pattern/color variants publish Java metadata", "server-owned position, UUID and entity type cannot be overwritten by bucket NBT", "standard NoAI/NoGravity/Silent/Glowing/Invulnerable/PersistenceRequired/Health flags are applied"]
+tests = ["bucket_entity_data_round_trips_custom_nbt", "bucket_entity_data_rejects_non_compound_payload", "tropical_fish_variant_uses_vanilla_packed_layout", "cargo check -p pumpkin --lib"]
+dependencies = ["persistence.item_components", "entity.nbt"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "protocol.java_light_updates"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/network/protocol/game/ClientboundLightUpdatePacketData.java", "net/minecraft/network/protocol/game/ClientboundLightUpdatePacket.java"]
+pumpkin_sources = ["crates/pumpkin-protocol/src/java/client/play/light_update.rs", "crates/pumpkin-protocol/src/java/client/play/chunk_data.rs"]
+status = "mostly"
+observable_contracts = ["live light updates use the same masks and low-nibble-first arrays as the initial chunk packet", "below/above-world padding sections are represented", "custom-height worlds use variable-length bitsets"]
+tests = ["light_masks_reserve_below_and_above_world_sections", "light_masks_support_more_than_one_bitset_word", "light_payload_keeps_vanilla_low_nibble_first_order"]
+dependencies = ["lighting.changed_section_tracking", "protocol.bedrock_light_subchunks"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "lighting.changed_sections"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/server/level/ServerLevel.java", "net/minecraft/server/level/ThreadedLevelLightEngine.java"]
+pumpkin_sources = ["crates/pumpkin-world/src/lighting/runtime.rs", "crates/pumpkin-world/src/chunk/mod.rs", "crates/pumpkin-protocol/src/java/client/play/light_update.rs"]
+status = "mostly"
+observable_contracts = ["unchanged light writes do not produce dirty sections", "live update masks contain only changed sections", "initial chunk light remains complete", "sky-light bounds and no-skylight dimensions come from the active dimension profile"]
+tests = ["filtered_masks_only_include_changed_real_sections", "sky_bounds_follow_dimension_profile", "cargo test -p pumpkin-protocol --lib light_update"]
+dependencies = ["protocol.java_light_updates"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "redstone.comparator_feedback"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/block/ComparatorBlock.java"]
+pumpkin_sources = ["crates/pumpkin/src/block/blocks/redstone/comparator.rs"]
+status = "mostly"
+observable_contracts = ["mode toggle plays comparator click after a successful state change", "subtract and compare modes use their vanilla pitches"]
+tests = ["cargo test -p pumpkin --lib"]
+dependencies = ["redstone.scheduler_order"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "entity.effect_lifecycle"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/effect/MobEffectInstance.java", "net/minecraft/world/entity/LivingEntity.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/living.rs", "crates/pumpkin/src/entity/player.rs", "crates/pumpkin/src/world/mod.rs"]
+status = "mostly"
+observable_contracts = ["weaker or shorter applications do not replace an active effect", "stronger or longer applications update the active instance", "hidden effects are restored after the active instance expires", "entity immunity tags reject infested, oozing, poison and regeneration where vanilla does", "removing a missing effect is a no-op", "effect packets are sent only to delivered entity chunks and preserve client flags"]
+tests = ["weaker_or_shorter_effect_does_not_replace_active_instance", "stronger_or_longer_effect_replaces_active_instance", "cargo test -p pumpkin --lib"]
+dependencies = ["entity.tracking_chunk_barrier", "protocol.entity_metadata"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "protocol.varint_overflow"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/network/VarInt.java", "net/minecraft/network/VarLong.java"]
+pumpkin_sources = ["crates/pumpkin-protocol/src/codec/var_int.rs", "crates/pumpkin-protocol/src/codec/var_uint.rs", "crates/pumpkin-protocol/src/codec/var_long.rs", "crates/pumpkin-protocol/src/codec/var_ulong.rs"]
+status = "mostly"
+observable_contracts = ["valid signed and unsigned values round-trip", "payload bits outside the final representable byte are rejected", "malformed packets return a decode error instead of truncating"]
+tests = ["rejects_overflowing_fifth_byte", "cargo test -p pumpkin-protocol --lib"]
+dependencies = ["protocol.packet_decoder"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "redstone.target_projectiles"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/block/TargetBlock.java"]
+pumpkin_sources = ["crates/pumpkin/src/block/blocks/redstone/target_block.rs", "crates/pumpkin/src/block/mod.rs", "crates/pumpkin/src/world/mod.rs", "crates/pumpkin/src/entity/projectile/mod.rs", "crates/pumpkin/src/entity/projectile/arrow.rs", "crates/pumpkin/src/entity/projectile/trident.rs"]
+status = "mostly"
+observable_contracts = ["target power uses the hit face plane and vanilla ceil/clamp mapping", "AbstractArrow-family impacts, including tridents, hold power for 20 ticks while other projectiles hold it for 8", "target weak and strong redstone output equals the stored power", "target hit statistics are incremented for player-owned arrows and tridents"]
+tests = ["target_power_uses_the_hit_face_plane", "target_activation_window_matches_vanilla_projectile_classes", "cargo test -p pumpkin --lib"]
+dependencies = ["tick.block_inflight", "entity.tracking_chunk_barrier"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "entity.end_crystal_damage"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/entity/boss/enderdragon/EndCrystal.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/decoration/end_crystal.rs", "crates/pumpkin/src/world/dragon_fight.rs"]
+status = "mostly"
+observable_contracts = ["removed or invulnerable crystals reject duplicate damage", "Ender Dragon damage is ignored", "non-explosion damage removes the crystal then creates a power-six explosion", "ENTITY_DIE/EXPLODE events are emitted and dragon-fight respawn state is notified"]
+tests = ["cargo check -p pumpkin --lib", "cargo test -p pumpkin --lib world::game_event::tests"]
+dependencies = ["world.explosion_fire", "entity.lifecycle"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "entity.item_frame_break_drop"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/entity/decoration/ItemFrame.java", "net/minecraft/world/entity/decoration/BlockAttachedEntity.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/decoration/item_frame.rs", "crates/pumpkin/src/world/mod.rs"]
+status = "mostly"
+observable_contracts = ["a non-explosive hit removes a displayed item before breaking the frame", "fixed frames reject ordinary damage and bypass damage removes them without drops", "frame and displayed-item drops honor entity_drops, creative players and item drop chance", "comparator neighbours are updated and BLOCK_CHANGE is emitted for item removal or break"]
+tests = ["cargo check -p pumpkin --lib", "cargo fmt --all -- --check"]
+dependencies = ["entity.painting_break_drop", "world.game_event"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "entity.painting_break_drop"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/entity/decoration/BlockAttachedEntity.java", "net/minecraft/world/entity/decoration/painting/Painting.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/decoration/painting.rs", "crates/pumpkin/src/world/mod.rs"]
+status = "mostly"
+observable_contracts = ["a painting damage race is idempotent", "painting break sound and ENTITY_DIE are emitted before removal", "entity_drops controls the painting item drop", "creative player-caused breaks do not drop a painting"]
+tests = ["cargo check -p pumpkin --lib", "cargo test -p pumpkin --lib world::game_event::tests"]
+dependencies = ["entity.armor_stand_death_event", "world.game_event"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "entity.armor_stand_death_event"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/entity/decoration/ArmorStand.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/decoration/armor_stand.rs", "crates/pumpkin/src/world/mod.rs"]
+status = "mostly"
+observable_contracts = ["all armor-stand kill paths emit ENTITY_DIE before removal", "the event carries the stand block position and source UUID", "sculk listeners can receive the event while the stand is still world-registered"]
+tests = ["cargo check -p pumpkin --lib", "cargo test -p pumpkin --lib world::game_event::tests"]
+dependencies = ["world.game_event", "entity.lifecycle"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "mob.blaze_attack_visibility"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/entity/monster/Blaze.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/ai/goal/blaze_attack.rs"]
+status = "mostly"
+observable_contracts = ["blaze attack goals reject dead targets", "solid collision shapes block both melee and fireball line-of-sight", "close-range attacks use the shared mob damage pipeline", "the follow distance uses the mob FOLLOW_RANGE attribute", "when sight is briefly lost the navigator continues moving for the vanilla five-tick grace window"]
+tests = ["cargo check -p pumpkin --lib", "cargo fmt --all -- --check"]
+dependencies = ["ai.goal_scheduler", "entity.projectile_collision"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "entity.fire_clears_freeze"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/entity/Entity.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/mod.rs"]
+status = "mostly"
+observable_contracts = ["igniting an entity never shortens an existing fire duration", "ignition clears the entity's frozen-tick counter exactly as vanilla clearFreeze does", "very large requested durations saturate instead of wrapping into a negative timer"]
+tests = ["ignition_preserves_longer_fire_duration_and_clears_freeze", "cargo test -p pumpkin --lib entity::tests"]
+dependencies = ["entity.lifecycle"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "entity.creeper_lingering_cloud"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/entity/monster/Creeper.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/mob/creeper.rs", "crates/pumpkin/src/entity/area_effect_cloud.rs"]
+status = "mostly"
+observable_contracts = ["creeper explosions snapshot all active mob effects before death cleanup", "a cloud is spawned only when the creeper has active effects", "the cloud uses vanilla radius, duration, wait, reapplication and shrink parameters", "effect duration, amplifier and visual flags survive the creeper-to-cloud conversion"]
+tests = ["lingering_cloud_keeps_active_effect_parameters", "creeper_without_effects_does_not_create_cloud_entries", "cargo test -p pumpkin --lib entity::mob::creeper::tests"]
+dependencies = ["entity.area_effect_cloud", "world.explosion_fire"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "world.random_tick_sampling"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/server/level/ServerLevel.java", "net/minecraft/world/level/Level.java"]
+pumpkin_sources = ["crates/pumpkin-world/src/level.rs", "crates/pumpkin/src/world/mod.rs"]
+status = "mostly"
+observable_contracts = ["random_tick_speed zero produces no random samples", "random sample positions are reproducible for the same world seed, age and chunk", "active chunks are traversed in coordinate order", "adjacent chunks and adjacent world ages use independent streams so task ordering cannot change sampled positions"]
+tests = ["random_tick_seed_is_reproducible_but_scoped_to_age_and_chunk", "cargo test -p pumpkin-world --lib level::random_tick_tests"]
+dependencies = ["world.simulation_distance"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "block.campfire_projectile_ignition"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/block/CampfireBlock.java", "net/minecraft/world/entity/projectile/Projectile.java"]
+pumpkin_sources = ["crates/pumpkin/src/block/blocks/campfire.rs", "crates/pumpkin/src/block/mod.rs", "crates/pumpkin/src/world/mod.rs", "crates/pumpkin/src/entity/projectile/mod.rs"]
+status = "mostly"
+observable_contracts = ["an on-fire projectile ignites an unlit dry campfire", "lit or waterlogged campfires remain unchanged", "player-owned projectiles must pass the owner's mayInteract range gate", "the state update notifies listeners and neighbors"]
+tests = ["only_unlit_dry_campfires_are_ignited_by_fire_projectiles", "cargo test -p pumpkin --lib block::blocks::campfire"]
+dependencies = ["entity.projectile_collision"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "block.mushroom_random_spread"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/block/MushroomBlock.java"]
+pumpkin_sources = ["crates/pumpkin/src/block/blocks/plant/mushroom_plant.rs"]
+status = "mostly"
+observable_contracts = ["random spread attempts occur once per 25 random ticks", "a 9x3x9 neighbourhood caps the cluster at four nearby mushrooms", "four candidate retries retain vanilla's sequential current-position update", "the final candidate must be empty and pass the light/support survival predicate"]
+tests = ["mushroom_light_rule_matches_vanilla_boundary", "cargo test -p pumpkin --lib block::blocks::plant::mushroom_plant::tests"]
+dependencies = ["world.random_tick_speed", "world.block_shapes"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "item.honeycomb_waxables"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/item/HoneycombItem.java", "net/minecraft/world/level/block/WeatheringCopper.java"]
+pumpkin_sources = ["crates/pumpkin/src/item/items/honeycomb.rs", "crates/pumpkin/src/item/items/mod.rs"]
+status = "mostly"
+observable_contracts = ["all generated copper collections and oxidation stages map to their waxed block", "block state properties survive the replacement", "successful use consumes one honeycomb outside creative mode"]
+tests = ["every_copper_collection_has_a_waxed_equivalent", "cargo test -p pumpkin --lib item::items::honeycomb"]
+dependencies = ["data.generated_blocks"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "block.mushroom_survival_light"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/block/MushroomBlock.java"]
+pumpkin_sources = ["crates/pumpkin/src/block/blocks/plant/mushroom_plant.rs", "crates/pumpkin/src/world/mod.rs"]
+status = "mostly"
+observable_contracts = ["mushrooms survive on solid-render supports below raw brightness 13", "the mushroom-light override tag bypasses the brightness check", "neighbor updates remove mushrooms that become invalid"]
+tests = ["mushroom_light_rule_matches_vanilla_boundary", "cargo test -p pumpkin --lib block::blocks::plant::mushroom_plant"]
+dependencies = ["lighting.raw_brightness"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "item.name_tag_validation"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/item/NameTagItem.java"]
+pumpkin_sources = ["crates/pumpkin/src/item/items/name_tag.rs", "crates/pumpkin/src/entity/mod.rs"]
+status = "mostly"
+observable_contracts = ["only live serializable living entities accept a custom name", "invalid targets and missing names do not consume the item", "successful mob use sets PersistenceRequired and publishes the entity custom-name metadata"]
+tests = ["name_tags_require_a_live_serializable_living_entity_and_name", "cargo check -p pumpkin --lib"]
+dependencies = ["protocol.entity_metadata", "entity.lifecycle"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "world.explosion_fire"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/server/level/ServerLevel.java", "net/minecraft/world/level/Explosion.java", "net/minecraft/world/entity/projectile/hurtingprojectile/Fireball.java"]
+pumpkin_sources = ["crates/pumpkin/src/world/explosion.rs", "crates/pumpkin/src/world/mod.rs", "crates/pumpkin/src/entity/projectile/fireball.rs"]
+status = "mostly"
+observable_contracts = ["ordinary explosions remain non-incendiary", "incendiary sources opt into one-in-three fire placement only on air blocks that pass FireBlock survival checks", "fireball explosions use the incendiary path while TNT/mob/bed explosions do not"]
+tests = ["incendiary_flag_is_opt_in", "cargo test -p pumpkin --lib world::explosion::tests"]
+dependencies = ["world.block_flags", "fluid.weather_rules"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "fluid.fire_near_rain_columns"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/block/FireBlock.java"]
+pumpkin_sources = ["crates/pumpkin/src/block/blocks/fire/fire.rs", "crates/pumpkin/src/world/mod.rs"]
+status = "mostly"
+observable_contracts = ["fire rain checks the fire column and all four horizontal neighbour columns", "rain can extinguish or suppress spread when an adjacent exposed column is wet", "vertical columns are not treated as rain probes"]
+tests = ["rain_probe_matches_vanilla_five_columns", "cargo test -p pumpkin --lib block::blocks::fire::fire::tests"]
+dependencies = ["fluid.weather_rules"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "command.summon_nbt"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/server/commands/SummonCommand.java", "net/minecraft/commands/arguments/CompoundTagArgument.java"]
+pumpkin_sources = ["crates/pumpkin/src/command/args/nbt.rs", "crates/pumpkin/src/command/commands/summon.rs", "crates/pumpkin/src/entity/mod.rs"]
+status = "mostly"
+observable_contracts = ["summon accepts a compound SNBT argument including nested lists and spaces", "the parsed compound is applied through the entity NBT loader before spawn registration", "malformed/non-compound SNBT fails command-path matching instead of spawning a partially configured entity"]
+tests = ["parses_nested_snbt_as_one_argument", "cargo test -p pumpkin --lib command::args::nbt"]
+dependencies = ["entity.nbt", "command.snbt"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "command.worldborder_dimension"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/server/commands/WorldBorderCommand.java", "net/minecraft/commands/CommandSourceStack.java"]
+pumpkin_sources = ["crates/pumpkin/src/command/commands/worldborder.rs", "crates/pumpkin/src/command/mod.rs"]
+status = "mostly"
+observable_contracts = ["player and command-block senders resolve /worldborder against their current dimension", "console, RCON and dummy senders use the first loaded world as the server fallback", "all /worldborder mutations use one resolved world for both state and client updates", "an empty world registry returns a command failure instead of panicking"]
+tests = ["cargo check -p pumpkin --lib"]
+dependencies = ["command.source_world", "world.worldborder"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "player.bed_respawn_offsets"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/block/BedBlock.java", "net/minecraft/server/level/ServerPlayer.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/player.rs"]
+status = "mostly"
+observable_contracts = ["bed stand-up candidates use the player's yaw to choose the preferred side", "the twelve BedBlock offsets are evaluated in vanilla order", "a candidate is accepted only when the shared respawn collision checks succeed"]
+tests = ["bed_spawn_offsets_follow_vanilla_order_and_yaw", "cargo test -p pumpkin --lib entity::player::tests::bed_spawn_offsets_follow_vanilla_order_and_yaw"]
+dependencies = ["entity.respawn_collision", "world.block_shapes"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "player.shared_spawn_finder"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/server/level/PlayerSpawnFinder.java", "net/minecraft/server/level/ServerPlayer.java"]
+pumpkin_sources = ["crates/pumpkin/src/world/mod.rs"]
+status = "mostly"
+observable_contracts = ["initial Java and Bedrock login use the configured respawn_radius search instead of blindly using one column", "candidate chunks are loaded before heightmap/block inspection", "fluid/ocean columns, incomplete upward support faces, world-border violations and occupied player boxes are rejected", "the fallback height fixup remains bounded by the dimension build limits"]
+tests = ["player_spawn_candidates_are_bounded_and_start_at_shared_spawn", "cargo test -p pumpkin --lib world::tests::player_spawn_candidates_are_bounded_and_start_at_shared_spawn"]
+dependencies = ["gamerule.respawn_radius", "world.heightmaps", "world.block_shapes", "world.worldborder"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "block.bed_wake_villager"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/block/BedBlock.java"]
+pumpkin_sources = ["crates/pumpkin/src/block/blocks/bed.rs", "crates/pumpkin/src/entity/mod.rs", "crates/pumpkin/src/entity/mob/mod.rs", "crates/pumpkin/src/entity/passive/villager/mod.rs"]
+status = "mostly"
+observable_contracts = ["an occupied bed wakes a sleeping villager in the head-block volume", "the villager pose and optional sleeping-position metadata are cleared", "a non-villager or a villager outside the one-block volume still receives the occupied message"]
+tests = ["cargo test -p pumpkin --lib"]
+dependencies = ["entity.sleep_mount_lifecycle"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "player.anchor_respawn_dimension_gate"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/block/RespawnAnchorBlock.java", "net/minecraft/server/level/ServerPlayer.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/player.rs", "crates/pumpkin/src/block/blocks/respawn_anchor.rs"]
+status = "mostly"
+observable_contracts = ["ordinary respawn-anchor points are usable only in the Nether", "stale or forged non-Nether anchor NBT returns no respawn point without consuming a charge", "forced /spawnpoint locations keep their explicit command semantics"]
+tests = ["cargo check -p pumpkin --lib"]
+dependencies = ["respawn.cross_dimension", "dispenser.respawn_anchor_charge"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "spawning.collision_shape_empty_block"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/NaturalSpawner.java", "net/minecraft/world/entity/SpawnPlacementTypes.java"]
+pumpkin_sources = ["crates/pumpkin-data/src/block_state.rs", "crates/pumpkin/src/world/natural_spawner.rs"]
+status = "mostly"
+observable_contracts = ["empty spawn volume uses the actual collision shape rather than only the full-cube state flag", "full collision cubes are rejected while air and partial collision states remain eligible for the generic empty-volume check", "fluid, prevent-mob-spawning-inside and dangerous-block filters remain applied"]
+tests = ["collision_shape_full_block_is_not_render_flag_heuristic", "dangerous_blocks_are_not_empty_spawn_volumes", "cargo test -p pumpkin-data --lib block_state::tests", "cargo test -p pumpkin --lib world::natural_spawner::tests"]
+dependencies = ["data.generated_collision_shapes", "spawning.entity_danger_rules"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "player.respawn_client_state_sync"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/server/level/ServerPlayer.java", "net/minecraft/world/entity/LivingEntity.java"]
+pumpkin_sources = ["crates/pumpkin/src/world/mod.rs", "crates/pumpkin/src/entity/living.rs", "crates/pumpkin/src/entity/player.rs"]
+status = "mostly"
+observable_contracts = ["respawn clears active effects, absorption, fire, velocity and fall state before the new world info", "keepInventory respawn explicitly resends the retained XP level/progress after CRespawn", "non-keepInventory respawn resets XP and inventory through the authoritative player setters", "the client receives world info and the center chunk before the final respawn teleport"]
+tests = ["cargo check -p pumpkin --lib"]
+dependencies = ["respawn.cross_dimension", "protocol.java_respawn", "entity.living_reset"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "player.previous_gamemode_persistence"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/server/level/ServerPlayerGameMode.java", "net/minecraft/server/level/ServerPlayer.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/player.rs"]
+status = "mostly"
+observable_contracts = ["a successful gamemode change stores the mode that was active immediately before the change", "previousPlayerGameType survives player NBT round-trip", "a cancelled or no-op gamemode change does not overwrite the previous mode"]
+tests = ["cargo check -p pumpkin --lib"]
+dependencies = ["persistence.player_unknown_nbt", "protocol.gamemode_update"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "entity.fall_death_message_variants"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/damagesource/FallLocation.java", "net/minecraft/world/damagesource/CombatTracker.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/living.rs"]
+status = "mostly"
+observable_contracts = ["fall deaths use the last climbable block to select ladder, vine, scaffolding or other-climbable translation keys", "weeping and twisting vines keep their distinct Java keys", "water deaths use the Bedrock water-specific key while Java retains the generic key available in the translation registry", "water detection follows the fluid tag and therefore includes flowing water and waterlogged states", "entities without a recorded climbable or water location retain the generic fall message"]
+tests = ["fall_location_translation_uses_vanilla_variants", "cargo test -p pumpkin --lib entity::living::tests::fall_location_translation_uses_vanilla_variants"]
+dependencies = ["entity.living_climbable_blocks", "protocol.translation_keys"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "redstone.piston_same_tick_retraction"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/block/piston/PistonBaseBlock.java", "net/minecraft/world/level/block/piston/PistonMovingBlockEntity.java"]
+pumpkin_sources = ["crates/pumpkin/src/block/blocks/piston/piston.rs", "crates/pumpkin/src/block/entities/piston.rs"]
+status = "mostly"
+observable_contracts = ["a moving piston records the game tick in which its block entity tick ran", "same-tick retraction uses the vanilla final-tick event at progress >= 0.5", "honey sticky-entity AABBs use the start-of-tick progress before applying the delta", "block-event processing can observe the server handling-tick phase", "the runtime last-ticked marker is not persisted into block-entity NBT"]
+tests = ["same_tick_moving_piston_uses_final_retraction_event", "honey_sticky_offset_uses_start_of_tick_progress", "cargo test -p pumpkin --lib block::entities::piston::tests"]
+dependencies = ["redstone.scheduler_order", "piston.moving_block_entity"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "worldgen.root_system_water_space"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/levelgen/feature/RootSystemFeature.java"]
+pumpkin_sources = ["crates/pumpkin-world/src/generation/feature/features/root_system.rs"]
+status = "mostly"
+observable_contracts = ["air is always accepted for the tree column", "non-air tree-column blocks are accepted only for water and only within the one-based vanilla vertical allowance", "hanging roots require a sturdy downward face on their support block"]
+tests = ["root_tree_water_allowance_uses_vanilla_one_based_height", "cargo test -p pumpkin-world --lib generation::feature::features::root_system::tests"]
+dependencies = ["worldgen.fluid_state", "data.generated_block_shapes"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "worldgen.sapling_growth_gate"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/block/SaplingBlock.java"]
+pumpkin_sources = ["crates/pumpkin/src/block/blocks/plant/sapling.rs", "crates/pumpkin/src/block/blocks/plant/bamboo_sapling.rs"]
+status = "mostly"
+observable_contracts = ["ordinary saplings advance from stage zero to stage one only on one of seven random ticks", "bone-meal stage advancement remains independent of the random-tick gate", "sapling support and neighbor removal rules remain unchanged", "stage-one configured tree generation is still pending for each sapling species"]
+tests = ["sapling_stage_gate_is_one_in_seven", "cargo test -p pumpkin --lib block::blocks::plant::sapling::tests::sapling_stage_gate_is_one_in_seven"]
+dependencies = ["worldgen.tree_features", "block.random_tick_sampling"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "world.sculk_shrieker_warden_spawn"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/block/entity/SculkShriekerBlockEntity.java", "net/minecraft/util/SpawnUtil.java"]
+pumpkin_sources = ["crates/pumpkin/src/block/blocks/sculk/sculk_shrieker.rs", "crates/pumpkin/src/block/blocks/redstone/sculk_sensor.rs", "crates/pumpkin/src/block/entities/sculk_sensor.rs", "crates/pumpkin/src/block/entities/calibrated_sculk_sensor.rs", "crates/pumpkin/src/block/entities/sculk_shrieker.rs", "crates/pumpkin/src/world/game_event.rs", "crates/pumpkin/src/world/mod.rs"]
+status = "mostly"
+observable_contracts = ["Warden summon uses 20 attempts with ±5 horizontal and ±6 vertical search", "ON_TOP_OF_COLLIDER accepts a full upward support face only when the block above has an empty collision shape", "failed summon attempts emit the warning-level Warden reply sound", "warden spawning is controlled by doWardenSpawning and difficulty rather than doMobSpawning", "sensor activation emits the zero-frequency tendrils-clicking event that shriekers listen for", "ordinary sensors ignore the zero-frequency tendrils-clicking event", "shrieker activation emits the SHRIEK game event and client shriek particle after the state transition", "shriek game events preserve the player/projectile source context for downstream vibration listeners", "shriekers activate from player step or sensor tendrils, reject non-player sources and nearby wardens, and use the shared warning tracker", "spectator/dead nearby players are excluded before warning cooldown checks", "warning level resets on every activation and darkness/reply effects require a positive warning"]
+tests = ["warning_levels_use_vanilla_warden_reply_sounds", "vanilla_frequency_table_and_resonance_clamp_are_stable", "cargo test -p pumpkin --lib block::blocks::sculk::sculk_shrieker", "cargo test -p pumpkin --lib world::game_event::tests"]
+dependencies = ["world.game_event", "data.generated_collision_shapes"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "loot.deterministic_rng"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/storage/loot/LootTable.java", "net/minecraft/world/level/storage/loot/LootPool.java", "net/minecraft/world/level/storage/loot/functions/SetItemCountFunction.java"]
+pumpkin_sources = ["crates/pumpkin/src/world/loot.rs"]
+status = "mostly"
+observable_contracts = ["an explicit loot context seed drives rolls, random conditions, tag expansion, number providers, bonus functions and nested table selection through one stream", "identical context seed and input produce identical item/count signatures", "different context seeds can produce different weighted/count results", "world-bound block, explosion, entity and command sources derive seeds from world seed, position, game time and source salt", "deferred container loot retains its persisted seed", "set-count functions clamp and saturate instead of wrapping u8 counts", "entity loot references to the built-in fishing/fish nested table return fish-only results", "block experience is suppressed when the loot context tool has Silk Touch", "block experience amounts use a separate fixed salt derived from the same context seed"]
+tests = ["seeded_loot_uses_one_repeatable_random_stream", "derived_loot_seed_is_stable_and_source_separated", "location_check_uses_context_biome_and_fails_closed_for_offsets", "location_check_resolves_non_zero_offset_from_containing_block", "nested_guardian_fish_table_returns_fish_only", "silk_touch_suppresses_block_experience_for_every_break_source", "block_experience_seed_is_stable_and_separate_from_loot_seed", "cargo test -p pumpkin --lib world::loot::tests", "cargo test -p pumpkin --lib block::tests"]
+dependencies = ["worldgen.deterministic_rng", "persistence.item_components"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "world.item_scatter_rng"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/Containers.java"]
+pumpkin_sources = ["crates/pumpkin/src/world/mod.rs", "crates/pumpkin/src/world/loot.rs"]
+status = "mostly"
+observable_contracts = ["container drops use the vanilla triangular velocity and stack-splitting ranges", "scatter positions and velocities are derived from the world seed, source position, world age, item identity, original count and source slot", "different inventory slots receive independent deterministic streams even for identical item stacks", "concurrent unrelated drops cannot perturb one another through process-global RNG state", "the same world/source/time/input produces a replay-stable scatter stream"]
+tests = ["cargo check -p pumpkin --lib", "cargo test -p pumpkin --lib world::loot::tests"]
+dependencies = ["world.seed", "entity.item_velocity"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "item.tool_use_damage_pipeline"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/item/AxeItem.java", "net/minecraft/world/item/HoeItem.java", "net/minecraft/world/item/ShovelItem.java", "net/minecraft/world/item/FlintAndSteelItem.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/player.rs", "crates/pumpkin/src/item/items/axe.rs", "crates/pumpkin/src/item/items/hoe.rs", "crates/pumpkin/src/item/items/shovel.rs", "crates/pumpkin/src/item/items/ignite/flint_and_steel.rs"]
+status = "mostly"
+observable_contracts = ["successful tool use applies normal durability and Unbreaking rules", "damage and break plugin events identify the original item even when the stack becomes empty", "a broken tool increments the Broken statistic and emits the main/off-hand break status", "creative and spectator item use does not consume durability", "the network layer commits the mutated snapshot exactly once"]
+tests = ["cargo check -p pumpkin --lib", "cargo test -p pumpkin --lib entity::tests"]
+dependencies = ["persistence.player_inventory", "protocol.entity_status"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "item.hoe_drop_merge"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/item/HoeItem.java", "net/minecraft/world/entity/item/ItemEntity.java"]
+pumpkin_sources = ["crates/pumpkin/src/item/items/hoe.rs", "crates/pumpkin/src/entity/item.rs"]
+status = "mostly"
+observable_contracts = ["rooted-dirt tilling spawns hanging roots through the normal item entity registry", "the new drop immediately uses the lock-ordered ItemEntity merge path", "merging retains the existing vanilla equality, max-stack and pickup-delay rules"]
+tests = ["cargo check -p pumpkin --lib", "cargo test -p pumpkin --lib"]
+dependencies = ["item.tool_use_damage_pipeline", "entity.item_merge"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "mob.blaze_charged_metadata"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/entity/monster/Blaze.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/mob/blaze.rs", "crates/pumpkin/src/entity/ai/goal/blaze_attack.rs"]
+status = "mostly"
+observable_contracts = ["the blaze attack goal raises the charged flag during the multi-fireball sequence", "the flag is emitted through the dedicated Blaze metadata slot", "repeated writes with the same value do not spam metadata packets", "the flag resets after the sequence completes"]
+tests = ["cargo check -p pumpkin --lib"]
+dependencies = ["protocol.entity_metadata", "mob.blaze_attack_visibility"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "player.riptide_spin_pose"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/entity/player/Player.java", "net/minecraft/world/item/TridentItem.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/player.rs", "crates/pumpkin/src/item/items/trident.rs"]
+status = "mostly"
+observable_contracts = ["a successful Riptide launch starts the auto-spin timer", "Riptide uses vanilla LevelBasedValue strength 1.5/2.25/3.0 for enchantment levels I/II/III", "Riptide accepts flowing/touching water and rain via the vanilla isInWaterOrRain rule", "Riptide refuses use when the player is a passenger or the next durability point would break the trident", "grounded Riptide adds the vanilla upward launch impulse", "Riptide plays the strength-specific riptide_1/riptide_2/riptide_3 sound", "the player uses SpinAttack pose and its matching collision dimensions while the timer is positive", "the timer decays once per player tick and cannot underflow", "ordinary trident throws and failed Riptide uses do not enter SpinAttack"]
+tests = ["cargo check -p pumpkin --lib", "cargo test -p pumpkin --lib entity::tests"]
+dependencies = ["item.trident_riptide", "entity.pose_dimensions"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "player.flight_fall_damage"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/entity/player/Player.java", "net/minecraft/world/entity/LivingEntity.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/player.rs", "crates/pumpkin/src/entity/living.rs"]
+status = "mostly"
+observable_contracts = ["flying players reset fall distance at the Player.aiStep boundary when not passengers", "players with abilities.mayfly do not apply fall damage", "fall distance is not accidentally retained across a flight-to-ground transition"]
+tests = ["cargo test -p pumpkin --lib entity::living::tests", "cargo check -p pumpkin --lib"]
+dependencies = ["entity.player_abilities"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "mob.enderman_carried_block_drop"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/entity/monster/EnderMan.java", "net/minecraft/world/level/block/Block.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/living.rs", "crates/pumpkin/src/entity/mob/mod.rs", "crates/pumpkin/src/entity/mob/enderman.rs", "crates/pumpkin/src/block/mod.rs"]
+status = "mostly"
+observable_contracts = ["an Enderman carrying a block evaluates that block's loot table during death drops", "the carried block is consumed exactly once so duplicate death callbacks cannot duplicate drops", "the drop context contains the carried state, death position, biome, world time and a stable entity-specific seed", "the mob_drops gamerule suppresses the custom drop while tile-drops do not incorrectly gate it", "ordinary Enderman deaths without a carried block remain unchanged"]
+tests = ["cargo check -p pumpkin --lib", "cargo test -p pumpkin --lib entity::tests"]
+dependencies = ["entity.death_pipeline", "world.loot_tables", "world.deterministic_rng"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "entity.experience_orb_lifecycle"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/entity/ExperienceOrb.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/experience_orb.rs", "crates/pumpkin/src/world/mod.rs"]
+status = "mostly"
+observable_contracts = ["orb Value, Age and merged Count survive entity-region round-trip", "the Java spawn data carries the orb value", "fresh awards first coalesce into an equal-value nearby orb and reset its age, using the vanilla id modulo-40 gate", "remaining equal-value orbs merge during the 20-tick scan using the same modulo-40 gate", "a merged orb pickup consumes one Count and awards one Value before removing the final count", "orbs follow the nearest non-spectator living player within eight blocks", "water applies 0.99 horizontal drag and a capped upward buoyancy impulse", "lava applies the vanilla random movement impulse", "orbs expire at 6000 ticks"]
+tests = ["cargo test -p pumpkin --lib entity::experience_orb", "cargo check -p pumpkin --lib"]
+dependencies = ["persistence.entity_region_unknown_nbt", "entity.lifecycle"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "player.underwater_mining_speed"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/entity/player/Player.java", "net/minecraft/world/entity/LivingEntity.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/player.rs", "crates/pumpkin/src/entity/breath.rs"]
+status = "mostly"
+observable_contracts = ["the underwater mining penalty is applied only while the player's eyes are below the water surface", "Aqua Affinity on the head equipment slot removes the underwater penalty", "Aqua Affinity on a non-head slot does not remove the penalty", "the airborne penalty remains independent and can stack with the underwater penalty"]
+tests = ["cargo check -p pumpkin --lib", "cargo test -p pumpkin --lib entity::breath"]
+dependencies = ["entity.fluid_state", "item.enchantments"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "entity.living_climbable_blocks"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/entity/LivingEntity.java", "net/minecraft/world/entity/player/Player.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/living.rs", "crates/pumpkin-data/src/generated/block.rs"]
+status = "mostly"
+observable_contracts = ["spectators never become climbable", "Elytra players in can_glide_through blocks do not attach to ladders", "the minecraft:climbable block tag enables ladders, vines, scaffolding and cave vines", "an open trapdoor above a ladder is climbable only when horizontal facings match", "the last climbable block position is cleared when no rule matches"]
+tests = ["cargo check -p pumpkin --lib", "cargo test -p pumpkin --lib entity::tests"]
+dependencies = ["entity.movement", "world.block_state"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "player.swimming_and_flying_travel"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/entity/player/Player.java", "net/minecraft/world/entity/LivingEntity.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/player.rs", "crates/pumpkin/src/entity/living.rs"]
+status = "mostly"
+observable_contracts = ["a new swimming pose requires sprinting, submerged water height, and a water fluid at blockPosition", "an already swimming player remains swimming while touching water without rechecking the start fluid block", "swimming players receive pitch-directed vertical movement with the shallow-look multiplier", "a fluid block above the player's head suppresses the upward swimming assist unless jumping or looking down", "flying players preserve their pre-travel vertical input with the vanilla 0.6 multiplier"]
+tests = ["cargo check -p pumpkin --lib"]
+dependencies = ["entity.movement", "entity.fluid_state"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "entity.armor_helmet_damage_tag"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/entity/LivingEntity.java", "net/minecraft/tags/DamageTypeTags.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/living.rs", "crates/pumpkin-data/src/generated/tag.rs"]
+status = "mostly"
+observable_contracts = ["damage types in minecraft:damages_helmet damage only the head equipment slot", "falling anvil, falling block and falling stalactite use the generated helmet-only tag", "ordinary damage types continue to damage every eligible armor slot", "armor durability still uses raw incoming damage and respects minecraft:bypasses_armor"]
+tests = ["cargo check -p pumpkin --lib", "cargo test -p pumpkin --lib entity::living::tests"]
+dependencies = ["entity.damage_pipeline", "item.equipment_components"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "entity.cross_dimension_transfer"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/entity/Entity.java", "net/minecraft/world/entity/PortalProcessor.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/mod.rs", "crates/pumpkin/src/world/mod.rs"]
+status = "mostly"
+observable_contracts = ["non-player portal teleports remove the entity from the source world's entity and spawn-state registries", "source trackers receive exactly one removal before the destination spawn", "the authoritative world pointer is changed before destination registration", "destination-world entities are initialized and start ticking without setting removed=true", "same-world teleports retain the existing movement path"]
+tests = ["cargo check -p pumpkin --lib", "cargo test -p pumpkin --lib entity::tests"]
+dependencies = ["entity.lifecycle", "world.entity_tracking"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "player.elytra_start_gate"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/entity/player/Player.java", "net/minecraft/network/protocol/game/ServerboundPlayerCommandPacket.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/player.rs", "crates/pumpkin/src/net/java/play.rs"]
+status = "mostly"
+observable_contracts = ["StartFlyingElytra is accepted only while airborne and not a passenger", "the chest equipment item must be minecraft:elytra", "an Elytra whose next durability point would break is rejected", "active fall flying is cleared when grounding or losing/breaking the Elytra"]
+tests = ["cargo check -p pumpkin --lib", "cargo test -p pumpkin --lib entity::tests"]
+dependencies = ["item.durability", "entity.vehicle"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "entity.elytra_flight_integrator"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/entity/LivingEntity.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/living.rs"]
+status = "mostly"
+observable_contracts = ["fall-flying uses pitch-dependent lift instead of ordinary gravity travel", "horizontal velocity is steered toward the look vector and receives vanilla Elytra drag", "ladder and vine contact stops fall flying", "high-speed horizontal collisions apply fly_into_wall damage from the post-collision speed loss"]
+tests = ["cargo check -p pumpkin --lib"]
+dependencies = ["entity.movement", "entity.damage_pipeline"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "entity.predicate.valid_inventories"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/entity/EntitySelector.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/predicate/mod.rs"]
+status = "mostly"
+observable_contracts = ["alive chest and hopper minecarts are accepted as entity inventories", "ordinary minecarts, players, mobs and removed inventory entities are rejected"]
+tests = ["cargo check -p pumpkin --lib"]
+dependencies = ["entity.lifecycle", "entity.vehicle"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "dispenser.trigger_on_place"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/block/DispenserBlock.java"]
+pumpkin_sources = ["crates/pumpkin/src/block/blocks/redstone/dispenser.rs"]
+status = "mostly"
+observable_contracts = ["placement while powered sets TRIGGERED", "the placement callback schedules one four-tick dispense", "ordinary rising and falling redstone edges retain the same trigger state machine"]
+tests = ["cargo check -p pumpkin --lib"]
+dependencies = ["redstone.scheduler_order", "block.lifecycle"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "dispenser.water_potion_and_golem_blocks"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/core/dispenser/DispenseItemBehavior.java", "net/minecraft/world/level/block/CarvedPumpkinBlock.java"]
+pumpkin_sources = ["crates/pumpkin/src/block/blocks/redstone/dispenser.rs", "crates/pumpkin/src/block/blocks/carved_pumpkin.rs"]
+status = "mostly"
+observable_contracts = ["a water potion converts only blocks in minecraft:convertable_to_mud and returns a glass bottle", "non-water ordinary potions use the default eject behavior", "carved pumpkins are dispensed only onto a valid snow or iron golem base", "successful special behaviors consume exactly one source item and emit block/fluid-place events"]
+tests = ["cargo check -p pumpkin --lib"]
+dependencies = ["dispenser.registry", "block.lifecycle", "persistence.item_components"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "player.sleeping_pos_persistence"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/entity/LivingEntity.java", "net/minecraft/world/entity/player/Player.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/player.rs"]
+status = "mostly"
+observable_contracts = ["sleeping is true exactly while a sleeping bed position exists", "sleeping_pos round-trips as the vanilla BlockPos IntArray", "a reloaded sleeper restores the sleeping pose", "wake_up clears sleeping state even when respawn-point metadata is unavailable"]
+tests = ["cargo check -p pumpkin --lib"]
+dependencies = ["persistence.player_unknown_nbt", "block.bed"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "entity.dismount_game_event"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/entity/Entity.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/mod.rs", "crates/pumpkin/src/world/mod.rs", "crates/pumpkin/src/world/game_event.rs"]
+status = "mostly"
+observable_contracts = ["live mounting emits ENTITY_MOUNT at the vehicle block position", "dismount emits ENTITY_DISMOUNT at the old vehicle block position", "the passenger UUID is preserved as the vibration source", "mount/dismount events are dispatched before client position updates", "loading a persisted passenger graph does not replay gameplay vibrations"]
+tests = ["cargo check -p pumpkin --lib", "cargo test -p pumpkin --lib world::game_event::tests"]
+dependencies = ["world.game_event", "entity.vehicle"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "entity.armor_stand_damage_tags"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/entity/decoration/ArmorStand.java", "net/minecraft/tags/DamageTypeTags.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/decoration/armor_stand.rs", "crates/pumpkin-data/src/generated/tag.rs"]
+status = "mostly"
+observable_contracts = ["in_fire and campfire damage types ignite an armor stand for five seconds", "repeated ignition applies 0.15 damage while already burning", "on_fire damage applies four damage while health is above 0.5", "mob_griefing suppresses only Mob-originated damage rather than projectiles or vehicles"]
+tests = ["cargo check -p pumpkin --lib"]
+dependencies = ["entity.damage_pipeline", "entity.fire_state"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "mob.enderman_block_pickup_event"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/entity/monster/EnderMan.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/ai/goal/pick_up_block.rs", "crates/pumpkin/src/world/game_event.rs"]
+status = "mostly"
+observable_contracts = ["a successful Enderman block pickup emits BLOCK_DESTROY at the removed block position", "the Enderman UUID is retained as the game-event source", "the event is emitted only after the block mutation succeeds"]
+tests = ["cargo check -p pumpkin --lib", "cargo test -p pumpkin --lib world::game_event::tests"]
+dependencies = ["world.game_event", "mob.enderman_carried_block"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "block.chiseled_bookshelf_item_used_stat"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/block/ChiseledBookShelfBlock.java", "net/minecraft/world/entity/player/Player.java"]
+pumpkin_sources = ["crates/pumpkin/src/block/blocks/chiseled_bookshelf.rs", "crates/pumpkin/src/entity/player.rs"]
+status = "mostly"
+observable_contracts = ["inserting a book into an empty chiseled-bookshelf slot increments ITEM_USED for that exact item", "the statistic is awarded once at the authoritative insertion boundary in both creative and survival", "failed insertion and book removal do not award the insertion statistic"]
+tests = ["cargo check -p pumpkin --lib"]
+dependencies = ["inventory.chiseled_bookshelf", "player.statistics"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "block.chest_cat_occlusion"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/block/ChestBlock.java", "net/minecraft/world/level/block/EnderChestBlock.java"]
+pumpkin_sources = ["crates/pumpkin/src/block/blocks/chests.rs", "crates/pumpkin/src/block/blocks/ender_chest.rs"]
+status = "mostly"
+observable_contracts = ["a solid block above a chest or ender chest prevents opening", "a live cat whose bounding box intersects the block volume above and whose pose is sitting prevents opening", "unrelated entities, dead cats and cats beside the chest do not block it"]
+tests = ["cargo check -p pumpkin --lib"]
+dependencies = ["entity.lifecycle", "entity.pose", "inventory.chest"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "block.plant_fluid_support"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/block/LilyPadBlock.java", "net/minecraft/world/level/block/SugarCaneBlock.java"]
+pumpkin_sources = ["crates/pumpkin-world/src/world.rs", "crates/pumpkin/src/block/blocks/plant/lily_pad.rs", "crates/pumpkin/src/block/blocks/plant/sugar_cane.rs"]
+status = "mostly"
+observable_contracts = ["lily pads accept either a supporting fluid tag or supporting block tag", "lily pads require an empty fluid state above rather than merely an air block", "sugar cane accepts adjacent fluid or block support tags", "waterlogged and flowing states are resolved through the shared BlockAccessor fluid API"]
+tests = ["cargo check -p pumpkin --lib"]
+dependencies = ["block.lifecycle", "fluid.state", "world.block_accessor"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "block.sea_pickle_bonemeal_diamond"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/block/SeaPickleBlock.java"]
+pumpkin_sources = ["crates/pumpkin/src/block/blocks/plant/sea_pickles.rs"]
+status = "mostly"
+observable_contracts = ["bonemeal probes the vanilla five-column 1-3-5-3-1 diamond", "each candidate uses the one-in-six water/coral placement gate", "successful growth sets the target pickle count to one through four and the source to four", "the candidate window is bounded to the same two blocks below the source as vanilla"]
+tests = ["cargo check -p pumpkin --lib"]
+dependencies = ["block.lifecycle", "item.bonemeal", "random.server"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "mob.nautilus_spawn_rules"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/entity/animal/nautilus/AbstractNautilus.java", "net/minecraft/world/entity/SpawnPlacements.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/type.rs", "crates/pumpkin/src/entity/mob/mod.rs"]
+status = "mostly"
+observable_contracts = ["nautiluses spawn only between sea level minus 25 and minus 5 inclusive", "the block below is water and the block above is the WATER block", "the explicit predicate is selected before the generic InWater fallback"]
+tests = ["cargo check -p pumpkin --lib"]
+dependencies = ["world.fluid_state", "world.sea_level", "mob.spawn_rules"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "block.big_dripleaf_projectile_tilt"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/block/BigDripleafBlock.java"]
+pumpkin_sources = ["crates/pumpkin/src/block/blocks/plant/big_dripleaf.rs"]
+status = "mostly"
+observable_contracts = ["a projectile hit forces the leaf to FULL tilt", "the tilt-down sound is emitted once", "recovery is scheduled with the vanilla 100-tick delay"]
+tests = ["cargo check -p pumpkin --lib"]
+dependencies = ["block.projectile_hit", "block.scheduled_tick", "block.big_dripleaf"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "block.tripwire_ignored_triggers"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/block/TripWireBlock.java", "net/minecraft/world/entity/Entity.java", "net/minecraft/world/entity/ambient/Bat.java", "net/minecraft/world/entity/decoration/ArmorStand.java"]
+pumpkin_sources = ["crates/pumpkin/src/block/blocks/redstone/tripwire.rs", "crates/pumpkin/src/entity/mod.rs", "crates/pumpkin/src/entity/decoration/armor_stand.rs"]
+status = "mostly"
+observable_contracts = ["spectators and removed entities do not hold tripwire powered", "bats and marker armor stands are ignored by tripwire trigger checks", "ordinary entities and non-spectator players keep tripwire powered", "the scheduled recheck still uses the tripwire block shape"]
+tests = ["cargo check -p pumpkin --lib"]
+dependencies = ["block.tripwire", "entity.lifecycle", "entity.decoration"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "block.infested_silverfish_spawn"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/level/block/InfestedBlock.java", "net/minecraft/world/level/block/state/BlockBehaviour.java"]
+pumpkin_sources = ["crates/pumpkin/src/block/blocks/infested.rs", "crates/pumpkin/src/block/registry.rs", "crates/pumpkin/src/block/mod.rs"]
+status = "mostly"
+observable_contracts = ["breaking an infested block in survival spawns one silverfish at the block position", "the block_drops gamerule suppresses the infestation side effect", "creative breaks and Silk Touch tools suppress silverfish spawning", "the held tool is captured at the authoritative break boundary"]
+tests = ["cargo check -p pumpkin --lib"]
+dependencies = ["block.break_context", "gamerule.block_drops", "enchantment.prevents_infested_spawns"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "item.sulfur_cube_bucket"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/item/Items.java", "net/minecraft/world/item/MobBucketItem.java", "net/minecraft/core/dispenser/DispenseItemBehavior.java"]
+pumpkin_sources = ["crates/pumpkin/src/item/items/bucket.rs", "crates/pumpkin/src/entity/type.rs"]
+status = "mostly"
+observable_contracts = ["the sulfur-cube bucket is recognized as a filled mob bucket", "emptying it does not place water, lava or powder snow because its vanilla content is Fluids.EMPTY", "the sulfur cube is spawned at the target block for both player and dispenser use", "the bucket entity-data component is applied without allowing position, UUID or type spoofing"]
+tests = ["cargo check -p pumpkin --lib"]
+dependencies = ["item.bucket_entity_data", "entity.type", "dispenser.filled_bucket"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "entity.sulfur_cube_runtime"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/entity/monster/cubemob/SulfurCube.java", "net/minecraft/world/item/MobBucketItem.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/mob/sulfur_cube.rs", "crates/pumpkin/src/entity/type.rs"]
+status = "mostly"
+observable_contracts = ["bucket-spawned sulfur cubes are created with the sulfur-cube registry type instead of generic LivingEntity", "the cube participates in authoritative movement, collision, mob tick, split and NBT persistence paths", "custom bucket entity data cannot replace runtime position, UUID or type"]
+tests = ["cargo check -p pumpkin --lib"]
+dependencies = ["entity.cube_state_machine", "entity.type", "item.sulfur_cube_bucket"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "block.dispenser_optional_order_and_tnt_rule"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/core/dispenser/DispenseItemBehavior.java", "net/minecraft/core/dispenser/EquipmentDispenseItemBehavior.java"]
+pumpkin_sources = ["crates/pumpkin/src/block/blocks/redstone/dispenser.rs", "crates/pumpkin/src/world/mod.rs"]
+status = "mostly"
+observable_contracts = ["carved pumpkin tries golem assembly before generic head equipment", "a failed golem assembly may still equip the pumpkin on a valid living target", "tnt_explodes=false leaves TNT unprimed and follows the ordinary dispenser eject path", "successful TNT dispense consumes exactly one item and emits the entity-place event"]
+tests = ["cargo check -p pumpkin --lib"]
+dependencies = ["gamerule.tnt_explodes", "dispenser.equipment", "dispenser.golem_assembly"]
+last_verified_commit = "working-tree"
+
+[[contract]]
+id = "block.dispenser_wither_skull_placement"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/core/dispenser/DispenseItemBehavior.java", "net/minecraft/world/level/block/WitherSkullBlock.java"]
+pumpkin_sources = ["crates/pumpkin/src/block/blocks/redstone/dispenser.rs", "crates/pumpkin/src/block/blocks/wither_skull.rs"]
+status = "mostly"
+observable_contracts = ["a target with a valid soul-sand/soil base receives a dispenser-oriented wither skull state", "peaceful or below-build-limit candidates fall back without consuming the skull", "the normal skull placed callback checks the soul-sand pattern and can spawn a wither", "a blocked or base-less target falls back to equipment/default dispense without consuming the skull", "the block-place vibration is emitted only after successful placement"]
+tests = ["cargo check -p pumpkin --lib"]
+dependencies = ["block.wither_skull", "dispenser.equipment", "entity.wither"]
+last_verified_commit = "working-tree"

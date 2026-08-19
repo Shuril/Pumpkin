@@ -17,7 +17,7 @@ use pumpkin_data::BlockStateId;
 use pumpkin_data::block_properties::{BlockProperties, Facing};
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::world::WorldEvent;
-use pumpkin_data::{FacingExt, translation};
+use pumpkin_data::{Block, FacingExt, translation};
 use pumpkin_inventory::generic_container_screen_handler::create_generic_3x3;
 use pumpkin_inventory::player::player_inventory::PlayerInventory;
 use pumpkin_inventory::screen_handler::{
@@ -170,23 +170,32 @@ impl BlockBehaviour for DropperBlock {
                     if let Some(entity) = args.world.get_block_entity(&target_pos)
                         && let Some(container) = entity.get_inventory()
                     {
-                        let backup = item.clone();
-                        let one_item = item.split(1);
+                        let one_item = item.copy_with_count(1);
 
-                        if HopperBlockEntity::add_one_item(dropper, container.as_ref(), one_item)
-                            .await
+                        if HopperBlockEntity::add_one_item(
+                            dropper,
+                            container.as_ref(),
+                            one_item,
+                            props.facing.to_block_direction().opposite(),
+                        )
+                        .await
                         {
+                            item.decrement(1);
                             dropper.set_stack(slot_index, item).await;
+                            args.world
+                                .update_comparators(args.position, &Block::DROPPER)
+                                .await;
                             return;
                         }
-
-                        dropper.set_stack(slot_index, backup).await;
                         return;
                     }
 
                     // No container found, dispense item into the world
                     let drop_item = item.split(1);
                     dropper.set_stack(slot_index, item).await;
+                    args.world
+                        .update_comparators(args.position, &Block::DROPPER)
+                        .await;
                     let facing = to_normal(props.facing);
                     let mut position = args.position.to_centered_f64().add(&(facing * 0.7));
 

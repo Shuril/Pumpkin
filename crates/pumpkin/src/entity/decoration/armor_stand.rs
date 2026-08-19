@@ -12,6 +12,7 @@ use pumpkin_data::{
     item::Item,
     particle::Particle,
     sound::{Sound, SoundCategory},
+    tag::{self, Taggable},
 };
 use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
 use pumpkin_util::math::{euler_angle::EulerAngle, vector3::Vector3};
@@ -189,15 +190,31 @@ impl ArmorStandEntity {
 
     async fn break_and_drop_items(&self) {
         let entity = self.get_entity();
+        let world = entity.world.load();
+        let position = entity.block_pos.load();
         //let name = entity.custom_name.unwrap_or(entity.get_name());
 
         //TODO: i am stupid! let armor_stand_item = ItemStack::new_with_component(1, &Item::ARMOR_STAND, vec![(DataComponent::CustomName, self.get_custom_name())]);
         let armor_stand_item = ItemStack::new(1, &Item::ARMOR_STAND);
-        entity
-            .world
-            .load()
-            .drop_stack(&entity.block_pos.load(), armor_stand_item)
-            .await;
+        world.drop_stack(&position, armor_stand_item).await;
+
+        // Armor stands use the same ordered equipment slots as living entities,
+        // but unlike a normal mob every equipped item is guaranteed to drop
+        // when the stand is broken.  Snapshot the map before awaiting entity
+        // spawns so no async world operation occurs while the mutex is held.
+        let equipment = {
+            let mut guard = self.living_entity.entity_equipment.lock().await;
+            guard
+                .equipment
+                .drain()
+                .map(|(_, stack)| stack)
+                .collect::<Vec<_>>()
+        };
+        for stack in equipment {
+            if !stack.is_empty() {
+                world.drop_stack(&position, stack).await;
+            }
+        }
 
         Self::on_break(entity);
     }
@@ -209,8 +226,6 @@ impl ArmorStandEntity {
             SoundCategory::Neutral,
             &entity.pos.load(),
         );
-
-        // TODO: Implement equipment slots and make them drop all of their stored items.
     }
 
     /// Spawns break particles at the armor stand's position.
@@ -309,6 +324,10 @@ impl EntityBase for ArmorStandEntity {
         &self.living_entity.entity
     }
 
+    fn is_ignoring_block_triggers(&self) -> bool {
+        self.is_marker()
+    }
+
     fn get_living_entity(&self) -> Option<&LivingEntity> {
         Some(&self.living_entity)
     }
@@ -319,8 +338,20 @@ impl EntityBase for ArmorStandEntity {
 
     fn kill<'a>(&'a self, _caller: &'a dyn EntityBase) -> EntityBaseFuture<'a, ()> {
         Box::pin(async move {
-            self.get_entity().remove().await;
-            // TODO: emit GameEvent::ENTITY_DIE
+            let entity = self.get_entity();
+            let world = entity.world.load();
+            // `kill` is the single removal boundary used by both direct
+            // attacks and explosion/projectile paths.  Emit the vibration
+            // before discard so sculk listeners can observe the final block
+            // position and the entity UUID context.
+            world
+                .emit_game_event_from(
+                    entity.block_pos.load(),
+                    crate::world::game_event::GameEventKind::EntityDie,
+                    Some(entity.entity_uuid),
+                )
+                .await;
+            entity.remove().await;
         })
     }
 
@@ -346,7 +377,14 @@ impl EntityBase for ArmorStandEntity {
                 game_rules.mob_griefing
             };
 
-            if !mob_griefing_gamerule && source.is_some_and(|source| source.get_player().is_none())
+            // Vanilla's MOB_GRIEFING guard applies only to Mob sources.  A
+            // projectile or vehicle without a player owner is not a mob and
+            // must still be able to damage an armor stand when the rule is
+            // disabled.
+            if !mob_griefing_gamerule
+                && source.is_some_and(|source| {
+                    source.get_player().is_none() && source.get_entity().entity_type.mob
+                })
             {
                 return false;
             }
@@ -377,8 +415,27 @@ impl EntityBase for ArmorStandEntity {
                 return false;
             }
 
-            // TODO: IGNITES_ARMOR_STANDS (in_fire, campfire) - set on fire
-            // TODO: BURNS_ARMOR_STANDS (on_fire) - reduce health
+            if damage_type.has_tag(&tag::DamageType::MINECRAFT_IGNITES_ARMOR_STANDS) {
+                if entity.fire_ticks.load(Ordering::Relaxed) > 0 {
+                    // Armor stands take the small repeated ignition damage
+                    // only when they are already burning.
+                    self.living_entity
+                        .damage_with_context(caller, 0.15, damage_type, None, source, cause)
+                        .await;
+                } else {
+                    entity.set_on_fire_for(5.0);
+                }
+                return false;
+            }
+
+            if damage_type.has_tag(&tag::DamageType::MINECRAFT_BURNS_ARMOR_STANDS)
+                && self.living_entity.health.load() > 0.5
+            {
+                self.living_entity
+                    .damage_with_context(caller, 4.0, damage_type, None, source, cause)
+                    .await;
+                return false;
+            }
 
             let can_break = damage_type == DamageType::PLAYER_EXPLOSION
                 || damage_type == DamageType::PLAYER_ATTACK

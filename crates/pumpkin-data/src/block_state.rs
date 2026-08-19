@@ -122,6 +122,16 @@ impl BlockState {
         self.state_flags & IS_SOLID_BLOCK != 0
     }
 
+    /// Returns `isSolidRender()` from Java Edition.
+    ///
+    /// The cached opacity matches that predicate for every block state except
+    /// tinted glass, which deliberately blocks all light without being a solid
+    /// render block.
+    #[must_use]
+    pub const fn is_solid_render(&self) -> bool {
+        self.opacity == 15 && self.id.to_block().id.as_u16() != Block::TINTED_GLASS.id.as_u16()
+    }
+
     #[must_use]
     pub const fn has_random_ticks(&self) -> bool {
         self.state_flags & HAS_RANDOM_TICKS != 0
@@ -176,6 +186,20 @@ impl BlockState {
         self.collision_shapes
             .iter()
             .map(|&id| COLLISION_SHAPES[id as usize])
+    }
+
+    /// Returns the vanilla `isCollisionShapeFullBlock` result.
+    ///
+    /// This deliberately uses the runtime collision shape instead of the
+    /// generated `is_full_cube` flag.  The latter describes rendering/state
+    /// metadata and is not sufficient for spawn placement: a state can have a
+    /// non-cubic collision shape while still being marked solid, and custom
+    /// state data can expose the inverse as well.
+    #[must_use]
+    pub fn is_collision_shape_full_block(&self) -> bool {
+        self.get_block_collision_shapes().any(|shape| {
+            shape.min == Vector3::new(0.0, 0.0, 0.0) && shape.max == Vector3::new(1.0, 1.0, 1.0)
+        })
     }
 
     pub fn get_block_outline_shapes(&self) -> impl Iterator<Item = BoundingBox> + '_ {
@@ -281,3 +305,30 @@ const WEST_SIDE_SOLID: u8 = 1 << 4;
 const EAST_SIDE_SOLID: u8 = 1 << 5;
 const DOWN_CENTER_SOLID: u8 = 1 << 6;
 const UP_CENTER_SOLID: u8 = 1 << 7;
+
+#[cfg(test)]
+mod tests {
+    use super::Block;
+
+    #[test]
+    fn solid_render_distinguishes_occlusion_from_collision_and_conduction() {
+        assert!(Block::STONE.default_state.is_solid_render());
+        assert!(Block::GLOWSTONE.default_state.is_solid_render());
+        assert!(Block::REDSTONE_BLOCK.default_state.is_solid_render());
+        assert!(!Block::GLASS.default_state.is_solid_render());
+        assert!(!Block::SLIME_BLOCK.default_state.is_solid_render());
+        assert!(!Block::TINTED_GLASS.default_state.is_solid_render());
+    }
+
+    #[test]
+    fn collision_shape_full_block_is_not_render_flag_heuristic() {
+        assert!(Block::STONE.default_state.is_collision_shape_full_block());
+        assert!(Block::GLASS.default_state.is_collision_shape_full_block());
+        assert!(!Block::AIR.default_state.is_collision_shape_full_block());
+        assert!(
+            !Block::OAK_TRAPDOOR
+                .default_state
+                .is_collision_shape_full_block()
+        );
+    }
+}

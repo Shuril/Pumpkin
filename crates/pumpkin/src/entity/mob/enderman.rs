@@ -9,10 +9,12 @@ use pumpkin_data::{BlockStateId, attributes::Attributes};
 
 use crossbeam::atomic::AtomicCell;
 use pumpkin_data::{
+    BlockState,
     damage::DamageType,
     data_component_impl::EquipmentSlot,
     entity::EntityType,
     item::Item,
+    item_stack::ItemStack,
     meta_data_type::MetaDataType,
     particle::Particle,
     sound::{Sound, SoundCategory},
@@ -43,6 +45,7 @@ use crate::entity::{
     mob::{Mob, MobEntity},
     player::Player,
 };
+use crate::world::loot::{LootContextParameters, LootTableExt, derive_loot_seed};
 
 const SPEED_BOOST: f64 = 0.15;
 const ENDERMAN_SPEED_BOOST_ID: &str = "minecraft:attacking";
@@ -448,7 +451,53 @@ impl Mob for EndermanEntity {
         })
     }
 
-    // TODO: sunlight avoidance, carried block drop on death, angerable system, ambient sound override
+    // TODO: angerable system, ambient sound override
+    fn mob_drop_custom_death_loot(&self) -> crate::entity::EntityBaseFuture<'_, ()> {
+        Box::pin(async move {
+            let Some(carried_state) = self.carried_block.take() else {
+                return;
+            };
+
+            let entity = &self.mob_entity.living_entity.entity;
+            let world = entity.world.load();
+            if !world.level_info.load().game_rules.mob_drops {
+                return;
+            }
+
+            // Vanilla uses an enchanted diamond axe as the synthetic tool for
+            // Enderman carried-block drops.  The generated block loot table
+            // still decides whether the state yields an item and which item it
+            // yields.  Do not route this through block::drop_loot: that helper
+            // also gates tile drops, whereas vanilla Enderman custom drops are
+            // governed by the mob-loot gamerule only.
+            let block_state = BlockState::from_id(carried_state);
+            let block = pumpkin_data::Block::from_state_id(carried_state);
+            let position = entity.pos.load();
+            let world_time = world.level_info.load().day_time as u64;
+            let entity_uuid = entity.entity_uuid.as_u128();
+            let mut params = LootContextParameters {
+                block_state: Some(block_state),
+                position: Some(position),
+                biome: Some(world.get_biome(&entity.block_pos.load()).registry_id),
+                world_time,
+                tool: Some(ItemStack::new(1, &Item::DIAMOND_AXE)),
+                random_seed: Some(derive_loot_seed(
+                    world.level.seed.0,
+                    Some(position),
+                    world_time,
+                    (entity_uuid as u64) ^ ((entity_uuid >> 64) as u64) ^ 0x454e4445524d414e,
+                )),
+                ..Default::default()
+            };
+            params.attach_biome_resolver(&world);
+            if let Some(loot_table) = &block.loot_table {
+                for stack in loot_table.get_loot(params) {
+                    world.drop_stack(&entity.block_pos.load(), stack).await;
+                }
+            }
+        })
+    }
+
     fn mob_tick<'a>(&'a self, _caller: &'a Arc<dyn EntityBase>) -> GoalFuture<'a, ()> {
         Box::pin(async move {
             let entity = &self.mob_entity.living_entity.entity;

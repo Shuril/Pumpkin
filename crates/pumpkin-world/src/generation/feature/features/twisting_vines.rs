@@ -1,4 +1,7 @@
-use pumpkin_data::Block;
+use pumpkin_data::{
+    Block, BlockState,
+    block_properties::{BlockProperties, KelpLikeProperties},
+};
 use pumpkin_util::{
     math::position::BlockPos,
     random::{RandomGenerator, RandomImpl},
@@ -29,12 +32,12 @@ impl TwistingVinesFeature {
         let mut placed = false;
 
         for _ in 0..self.spread_width * self.spread_width {
-            let offset_x = random.next_bounded_i32(self.spread_width)
-                - random.next_bounded_i32(self.spread_width);
-            let offset_y = random.next_bounded_i32(self.spread_height)
-                - random.next_bounded_i32(self.spread_height);
-            let offset_z = random.next_bounded_i32(self.spread_width)
-                - random.next_bounded_i32(self.spread_width);
+            // Mth.nextInt(random, -spread, spread) is inclusive at both
+            // ends.  A difference of two bounded draws (the old code) never
+            // reached either edge and consumed twice as many RNG values.
+            let offset_x = random.next_bounded_i32(self.spread_width * 2 + 1) - self.spread_width;
+            let offset_y = random.next_bounded_i32(self.spread_height * 2 + 1) - self.spread_height;
+            let offset_z = random.next_bounded_i32(self.spread_width * 2 + 1) - self.spread_width;
 
             let mut mutable_pos = pos.add(offset_x, offset_y, offset_z);
 
@@ -45,7 +48,7 @@ impl TwistingVinesFeature {
                 if random.next_bounded_i32(6) == 0 {
                     height *= 2;
                 }
-                if random.next_bounded_i32(10) == 0 {
+                if random.next_bounded_i32(5) == 0 {
                     height = 1;
                 }
 
@@ -77,12 +80,15 @@ impl TwistingVinesFeature {
                     .to_state()
                     .is_air()
             {
-                // Top part
-                let _age = 17 + random.next_bounded_i32(25 - 17 + 1);
-                // We should set the age property here, but Pumpkin's BlockState might not support it easily yet or we just use default
-                // For now, let's just use the block.
-                // TODO: Set age property
-                chunk.set_block_state(&current_pos.0, Block::TWISTING_VINES.default_state);
+                // The head uses the same AGE property group as kelp and
+                // weeping/twisting vines.  Vanilla samples 17..=25 only for
+                // the final head; plant sections have no AGE property.
+                let mut props = KelpLikeProperties::default(&Block::TWISTING_VINES);
+                props.age = 17 + random.next_bounded_i32(9) as u8;
+                chunk.set_block_state(
+                    &current_pos.0,
+                    BlockState::from_id(props.to_state_id(&Block::TWISTING_VINES)),
+                );
                 break;
             }
             chunk.set_block_state(&current_pos.0, Block::TWISTING_VINES_PLANT.default_state);
@@ -98,34 +104,53 @@ impl TwistingVinesFeature {
             return true;
         }
 
-        let block_below = GenerationCache::get_block_state(chunk, &pos.down().0).to_state();
-        block_below != Block::WARPED_NYLIUM.default_state
-            && block_below != Block::WARPED_WART_BLOCK.default_state
-            && block_below != Block::TWISTING_VINES.default_state
-            && block_below != Block::TWISTING_VINES_PLANT.default_state
+        let block_below = GenerationCache::get_block_state(chunk, &pos.down().0).to_block_id();
+        !matches!(
+            block_below,
+            id if id == Block::NETHERRACK.id
+                || id == Block::WARPED_NYLIUM.id
+                || id == Block::WARPED_WART_BLOCK.id
+        )
     }
 
     fn find_target_y<T: GenerationCache>(&self, chunk: &T, pos: &mut BlockPos) -> bool {
         // Try to find a valid floor by looking down
         let mut current = *pos;
         for _ in 0..self.spread_height {
-            if GenerationCache::get_block_state(chunk, &current.0)
+            current = current.down();
+            if !GenerationCache::get_block_state(chunk, &current.0)
                 .to_state()
                 .is_air()
             {
-                let below = current.down();
-                let block_below = GenerationCache::get_block_state(chunk, &below.0).to_state();
-                if block_below == Block::WARPED_NYLIUM.default_state
-                    || block_below == Block::WARPED_WART_BLOCK.default_state
-                    || block_below == Block::TWISTING_VINES.default_state
-                    || block_below == Block::TWISTING_VINES_PLANT.default_state
-                {
-                    *pos = current;
-                    return true;
-                }
+                *pos = current.up();
+                return true;
             }
-            current = current.down();
         }
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use pumpkin_data::{
+        Block, BlockState,
+        block_properties::{BlockProperties, KelpLikeProperties},
+    };
+
+    #[test]
+    fn twisting_vines_head_age_round_trips_for_vanilla_range() {
+        for age in 17..=25 {
+            let mut props = KelpLikeProperties::default(&Block::TWISTING_VINES);
+            props.age = age;
+            let state = BlockState::from_id(props.to_state_id(&Block::TWISTING_VINES));
+            let decoded = KelpLikeProperties::from_state_id(state.id, &Block::TWISTING_VINES);
+            assert_eq!(decoded.age, age);
+        }
+    }
+
+    #[test]
+    fn twisting_vines_head_has_all_26_age_states() {
+        assert_eq!(Block::TWISTING_VINES.states.len(), 26);
+        assert_eq!(Block::TWISTING_VINES_PLANT.states.len(), 1);
     }
 }

@@ -39,10 +39,10 @@ use pumpkin_protocol::{
     PositionFlag,
     bedrock::client::{
         move_actor_delta::{
-            CMoveActorDelta, MOVE_ACTOR_DELTA_FLAG_HAS_HEAD_YAW, MOVE_ACTOR_DELTA_FLAG_HAS_PITCH,
-            MOVE_ACTOR_DELTA_FLAG_HAS_X, MOVE_ACTOR_DELTA_FLAG_HAS_Y,
-            MOVE_ACTOR_DELTA_FLAG_HAS_YAW, MOVE_ACTOR_DELTA_FLAG_HAS_Z,
-            MOVE_ACTOR_DELTA_FLAG_ON_GROUND,
+            CMoveActorDelta, MOVE_ACTOR_DELTA_FLAG_FORCE_MOVE, MOVE_ACTOR_DELTA_FLAG_HAS_HEAD_YAW,
+            MOVE_ACTOR_DELTA_FLAG_HAS_PITCH, MOVE_ACTOR_DELTA_FLAG_HAS_X,
+            MOVE_ACTOR_DELTA_FLAG_HAS_Y, MOVE_ACTOR_DELTA_FLAG_HAS_YAW,
+            MOVE_ACTOR_DELTA_FLAG_HAS_Z, MOVE_ACTOR_DELTA_FLAG_ON_GROUND,
         },
         move_player::CMovePlayer,
         set_actor_data::{
@@ -54,7 +54,8 @@ use pumpkin_protocol::{
     codec::var_ulong::VarULong,
     java::client::play::{
         CEntityPositionSync, CEntityVelocity, CHeadRot, CPlayerPosition, CSetEntityMetadata,
-        CSetPassengers, CSpawnEntity, CUpdateEntityRot, Metadata, MetadataSerializer,
+        CSetPassengers, CSpawnEntity, CTeleportEntity, CUpdateEntityRot, Metadata,
+        MetadataSerializer,
     },
 };
 use pumpkin_util::math::vector3::Axis;
@@ -108,6 +109,42 @@ pub mod predicate;
 
 /// The maximum number of scoreboard tags an entity can carry, matching Vanilla.
 pub const MAX_SCOREBOARD_TAGS: usize = 1024;
+
+/// Entity fields written by Pumpkin's common `Entity` serializer.  Any other
+/// root tags are retained verbatim so a newer vanilla server can add fields
+/// without Pumpkin destroying them on an unload/reload round trip.
+fn capture_unknown_entity_nbt(nbt: &NbtCompound) -> NbtCompound {
+    let mut unknown = NbtCompound::new();
+    for (key, value) in &nbt.child_tags {
+        if !matches!(
+            key.as_ref(),
+            "id" | "UUID"
+                | "Pos"
+                | "Motion"
+                | "Rotation"
+                | "Fire"
+                | "Air"
+                | "FallDistance"
+                | "fall_distance"
+                | "OnGround"
+                | "Invulnerable"
+                | "PortalCooldown"
+                | "CustomName"
+                | "CustomNameVisible"
+                | "PersistenceRequired"
+                | "Silent"
+                | "NoGravity"
+                | "Glowing"
+                | "TicksFrozen"
+                | "HasVisualFire"
+                | "Tags"
+                | "Passengers"
+        ) {
+            unknown.child_tags.insert(key.clone(), value.clone());
+        }
+    }
+    unknown
+}
 
 /// Returns the [`EntityStatus`] that should be broadcast when the given
 /// equipment slot breaks.
@@ -214,6 +251,13 @@ pub trait EntityBase: Send + Sync + NBTStorage + std::any::Any {
         Self: 'static,
     {
         Box::pin(async move {
+            let entity = self.get_entity();
+            let current_world = entity.world.load_full();
+            if !Arc::ptr_eq(&current_world, &world) {
+                current_world
+                    .transfer_entity_to(entity.entity_uuid, &world)
+                    .await;
+            }
             self.get_entity().teleport(position, yaw, pitch, world);
         })
     }
@@ -235,6 +279,12 @@ pub trait EntityBase: Send + Sync + NBTStorage + std::any::Any {
         None
     }
 
+    /// Wakes a mob that is currently sleeping in a bed.  Most entities do
+    /// nothing; villagers override this through the blanket `Mob` adapter so
+    /// block interactions can perform the vanilla occupied-bed behaviour
+    /// without downcasting a trait object.
+    fn wake_from_bed(&self) {}
+
     fn tick_in_void<'a>(&'a self, _dyn_self: &'a dyn EntityBase) -> EntityBaseFuture<'a, ()> {
         Box::pin(async move { self.get_entity().remove().await })
     }
@@ -255,6 +305,15 @@ pub trait EntityBase: Send + Sync + NBTStorage + std::any::Any {
 
     fn is_spectator(&self) -> bool {
         false
+    }
+
+    /// Vanilla `Entity#isIgnoringBlockTriggers`.  Most entities participate
+    /// in tripwire/pressure-plate style collision checks; bats and marker
+    /// armor stands are the notable server-side exceptions.  Specialized
+    /// entities can override this default without making block code inspect
+    /// concrete entity types.
+    fn is_ignoring_block_triggers(&self) -> bool {
+        self.get_entity().entity_type == &EntityType::BAT
     }
 
     fn is_collidable(&self, _entity: Option<Box<dyn EntityBase>>) -> bool {
@@ -351,10 +410,14 @@ pub trait EntityBase: Send + Sync + NBTStorage + std::any::Any {
 
     fn set_on_fire_for_ticks(&self, ticks: u32) {
         let entity = self.get_entity();
-        if entity.fire_ticks.load(Ordering::Relaxed) < ticks as i32 {
-            entity.fire_ticks.store(ticks as i32, Ordering::Relaxed);
-        }
-        // TODO: defrost
+        let (fire_ticks, frozen_ticks) =
+            ignition_state(entity.fire_ticks.load(Ordering::Relaxed), ticks);
+        entity.fire_ticks.store(fire_ticks, Ordering::Relaxed);
+        // `Entity#igniteForTicks` calls `clearFreeze` in vanilla.  Without
+        // this reset an entity lit by fire could remain fully frozen until
+        // the powder-snow thaw timer happened to catch up, making fire and
+        // powder-snow interactions observably different.
+        entity.frozen_ticks.store(frozen_ticks, Ordering::Relaxed);
     }
 
     /// Called when a player collides with a entity
@@ -593,6 +656,11 @@ pub trait EntityBase: Send + Sync + NBTStorage + std::any::Any {
         Box::pin(async {})
     }
 
+    /// Owner id used by owner-dependent projectile block interactions.
+    fn projectile_owner_id(&self) -> Option<i32> {
+        None
+    }
+
     fn set_paddle_state(&self, _left: bool, _right: bool) -> EntityBaseFuture<'_, ()> {
         Box::pin(async {})
     }
@@ -620,6 +688,17 @@ pub trait EntityBase: Send + Sync + NBTStorage + std::any::Any {
     fn cast_any(&self) -> &dyn std::any::Any;
 
     fn get_item_entity(self: Arc<Self>) -> Option<Arc<ItemEntity>> {
+        None
+    }
+
+    /// Returns an entity-backed inventory exposed to hopper transfers.
+    ///
+    /// Vanilla hoppers can interact with storage minecarts (and other
+    /// inventory-bearing entities) through the entity container lookup.  The
+    /// default is `None` so ordinary entities remain non-container targets.
+    fn get_entity_inventory(
+        self: Arc<Self>,
+    ) -> Option<Arc<dyn pumpkin_world::inventory::Inventory>> {
         None
     }
 
@@ -685,6 +764,16 @@ pub trait EntityBase: Send + Sync + NBTStorage + std::any::Any {
         0
     }
 
+    /// Async variant used by the death pipeline when the vanilla calculation
+    /// needs a consistent snapshot of equipment/drop chances.  Entities that
+    /// do not have such state retain the synchronous default above.
+    fn get_experience_reward_async<'a>(
+        &'a self,
+        killer: Option<&'a dyn EntityBase>,
+    ) -> EntityBaseFuture<'a, u32> {
+        Box::pin(async move { self.get_experience_reward(killer) })
+    }
+
     fn get_base_experience_reward(&self) -> u32 {
         0
     }
@@ -730,6 +819,9 @@ pub struct Entity {
     pub entity_uuid: uuid::Uuid,
     /// The type of entity (e.g., player, zombie, item)
     pub entity_type: &'static EntityType,
+    /// Vanilla's Mob persistence flag (set by name tags and other
+    /// interactions), persisted as `PersistenceRequired` in entity NBT.
+    pub persistence_required: AtomicBool,
     /// The world in which the entity exists.
     /// Uses `ArcSwap` to allow atomic updates when changing dimensions.
     pub world: ArcSwap<World>,
@@ -792,6 +884,10 @@ pub struct Entity {
     // Whether the entity is immune to fire (to disable visual fire and fire damage)
     pub fire_immune: AtomicBool,
     pub fire_ticks: AtomicI32,
+    /// Remaining air supply from vanilla's common Entity data tracker.  The
+    /// player breath manager mirrors this value through the canonical `Air`
+    /// NBT key; non-player entities still retain it across region saves.
+    pub air_supply: AtomicI32,
     pub has_visual_fire: AtomicBool,
     /// The number of ticks the entity has been frozen (in powder snow)
     /// Max is 140 ticks (7 seconds). Increases by 1/tick in powder snow, decreases by 2/tick outside.
@@ -851,6 +947,30 @@ pub struct Entity {
     pub last_sent_pos: AtomicCell<Vector3<f64>>,
     /// Cache for the last sent head yaw byte
     pub last_sent_head_yaw: AtomicU8,
+    /// Forward-compatible entity-root fields which the current runtime does
+    /// not interpret yet.  They are merged before known runtime fields are
+    /// written, so vanilla values are never silently discarded while a
+    /// future/unknown field cannot override authoritative state.
+    pub opaque_nbt: std::sync::Mutex<NbtCompound>,
+}
+
+#[inline]
+fn relative_move_exceeds_range(old: Vector3<f64>, new: Vector3<f64>) -> bool {
+    [
+        (new.x - old.x).abs(),
+        (new.y - old.y).abs(),
+        (new.z - old.z).abs(),
+    ]
+    .into_iter()
+    .any(|delta| delta * 4096.0 > f64::from(i16::MAX))
+}
+
+#[inline]
+fn ignition_state(existing_fire_ticks: i32, requested_fire_ticks: u32) -> (i32, i32) {
+    (
+        existing_fire_ticks.max(requested_fire_ticks.min(i32::MAX as u32) as i32),
+        0,
+    )
 }
 
 impl Entity {
@@ -902,6 +1022,7 @@ impl Entity {
             entity_id,
             entity_uuid,
             entity_type,
+            persistence_required: AtomicBool::new(false),
             on_ground: AtomicBool::new(false),
             touching_water: AtomicBool::new(false),
             water_height: AtomicCell::new(0.0),
@@ -945,6 +1066,7 @@ impl Entity {
             bedrock_flags_two: std::sync::atomic::AtomicI64::new(0),
             fire_immune: AtomicBool::new(false),
             fire_ticks: AtomicI32::new(-1),
+            air_supply: AtomicI32::new(300),
             has_visual_fire: AtomicBool::new(false),
             frozen_ticks: AtomicI32::new(0),
             is_in_powder_snow: AtomicBool::new(false),
@@ -973,6 +1095,7 @@ impl Entity {
             last_sent_pitch: AtomicU8::new(0),
             last_sent_head_yaw: AtomicU8::new(0),
             last_sent_pos: AtomicCell::new(position),
+            opaque_nbt: std::sync::Mutex::new(NbtCompound::new()),
         }
     }
 
@@ -1094,6 +1217,16 @@ impl Entity {
         );
     }
 
+    /// Marks this entity as persistent, matching vanilla `Mob#setPersistenceRequired`.
+    pub fn set_persistence_required(&self) {
+        self.persistence_required.store(true, Ordering::Relaxed);
+    }
+
+    #[must_use]
+    pub fn is_persistence_required(&self) -> bool {
+        self.persistence_required.load(Ordering::Relaxed)
+    }
+
     pub fn set_custom_name_visible(&self, visible: bool) {
         self.custom_name_visible.store(visible, Ordering::Relaxed);
         let mut bedrock_meta = EntityMetadata::new();
@@ -1158,15 +1291,18 @@ impl Entity {
     pub fn send_velocity(&self) {
         let velocity = self.velocity.load();
         let chunk_pos = self.chunk_pos.load();
-        self.world.load().broadcast_to_chunk_editioned_sync(
-            chunk_pos,
-            &CEntityVelocity::new(self.entity_id.into(), velocity),
-            &CSetActorMotion::new(
-                VarULong(self.entity_id as u64),
-                Vector3::new(velocity.x as f32, velocity.y as f32, velocity.z as f32),
-                VarULong(0),
-            ),
-        );
+        self.world
+            .load()
+            .broadcast_to_entity_trackers_editioned_sync(
+                self.entity_id,
+                chunk_pos,
+                &CEntityVelocity::new(self.entity_id.into(), velocity),
+                &CSetActorMotion::new(
+                    VarULong(self.entity_id as u64),
+                    Vector3::new(velocity.x as f32, velocity.y as f32, velocity.z as f32),
+                    VarULong(0),
+                ),
+            );
     }
 
     #[must_use]
@@ -1213,14 +1349,20 @@ impl Entity {
                 let new_block_pos = Vector3::new(floor_x, floor_y, floor_z);
                 self.block_pos.store(BlockPos(new_block_pos));
 
-                let chunk_pos = self.chunk_pos.load();
-                if get_section_cord(floor_x) != chunk_pos.x
-                    || get_section_cord(floor_z) != chunk_pos.y
+                let old_chunk = self.chunk_pos.load();
+                if get_section_cord(floor_x) != old_chunk.x
+                    || get_section_cord(floor_z) != old_chunk.y
                 {
-                    self.chunk_pos.store(Vector2::new(
+                    let new_chunk = Vector2::new(
                         get_section_cord(new_block_pos.x),
                         get_section_cord(new_block_pos.z),
-                    ));
+                    );
+                    self.chunk_pos.store(new_chunk);
+                    self.world.load().update_entity_chunk_tracking(
+                        self.entity_id,
+                        old_chunk,
+                        new_chunk,
+                    );
                 }
             }
         }
@@ -1287,9 +1429,24 @@ impl Entity {
         }
         self.last_sent_head_yaw.store(head_yaw, Relaxed);
 
+        let bedrock_packet = CMoveActorDelta::new(
+            VarULong(self.entity_id as u64),
+            MOVE_ACTOR_DELTA_FLAG_HAS_HEAD_YAW,
+            0.0,
+            0.0,
+            0.0,
+            0,
+            0,
+            head_yaw,
+        );
         self.world
             .load()
-            .broadcast_to_chunk(chunk_pos, &CHeadRot::new(self.entity_id.into(), head_yaw));
+            .broadcast_to_entity_trackers_editioned_sync(
+                self.entity_id,
+                chunk_pos,
+                &CHeadRot::new(self.entity_id.into(), head_yaw),
+                &bedrock_packet,
+            );
     }
 
     fn default_portal_cooldown(&self) -> u32 {
@@ -1615,6 +1772,58 @@ impl Entity {
         let new = self.pos.load();
         let chunk_pos = self.chunk_pos.load();
 
+        // Java relative-move coordinates are signed fixed-point values with
+        // a 1/4096 block unit.  A fast minecart/projectile can exceed that
+        // range in one tick (teleport, portal, chunk restore); casting the
+        // delta directly to i16 would wrap and send the client to a wildly
+        // incorrect position.  Vanilla switches to an absolute teleport in
+        // this case, while Bedrock uses FORCE_MOVE on MoveActorDelta.
+        if relative_move_exceeds_range(old, new) {
+            self.last_sent_pos.store(new);
+            let yaw = self.yaw.load();
+            let pitch = self.pitch.load();
+            let yaw_byte = (yaw * 256.0 / 360.0).rem_euclid(256.0) as u8;
+            let pitch_byte = (pitch * 256.0 / 360.0).rem_euclid(256.0) as u8;
+            let java_packet = CTeleportEntity::new(
+                self.entity_id.into(),
+                new,
+                Vector3::default(),
+                yaw,
+                pitch,
+                &[],
+                self.on_ground.load(Relaxed),
+            );
+            let mut bedrock_flags = MOVE_ACTOR_DELTA_FLAG_HAS_X
+                | MOVE_ACTOR_DELTA_FLAG_HAS_Y
+                | MOVE_ACTOR_DELTA_FLAG_HAS_Z
+                | MOVE_ACTOR_DELTA_FLAG_HAS_PITCH
+                | MOVE_ACTOR_DELTA_FLAG_HAS_YAW
+                | MOVE_ACTOR_DELTA_FLAG_HAS_HEAD_YAW
+                | MOVE_ACTOR_DELTA_FLAG_FORCE_MOVE;
+            if self.on_ground.load(Relaxed) {
+                bedrock_flags |= MOVE_ACTOR_DELTA_FLAG_ON_GROUND;
+            }
+            let bedrock_packet = CMoveActorDelta::new(
+                VarULong(self.entity_id as u64),
+                bedrock_flags,
+                new.x as f32,
+                new.y as f32,
+                new.z as f32,
+                pitch_byte,
+                yaw_byte,
+                yaw_byte,
+            );
+            self.world
+                .load()
+                .broadcast_to_entity_trackers_editioned_sync(
+                    self.entity_id,
+                    chunk_pos,
+                    &java_packet,
+                    &bedrock_packet,
+                );
+            return;
+        }
+
         let converted = Vector3::new(
             new.x.mul_add(4096.0, -(old.x * 4096.0)) as i16,
             new.y.mul_add(4096.0, -(old.y * 4096.0)) as i16,
@@ -1650,23 +1859,26 @@ impl Entity {
                 self.on_ground.load(Relaxed),
             );
             if self.entity_type == &EntityType::PLAYER {
-                self.world.load().broadcast_to_chunk_editioned_sync(
-                    chunk_pos,
-                    &je_packet,
-                    &CMovePlayer::new(
-                        VarULong(self.entity_id as u64),
-                        Vector3::new(new.x as f32, new.y as f32, new.z as f32),
-                        self.pitch.load(),
-                        self.yaw.load(),
-                        self.yaw.load(),
-                        CMovePlayer::MODE_NORMAL,
-                        self.on_ground.load(Relaxed),
-                        VarULong(0),
-                        0,
-                        0,
-                        VarULong(0),
-                    ),
-                );
+                self.world
+                    .load()
+                    .broadcast_to_entity_trackers_editioned_sync(
+                        self.entity_id,
+                        chunk_pos,
+                        &je_packet,
+                        &CMovePlayer::new(
+                            VarULong(self.entity_id as u64),
+                            Vector3::new(new.x as f32, new.y as f32, new.z as f32),
+                            self.pitch.load(),
+                            self.yaw.load(),
+                            self.yaw.load(),
+                            CMovePlayer::MODE_NORMAL,
+                            self.on_ground.load(Relaxed),
+                            VarULong(0),
+                            0,
+                            0,
+                            VarULong(0),
+                        ),
+                    );
             } else {
                 let mut flags = MOVE_ACTOR_DELTA_FLAG_HAS_X
                     | MOVE_ACTOR_DELTA_FLAG_HAS_Y
@@ -1677,20 +1889,23 @@ impl Entity {
                 if self.on_ground.load(Relaxed) {
                     flags |= MOVE_ACTOR_DELTA_FLAG_ON_GROUND;
                 }
-                self.world.load().broadcast_to_chunk_editioned_sync(
-                    chunk_pos,
-                    &je_packet,
-                    &CMoveActorDelta::new(
-                        VarULong(self.entity_id as u64),
-                        flags,
-                        new.x as f32,
-                        new.y as f32,
-                        new.z as f32,
-                        pitch,
-                        yaw,
-                        yaw,
-                    ),
-                );
+                self.world
+                    .load()
+                    .broadcast_to_entity_trackers_editioned_sync(
+                        self.entity_id,
+                        chunk_pos,
+                        &je_packet,
+                        &CMoveActorDelta::new(
+                            VarULong(self.entity_id as u64),
+                            flags,
+                            new.x as f32,
+                            new.y as f32,
+                            new.z as f32,
+                            pitch,
+                            yaw,
+                            yaw,
+                        ),
+                    );
             }
         } else if pos_changed {
             let je_packet = CUpdateEntityPos::new(
@@ -1699,23 +1914,26 @@ impl Entity {
                 self.on_ground.load(Relaxed),
             );
             if self.entity_type == &EntityType::PLAYER {
-                self.world.load().broadcast_to_chunk_editioned_sync(
-                    chunk_pos,
-                    &je_packet,
-                    &CMovePlayer::new(
-                        VarULong(self.entity_id as u64),
-                        Vector3::new(new.x as f32, new.y as f32, new.z as f32),
-                        self.pitch.load(),
-                        self.yaw.load(),
-                        self.yaw.load(),
-                        CMovePlayer::MODE_NORMAL,
-                        self.on_ground.load(Relaxed),
-                        VarULong(0),
-                        0,
-                        0,
-                        VarULong(0),
-                    ),
-                );
+                self.world
+                    .load()
+                    .broadcast_to_entity_trackers_editioned_sync(
+                        self.entity_id,
+                        chunk_pos,
+                        &je_packet,
+                        &CMovePlayer::new(
+                            VarULong(self.entity_id as u64),
+                            Vector3::new(new.x as f32, new.y as f32, new.z as f32),
+                            self.pitch.load(),
+                            self.yaw.load(),
+                            self.yaw.load(),
+                            CMovePlayer::MODE_NORMAL,
+                            self.on_ground.load(Relaxed),
+                            VarULong(0),
+                            0,
+                            0,
+                            VarULong(0),
+                        ),
+                    );
             } else {
                 let mut flags = MOVE_ACTOR_DELTA_FLAG_HAS_X
                     | MOVE_ACTOR_DELTA_FLAG_HAS_Y
@@ -1724,20 +1942,23 @@ impl Entity {
                     flags |= MOVE_ACTOR_DELTA_FLAG_ON_GROUND;
                 }
 
-                self.world.load().broadcast_to_chunk_editioned_sync(
-                    chunk_pos,
-                    &je_packet,
-                    &CMoveActorDelta::new(
-                        VarULong(self.entity_id as u64),
-                        flags,
-                        new.x as f32,
-                        new.y as f32,
-                        new.z as f32,
-                        0,
-                        0,
-                        0,
-                    ),
-                );
+                self.world
+                    .load()
+                    .broadcast_to_entity_trackers_editioned_sync(
+                        self.entity_id,
+                        chunk_pos,
+                        &je_packet,
+                        &CMoveActorDelta::new(
+                            VarULong(self.entity_id as u64),
+                            flags,
+                            new.x as f32,
+                            new.y as f32,
+                            new.z as f32,
+                            0,
+                            0,
+                            0,
+                        ),
+                    );
             }
         } else if rot_changed {
             let je_packet = CUpdateEntityRot::new(
@@ -1747,23 +1968,26 @@ impl Entity {
                 self.on_ground.load(Relaxed),
             );
             if self.entity_type == &EntityType::PLAYER {
-                self.world.load().broadcast_to_chunk_editioned_sync(
-                    chunk_pos,
-                    &je_packet,
-                    &CMovePlayer::new(
-                        VarULong(self.entity_id as u64),
-                        Vector3::new(new.x as f32, new.y as f32, new.z as f32),
-                        self.pitch.load(),
-                        self.yaw.load(),
-                        self.yaw.load(),
-                        CMovePlayer::MODE_ROTATION,
-                        self.on_ground.load(Relaxed),
-                        VarULong(0),
-                        0,
-                        0,
-                        VarULong(0),
-                    ),
-                );
+                self.world
+                    .load()
+                    .broadcast_to_entity_trackers_editioned_sync(
+                        self.entity_id,
+                        chunk_pos,
+                        &je_packet,
+                        &CMovePlayer::new(
+                            VarULong(self.entity_id as u64),
+                            Vector3::new(new.x as f32, new.y as f32, new.z as f32),
+                            self.pitch.load(),
+                            self.yaw.load(),
+                            self.yaw.load(),
+                            CMovePlayer::MODE_ROTATION,
+                            self.on_ground.load(Relaxed),
+                            VarULong(0),
+                            0,
+                            0,
+                            VarULong(0),
+                        ),
+                    );
             } else {
                 let mut flags = MOVE_ACTOR_DELTA_FLAG_HAS_PITCH
                     | MOVE_ACTOR_DELTA_FLAG_HAS_YAW
@@ -1771,20 +1995,23 @@ impl Entity {
                 if self.on_ground.load(Relaxed) {
                     flags |= MOVE_ACTOR_DELTA_FLAG_ON_GROUND;
                 }
-                self.world.load().broadcast_to_chunk_editioned_sync(
-                    chunk_pos,
-                    &je_packet,
-                    &CMoveActorDelta::new(
-                        VarULong(self.entity_id as u64),
-                        flags,
-                        new.x as f32,
-                        new.y as f32,
-                        new.z as f32,
-                        pitch,
-                        yaw,
-                        yaw,
-                    ),
-                );
+                self.world
+                    .load()
+                    .broadcast_to_entity_trackers_editioned_sync(
+                        self.entity_id,
+                        chunk_pos,
+                        &je_packet,
+                        &CMoveActorDelta::new(
+                            VarULong(self.entity_id as u64),
+                            flags,
+                            new.x as f32,
+                            new.y as f32,
+                            new.z as f32,
+                            pitch,
+                            yaw,
+                            yaw,
+                        ),
+                    );
             }
         }
         self.send_head_rot(yaw);
@@ -1833,6 +2060,52 @@ impl Entity {
         let new = self.pos.load();
         let chunk_pos = self.chunk_pos.load();
 
+        if relative_move_exceeds_range(old, new) {
+            self.last_sent_pos.store(new);
+            let yaw_degrees = self.yaw.load();
+            let pitch_degrees = self.pitch.load();
+            let yaw = (yaw_degrees * 256.0 / 360.0).rem_euclid(256.0) as u8;
+            let pitch = (pitch_degrees * 256.0 / 360.0).rem_euclid(256.0) as u8;
+            let java_packet = CTeleportEntity::new(
+                self.entity_id.into(),
+                new,
+                Vector3::default(),
+                yaw_degrees,
+                pitch_degrees,
+                &[],
+                self.on_ground.load(Relaxed),
+            );
+            let mut flags = MOVE_ACTOR_DELTA_FLAG_HAS_X
+                | MOVE_ACTOR_DELTA_FLAG_HAS_Y
+                | MOVE_ACTOR_DELTA_FLAG_HAS_Z
+                | MOVE_ACTOR_DELTA_FLAG_HAS_PITCH
+                | MOVE_ACTOR_DELTA_FLAG_HAS_YAW
+                | MOVE_ACTOR_DELTA_FLAG_HAS_HEAD_YAW
+                | MOVE_ACTOR_DELTA_FLAG_FORCE_MOVE;
+            if self.on_ground.load(Relaxed) {
+                flags |= MOVE_ACTOR_DELTA_FLAG_ON_GROUND;
+            }
+            let bedrock_packet = CMoveActorDelta::new(
+                VarULong(self.entity_id as u64),
+                flags,
+                new.x as f32,
+                new.y as f32,
+                new.z as f32,
+                pitch,
+                yaw,
+                yaw,
+            );
+            self.world
+                .load()
+                .broadcast_to_entity_trackers_editioned_sync(
+                    self.entity_id,
+                    chunk_pos,
+                    &java_packet,
+                    &bedrock_packet,
+                );
+            return;
+        }
+
         let converted = Vector3::new(
             new.x.mul_add(4096.0, -(old.x * 4096.0)) as i16,
             new.y.mul_add(4096.0, -(old.y * 4096.0)) as i16,
@@ -1853,23 +2126,26 @@ impl Entity {
         );
 
         if self.entity_type == &EntityType::PLAYER {
-            self.world.load().broadcast_to_chunk_editioned_sync(
-                chunk_pos,
-                &je_packet,
-                &CMovePlayer::new(
-                    VarULong(self.entity_id as u64),
-                    Vector3::new(new.x as f32, new.y as f32, new.z as f32),
-                    self.pitch.load(),
-                    self.yaw.load(),
-                    self.yaw.load(),
-                    CMovePlayer::MODE_NORMAL,
-                    self.on_ground.load(Relaxed),
-                    VarULong(0),
-                    0,
-                    0,
-                    VarULong(0),
-                ),
-            );
+            self.world
+                .load()
+                .broadcast_to_entity_trackers_editioned_sync(
+                    self.entity_id,
+                    chunk_pos,
+                    &je_packet,
+                    &CMovePlayer::new(
+                        VarULong(self.entity_id as u64),
+                        Vector3::new(new.x as f32, new.y as f32, new.z as f32),
+                        self.pitch.load(),
+                        self.yaw.load(),
+                        self.yaw.load(),
+                        CMovePlayer::MODE_NORMAL,
+                        self.on_ground.load(Relaxed),
+                        VarULong(0),
+                        0,
+                        0,
+                        VarULong(0),
+                    ),
+                );
         } else {
             let mut flags = MOVE_ACTOR_DELTA_FLAG_HAS_X
                 | MOVE_ACTOR_DELTA_FLAG_HAS_Y
@@ -1878,20 +2154,23 @@ impl Entity {
                 flags |= MOVE_ACTOR_DELTA_FLAG_ON_GROUND;
             }
 
-            self.world.load().broadcast_to_chunk_editioned_sync(
-                chunk_pos,
-                &je_packet,
-                &CMoveActorDelta::new(
-                    VarULong(self.entity_id as u64),
-                    flags,
-                    new.x as f32,
-                    new.y as f32,
-                    new.z as f32,
-                    0,
-                    0,
-                    0,
-                ),
-            );
+            self.world
+                .load()
+                .broadcast_to_entity_trackers_editioned_sync(
+                    self.entity_id,
+                    chunk_pos,
+                    &je_packet,
+                    &CMoveActorDelta::new(
+                        VarULong(self.entity_id as u64),
+                        flags,
+                        new.x as f32,
+                        new.y as f32,
+                        new.z as f32,
+                        0,
+                        0,
+                        0,
+                    ),
+                );
         }
     }
 
@@ -2879,14 +3158,26 @@ impl Entity {
         let chunk_pos = self.chunk_pos.load();
 
         for player in world.players.load().iter() {
+            let is_self = player.get_entity().entity_id == self.entity_id;
+            let paired = player
+                .is_entity_tracked_now(self.entity_id)
+                .unwrap_or(false);
+            let delivered = player.has_sent_chunk_now(chunk_pos).unwrap_or(false);
+            if !is_self && (!paired || !delivered) {
+                continue;
+            }
+
             match player.client.as_ref() {
                 ClientPlatform::Java(client) => {
-                    // Apply Chebyshev distance check
-                    let center = player.get_entity().chunk_pos.load();
-                    let view_distance =
-                        crate::world::chunker::get_view_distance(player).get() as i32;
-
-                    if is_within_view_distance(chunk_pos, center, view_distance) {
+                    if is_self || {
+                        // Keep the cheap range guard for the entity's own
+                        // client-independent path while paired watchers are
+                        // already bounded by the tracker transition.
+                        let center = player.get_entity().chunk_pos.load();
+                        let view_distance =
+                            crate::world::chunker::get_view_distance(player).get() as i32;
+                        is_within_view_distance(chunk_pos, center, view_distance)
+                    } {
                         let mut buf = Vec::new();
                         for m in meta {
                             let _ = m.write(&mut buf, &client.version.load());
@@ -2900,11 +3191,12 @@ impl Entity {
                 }
                 ClientPlatform::Bedrock(client) => {
                     if let Some(bedrock_meta) = bedrock_meta {
-                        let center = player.get_entity().chunk_pos.load();
-                        let view_distance =
-                            crate::world::chunker::get_view_distance(player).get() as i32;
-
-                        if is_within_view_distance(chunk_pos, center, view_distance) {
+                        if is_self || {
+                            let center = player.get_entity().chunk_pos.load();
+                            let view_distance =
+                                crate::world::chunker::get_view_distance(player).get() as i32;
+                            is_within_view_distance(chunk_pos, center, view_distance)
+                        } {
                             client.try_enqueue_packet(&CSetActorData {
                                 actor_runtime_id: VarULong(self.entity_id as u64),
                                 metadata: EntityMetadata(bedrock_meta.0.clone()),
@@ -3215,7 +3507,28 @@ impl Entity {
         vehicle: Arc<dyn EntityBase>,
         passenger: Arc<dyn EntityBase>,
     ) {
+        self.add_passenger_internal(vehicle, passenger, true).await;
+    }
+
+    /// Restores an already-persisted passenger graph without replaying a
+    /// gameplay vibration.  Loading a chunk is not a new `startRiding` action
+    /// in vanilla, so only live mount paths should emit ENTITY_MOUNT.
+    pub(crate) async fn add_passenger_silent(
+        &self,
+        vehicle: Arc<dyn EntityBase>,
+        passenger: Arc<dyn EntityBase>,
+    ) {
+        self.add_passenger_internal(vehicle, passenger, false).await;
+    }
+
+    async fn add_passenger_internal(
+        &self,
+        vehicle: Arc<dyn EntityBase>,
+        passenger: Arc<dyn EntityBase>,
+        emit_game_event: bool,
+    ) {
         let passenger_entity = passenger.get_entity();
+        let passenger_uuid = passenger_entity.entity_uuid;
         *passenger_entity.vehicle.lock().await = Some(vehicle);
 
         let mut passengers = self.passengers.lock().await;
@@ -3228,6 +3541,15 @@ impl Entity {
 
         let world = self.world.load();
         let chunk_pos = self.chunk_pos.load();
+        if emit_game_event {
+            world
+                .emit_game_event_from(
+                    self.block_pos.load(),
+                    crate::world::game_event::GameEventKind::EntityMount,
+                    Some(passenger_uuid),
+                )
+                .await;
+        }
         world.broadcast_to_chunk(
             chunk_pos,
             &CSetPassengers::new(VarInt(self.entity_id), &passenger_ids),
@@ -3281,6 +3603,7 @@ impl Entity {
         if let Some(passenger) = removed_passenger {
             let vehicle_box = self.bounding_box.load();
             let passenger_entity = passenger.get_entity();
+            let passenger_uuid = passenger_entity.entity_uuid;
 
             // Pre-allocate teleport ID and block movement packets BEFORE sending
             // CSetPassengers. This prevents a race condition where the client receives
@@ -3302,12 +3625,22 @@ impl Entity {
 
             // Vanilla: ridingCooldown = 60 (prevents immediate re-mount)
             passenger_entity.riding_cooldown.store(60, Relaxed);
-            // TODO: world.emitGameEvent(passenger, GameEvent.ENTITY_DISMOUNT, vehicle.pos)
 
             // Now send CSetPassengers — client movement is already blocked.
             // Vanilla sends this directly to the dismounting player's connection,
             // then broadcasts to other players separately.
             let world = self.world.load();
+            // Entity.removeVehicle emits ENTITY_DISMOUNT at the old vehicle
+            // position after the passenger link is removed.  This vibration
+            // is observable by sculk sensors and must happen before the
+            // dismounted player is teleported to the fallback location.
+            world
+                .emit_game_event_from(
+                    self.block_pos.load(),
+                    crate::world::game_event::GameEventKind::EntityDismount,
+                    Some(passenger_uuid),
+                )
+                .await;
             let passengers_packet = CSetPassengers::new(VarInt(self.entity_id), &passenger_ids);
             if let Some(player) = passenger.get_player() {
                 player.client.enqueue_packet(&passengers_packet).await;
@@ -3578,6 +3911,15 @@ impl Entity {
 impl NBTStorage for Entity {
     fn write_nbt<'a>(&'a self, nbt: &'a mut NbtCompound) -> NbtFuture<'a, ()> {
         Box::pin(async move {
+            // Merge opaque fields first.  Every known field below is then
+            // written from live state and therefore wins over stale input.
+            if let Ok(opaque) = self.opaque_nbt.lock() {
+                for (key, value) in &opaque.child_tags {
+                    nbt.child_tags
+                        .entry(key.clone())
+                        .or_insert_with(|| value.clone());
+                }
+            }
             let position = self.pos.load();
             nbt.put_string(
                 "id",
@@ -3606,6 +3948,7 @@ impl NBTStorage for Entity {
                 NbtTag::List(vec![self.yaw.load().into(), self.pitch.load().into()]),
             );
             nbt.put_short("Fire", self.fire_ticks.load(Relaxed) as i16);
+            nbt.put_short("Air", self.air_supply.load(Relaxed).clamp(-20, 300) as i16);
             nbt.put_bool("OnGround", self.on_ground.load(Relaxed));
             nbt.put_bool("Invulnerable", self.invulnerable.load(Relaxed));
             nbt.put_int("PortalCooldown", self.portal_cooldown.load(Relaxed) as i32);
@@ -3619,6 +3962,19 @@ impl NBTStorage for Entity {
                 nbt.put_string("CustomName", name_json);
             }
             nbt.put_bool("CustomNameVisible", self.custom_name_visible.load(Relaxed));
+            if self.is_persistence_required() {
+                nbt.put_bool("PersistenceRequired", true);
+            }
+
+            if self.silent.load(Relaxed) {
+                nbt.put_bool("Silent", true);
+            }
+            if self.has_no_gravity.load(Relaxed) {
+                nbt.put_bool("NoGravity", true);
+            }
+            if self.glowing.load(Relaxed) {
+                nbt.put_bool("Glowing", true);
+            }
 
             let tags = self.scoreboard_tags.lock().await;
             if !tags.is_empty() {
@@ -3630,6 +3986,25 @@ impl NBTStorage for Entity {
                             .collect(),
                     ),
                 );
+            }
+
+            // Entity.saveAsPassenger serializes the live passenger tree under
+            // its root vehicle.  Persisting it here prevents mounts from
+            // being lost on chunk unload; World::save_entity skips passenger
+            // entries themselves to avoid writing the same entity twice.
+            let passengers = self.passengers.lock().await.clone();
+            if !passengers.is_empty() {
+                let mut passenger_tags = Vec::with_capacity(passengers.len());
+                for passenger in passengers {
+                    let mut passenger_nbt = NbtCompound::new();
+                    passenger.write_nbt(&mut passenger_nbt).await;
+                    if passenger_nbt.has("id") {
+                        passenger_tags.push(NbtTag::Compound(passenger_nbt));
+                    }
+                }
+                if !passenger_tags.is_empty() {
+                    nbt.put_list("Passengers", passenger_tags);
+                }
             }
 
             // todo more...
@@ -3671,6 +4046,14 @@ impl NBTStorage for Entity {
             }
             self.fire_ticks
                 .store(i32::from(nbt.get_short("Fire").unwrap_or(0)), Relaxed);
+            self.air_supply.store(
+                nbt.get_short("Air")
+                    .map(i32::from)
+                    .or_else(|| nbt.get_int("Air"))
+                    .unwrap_or(300)
+                    .clamp(-20, 300),
+                Relaxed,
+            );
             self.on_ground
                 .store(nbt.get_bool("OnGround").unwrap_or(false), Relaxed);
             self.invulnerable
@@ -3688,6 +4071,16 @@ impl NBTStorage for Entity {
             }
             self.custom_name_visible
                 .store(nbt.get_bool("CustomNameVisible").unwrap_or(false), Relaxed);
+            self.silent
+                .store(nbt.get_bool("Silent").unwrap_or(false), Relaxed);
+            self.has_no_gravity
+                .store(nbt.get_bool("NoGravity").unwrap_or(false), Relaxed);
+            self.glowing
+                .store(nbt.get_bool("Glowing").unwrap_or(false), Relaxed);
+            self.persistence_required.store(
+                nbt.get_bool("PersistenceRequired").unwrap_or(false),
+                Relaxed,
+            );
 
             if let Some(tag_list) = nbt.get_list("Tags") {
                 let mut tags = self.scoreboard_tags.lock().await;
@@ -3698,6 +4091,10 @@ impl NBTStorage for Entity {
                         .filter_map(|tag| tag.extract_string().map(str::to_owned))
                         .take(MAX_SCOREBOARD_TAGS),
                 );
+            }
+
+            if let Ok(mut opaque) = self.opaque_nbt.lock() {
+                *opaque = capture_unknown_entity_nbt(nbt);
             }
 
             // todo more...
@@ -3726,7 +4123,23 @@ impl EntityBase for Entity {
                 self.last_biome_update_pos.store(block_pos);
             }
 
+            let old_block_pos = self.block_pos.load();
             self.update_last_pos();
+            // Movement is a server-authoritative vibration source.  Emit only
+            // when the entity crosses a block boundary; emitting every physics
+            // tick would create an unbounded sensor workload while preserving
+            // the observable step/move behaviour needed by sculk sensors.
+            let new_block_pos = self.block_pos.load();
+            if old_block_pos != new_block_pos {
+                let world = self.world.load();
+                world
+                    .emit_game_event_from(
+                        new_block_pos,
+                        crate::world::game_event::GameEventKind::EntityMove,
+                        Some(self.entity_uuid),
+                    )
+                    .await;
+            }
             self.tick_portal(caller).await;
             self.update_fluid_state(caller).await;
             self.check_out_of_world(&**caller).await;
@@ -3769,8 +4182,13 @@ impl EntityBase for Entity {
         pitch: Option<f32>,
         world: Arc<World>,
     ) -> TeleportFuture {
-        // TODO: handle world change
         Box::pin(async move {
+            let current_world = self.world.load_full();
+            if !Arc::ptr_eq(&current_world, &world) {
+                current_world
+                    .transfer_entity_to(self.entity_uuid, &world)
+                    .await;
+            }
             self.get_entity().teleport(position, yaw, pitch, world);
         })
     }
@@ -3886,5 +4304,41 @@ mod tests {
                 "status mismatch at index {i}"
             );
         }
+    }
+
+    #[test]
+    fn relative_move_range_uses_teleport_at_fixed_point_overflow() {
+        let origin = Vector3::new(0.0, 64.0, 0.0);
+        let max_relative = Vector3::new(f64::from(i16::MAX) / 4096.0, 64.0, 0.0);
+        assert!(!relative_move_exceeds_range(origin, max_relative));
+        assert!(relative_move_exceeds_range(
+            origin,
+            Vector3::new(8.0, 64.0, 0.0)
+        ));
+    }
+
+    #[test]
+    fn ignition_preserves_longer_fire_duration_and_clears_freeze() {
+        assert_eq!(ignition_state(40, 20), (40, 0));
+        assert_eq!(ignition_state(5, 20), (20, 0));
+    }
+
+    #[test]
+    fn entity_opaque_nbt_retains_future_fields_but_excludes_runtime_keys() {
+        let mut input = NbtCompound::new();
+        input.put_string("id", "minecraft:item".to_string());
+        input.put_int("Fire", 12);
+        input.put_short("Air", 300);
+        input.put_double("FallDistance", 2.5);
+        input.put_string("FutureData", "keep-me".to_string());
+        input.put_compound("CustomRuntimeExtension", NbtCompound::new());
+
+        let unknown = capture_unknown_entity_nbt(&input);
+        assert!(!unknown.has("id"));
+        assert!(!unknown.has("Fire"));
+        assert!(!unknown.has("Air"));
+        assert!(!unknown.has("FallDistance"));
+        assert_eq!(unknown.get_string("FutureData"), Some("keep-me"));
+        assert!(unknown.has("CustomRuntimeExtension"));
     }
 }

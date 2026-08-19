@@ -4,7 +4,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-use pumpkin_data::item_stack::ItemStack;
+use pumpkin_data::{Block, item_stack::ItemStack};
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
 use pumpkin_util::math::position::BlockPos;
@@ -78,7 +78,7 @@ impl BlockEntity for JukeboxBlockEntity {
         })
     }
 
-    fn tick<'a>(&'a self, _world: &'a Arc<World>) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+    fn tick<'a>(&'a self, world: &'a Arc<World>) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
         Box::pin(async move {
             // Increment ticks if we're playing
             let song_length = self.song_length_ticks.load(Ordering::Relaxed);
@@ -89,8 +89,24 @@ impl BlockEntity for JukeboxBlockEntity {
                 // Check if song has finished
                 if ticks >= song_length {
                     self.stop_playing();
-                    // TODO: Update block state to has_record = false? Or just stop redstone?
-                    // In vanilla, the disc stays but music stops and redstone turns off
+                    // The record remains in the jukebox (`HAS_RECORD` stays
+                    // true), but playback stops and the powered output must
+                    // be recomputed for neighbouring redstone components.
+                    world.sync_world_event(
+                        pumpkin_data::world::WorldEvent::SoundStopJukeboxSong,
+                        self.position,
+                        0,
+                    );
+                    world
+                        .emit_game_event(
+                            self.position,
+                            crate::world::game_event::GameEventKind::JukeboxStopPlay,
+                        )
+                        .await;
+                    world.update_neighbors(&self.position, None).await;
+                    world
+                        .update_comparators(&self.position, &Block::JUKEBOX)
+                        .await;
                 }
             }
         })

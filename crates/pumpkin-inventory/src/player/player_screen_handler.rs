@@ -24,6 +24,7 @@ use crate::crafting::crafting_screen_handler::CraftingScreenHandler;
 use crate::crafting::recipes::{RecipeFinderScreenHandler, RecipeInputInventory};
 use crate::screen_handler::{
     InventoryPlayer, ItemStackFuture, ScreenHandler, ScreenHandlerBehaviour, ScreenHandlerFuture,
+    player_screen_equipment_slot,
 };
 use crate::slot::{ArmorSlot, NormalSlot, Slot};
 use pumpkin_data::data_component_impl::{EquipmentSlot, EquipmentType, EquippableImpl};
@@ -48,7 +49,6 @@ impl RecipeFinderScreenHandler for PlayerScreenHandler {}
 
 impl CraftingScreenHandler<CraftingInventory> for PlayerScreenHandler {}
 
-// TODO: Fully implement this
 impl PlayerScreenHandler {
     /// Equipment slot order for armor display.
     const EQUIPMENT_SLOT_ORDER: [EquipmentSlot; 4] = [
@@ -63,7 +63,7 @@ impl PlayerScreenHandler {
     /// Hotbar slots are 36-44 in the protocol (0-indexed 36-44).
     #[must_use]
     pub fn is_in_hotbar(slot: u8) -> bool {
-        (36..=45).contains(&slot)
+        (36..=44).contains(&slot)
     }
 
     /// Gets a slot by its index.
@@ -109,11 +109,25 @@ impl PlayerScreenHandler {
         // Add main inventory and hotbar
         player_screen_handler.add_player_slots(&player_inventory);
 
-        // Offhand slot (index 40 in player inventory, 45 in screen handler)
-        // TODO: onEquipStack callback for offhand
+        // Offhand slot (index 40 in player inventory, 45 in screen handler).
+        // Equipment synchronization is emitted by ScreenHandler after every
+        // successful click/number-key move, so this slot must remain a normal
+        // inventory view rather than firing a second callback here.
         player_screen_handler.add_slot(Arc::new(NormalSlot::new(player_inventory.clone(), 40)));
 
         player_screen_handler
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PlayerScreenHandler;
+
+    #[test]
+    fn screen_hotbar_excludes_offhand_slot() {
+        assert!(PlayerScreenHandler::is_in_hotbar(36));
+        assert!(PlayerScreenHandler::is_in_hotbar(44));
+        assert!(!PlayerScreenHandler::is_in_hotbar(45));
     }
 }
 
@@ -137,7 +151,12 @@ impl ScreenHandler for PlayerScreenHandler {
     fn on_closed<'a>(&'a mut self, player: &'a dyn InventoryPlayer) -> ScreenHandlerFuture<'a, ()> {
         Box::pin(async move {
             self.default_on_closed(player).await;
-            //TODO: this.craftingResultInventory.clear();
+            // Slot 0 is a virtual result slot and is not part of the 2x2
+            // inventory.  Clear it explicitly just like InventoryMenu.removed
+            // in vanilla; otherwise a stale cached result survives reopening.
+            self.get_behaviour().slots[0]
+                .set_stack_no_callbacks(ItemStack::EMPTY.clone())
+                .await;
             self.drop_inventory(player, self.crafting_inventory.clone())
                 .await;
         })
@@ -161,15 +180,20 @@ impl ScreenHandler for PlayerScreenHandler {
         Box::pin(async move {
             let slot = self.get_behaviour().slots[slot_index as usize].clone();
 
-            // TODO: Equippable component
-
             if slot.has_stack().await {
                 let mut slot_stack = slot.get_stack().await;
                 let stack_prev = slot_stack.clone();
 
-                let equipment_slot = slot_stack
-                    .get_data_component::<EquippableImpl>()
-                    .map_or(&EquipmentSlot::MAIN_HAND, |equippable| equippable.slot);
+                // For an armor/off-hand source the menu index is
+                // authoritative. For ordinary inventory slots, use the
+                // item's Equippable component when present.
+                let equipment_slot = player_screen_equipment_slot(slot_index)
+                    .or_else(|| {
+                        slot_stack
+                            .get_data_component::<EquippableImpl>()
+                            .map(|equippable| equippable.slot.clone())
+                    })
+                    .unwrap_or_else(|| EquipmentSlot::MAIN_HAND.clone());
 
                 // Quick move logic based on source slot
                 let success = if slot_index == 0 {
@@ -184,7 +208,7 @@ impl ScreenHandler for PlayerScreenHandler {
 
                     if result {
                         player
-                            .enqueue_equipment_change(equipment_slot, ItemStack::EMPTY)
+                            .enqueue_equipment_change(&equipment_slot, ItemStack::EMPTY)
                             .await;
                     }
                     result
@@ -203,18 +227,25 @@ impl ScreenHandler for PlayerScreenHandler {
 
                     if result {
                         player
-                            .enqueue_equipment_change(equipment_slot, &stack_prev)
+                            .enqueue_equipment_change(&equipment_slot, &stack_prev)
                             .await;
                     }
                     result
-                } else if matches!(equipment_slot, EquipmentSlot::OffHand(_))
+                } else if matches!(&equipment_slot, EquipmentSlot::OffHand(_))
                     && slot_index != 45
                     && self.get_slot(45).get_cloned_stack().await.is_empty()
                 {
                     // Into empty offhand slot (45)
                     let index = 45;
-                    self.insert_item(&mut slot_stack, index, index + 1, false)
-                        .await
+                    let result = self
+                        .insert_item(&mut slot_stack, index, index + 1, false)
+                        .await;
+                    if result {
+                        player
+                            .enqueue_equipment_change(&EquipmentSlot::OFF_HAND, &stack_prev)
+                            .await;
+                    }
+                    result
                 } else if (9..36).contains(&slot_index) {
                     // From main inventory (9-35) -> Hotbar (36-44)
                     self.insert_item(&mut slot_stack, 36, 45, false).await
@@ -225,6 +256,15 @@ impl ScreenHandler for PlayerScreenHandler {
                     // Fallback to moving into the player inventory area
                     self.insert_item(&mut slot_stack, 9, 45, false).await
                 };
+
+                // The source slot may have been the off-hand slot.  The
+                // normal inventory move updates the backing inventory, but
+                // the entity equipment stream also needs the removal packet.
+                if slot_index == 45 && success {
+                    player
+                        .enqueue_equipment_change(&EquipmentSlot::OFF_HAND, ItemStack::EMPTY)
+                        .await;
+                }
 
                 if !success {
                     return ItemStack::EMPTY.clone();

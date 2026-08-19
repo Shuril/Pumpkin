@@ -5,7 +5,8 @@ use pumpkin_data::block_properties::{
     BlockProperties, EastRedstone, HorizontalFacing, NorthRedstone, ObserverLikeProperties,
     RedstoneWireLikeProperties, RepeaterLikeProperties, SouthRedstone, WestRedstone,
 };
-use pumpkin_data::{Block, BlockDirection, BlockState, HorizontalFacingExt};
+use pumpkin_data::tag::{self, Taggable};
+use pumpkin_data::{Block, BlockDirection, BlockState, HorizontalFacingExt, Mirror, Rotation};
 use pumpkin_macros::pumpkin_block;
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_world::world::{BlockAccessor, BlockFlags};
@@ -242,11 +243,74 @@ impl BlockBehaviour for RedstoneWireBlock {
             update_wire_neighbors(args.world, args.position).await;
         })
     }
+
+    fn mirror(&self, block: &Block, state_id: BlockStateId, mirror: Mirror) -> &'static BlockState {
+        let wire = RedstoneWireProperties::from_state_id(state_id, block);
+        BlockState::from_id(mirror_wire(wire, mirror).to_state_id(block))
+    }
+
+    fn rotate(
+        &self,
+        block: &Block,
+        state_id: BlockStateId,
+        rotation: Rotation,
+    ) -> &'static BlockState {
+        let wire = RedstoneWireProperties::from_state_id(state_id, block);
+        BlockState::from_id(rotate_wire(wire, rotation).to_state_id(block))
+    }
+}
+
+/// Permutes the four connection sides for a mirror transform. The `RedstoneSide` value at
+/// each direction is untouched, only which direction key holds which value changes.
+fn mirror_wire(wire: RedstoneWireProperties, mirror: Mirror) -> RedstoneWireProperties {
+    match mirror {
+        Mirror::LeftRight => RedstoneWireProperties {
+            north: wire.south.to_wire_connection().to_north(),
+            south: wire.north.to_wire_connection().to_south(),
+            ..wire
+        },
+        Mirror::FrontBack => RedstoneWireProperties {
+            east: wire.west.to_wire_connection().to_east(),
+            west: wire.east.to_wire_connection().to_west(),
+            ..wire
+        },
+        Mirror::None => wire,
+    }
+}
+
+/// Permutes the four connection sides for a rotation transform, matching vanilla
+/// `RedStoneWireBlock.rotate`.
+fn rotate_wire(wire: RedstoneWireProperties, rotation: Rotation) -> RedstoneWireProperties {
+    match rotation {
+        Rotation::Clockwise90 => RedstoneWireProperties {
+            north: wire.west.to_wire_connection().to_north(),
+            east: wire.north.to_wire_connection().to_east(),
+            south: wire.east.to_wire_connection().to_south(),
+            west: wire.south.to_wire_connection().to_west(),
+            power: wire.power,
+        },
+        Rotation::Rotate180 => RedstoneWireProperties {
+            north: wire.south.to_wire_connection().to_north(),
+            east: wire.west.to_wire_connection().to_east(),
+            south: wire.north.to_wire_connection().to_south(),
+            west: wire.east.to_wire_connection().to_west(),
+            power: wire.power,
+        },
+        Rotation::CounterClockwise90 => RedstoneWireProperties {
+            north: wire.east.to_wire_connection().to_north(),
+            east: wire.south.to_wire_connection().to_east(),
+            south: wire.west.to_wire_connection().to_south(),
+            west: wire.north.to_wire_connection().to_west(),
+            power: wire.power,
+        },
+        Rotation::None => wire,
+    }
 }
 
 fn can_place_at(world: &dyn BlockAccessor, block_pos: &BlockPos) -> bool {
+    let floor_block = world.get_block(&block_pos.down());
     let floor = world.get_block_state(&block_pos.down());
-    floor.is_side_solid(BlockDirection::Up)
+    floor.is_side_solid(BlockDirection::Up) || floor_block == &Block::HOPPER
 }
 
 async fn on_use(wire: RedstoneWireProperties, world: &Arc<World>, block_pos: &BlockPos) -> bool {
@@ -325,14 +389,23 @@ pub async fn get_side(world: &World, pos: &BlockPos, side: BlockDirection) -> Wi
 
     let up_pos = pos.offset(BlockDirection::Up.to_offset());
     let up_state = world.get_block_state(&up_pos);
+    let above_neighbor = neighbor_pos.up();
+    let above_neighbor_block = world.get_block(&above_neighbor);
+    let neighbor_can_support_wire = state.is_side_solid(BlockDirection::Up)
+        || neighbor == &Block::HOPPER
+        || neighbor.has_tag(&tag::Block::MINECRAFT_TRAPDOORS);
 
     if !up_state.is_solid_block()
-        && state.is_side_solid(side.opposite())
-        && can_connect_diagonal_to(
-            world.get_block(&neighbor_pos.offset(BlockDirection::Up.to_offset())),
-        )
+        && neighbor_can_support_wire
+        && can_connect_diagonal_to(above_neighbor_block)
     {
-        WireConnection::Up
+        if state.is_side_solid(side.opposite()) {
+            WireConnection::Up
+        } else {
+            // Wires climb onto trapdoors and other non-sturdy supports visually
+            // as a side connection in vanilla.
+            WireConnection::Side
+        }
     } else if !state.is_solid_block()
         && can_connect_diagonal_to(
             world.get_block(&neighbor_pos.offset(BlockDirection::Down.to_offset())),
@@ -566,4 +639,160 @@ async fn calculate_power(world: &World, pos: &BlockPos) -> u8 {
     }
 
     block_power.max(wire_power.saturating_sub(1))
+}
+
+#[cfg(test)]
+mod rotate_mirror_tests {
+    use super::*;
+
+    const fn wire(
+        north: NorthRedstone,
+        south: SouthRedstone,
+        east: EastRedstone,
+        west: WestRedstone,
+    ) -> RedstoneWireProperties {
+        RedstoneWireProperties {
+            north,
+            south,
+            east,
+            west,
+            power: 0,
+        }
+    }
+
+    #[test]
+    fn rotate_none_is_identity() {
+        let w = wire(
+            NorthRedstone::Side,
+            SouthRedstone::None,
+            EastRedstone::Up,
+            WestRedstone::None,
+        );
+        assert_eq!(rotate_wire(w, Rotation::None), w);
+    }
+
+    #[test]
+    fn rotate_clockwise_90_permutes_sides() {
+        let w = wire(
+            NorthRedstone::Side,
+            SouthRedstone::None,
+            EastRedstone::Up,
+            WestRedstone::None,
+        );
+        let rotated = rotate_wire(w, Rotation::Clockwise90);
+        assert_eq!(
+            rotated.north,
+            WestRedstone::None.to_wire_connection().to_north()
+        );
+        assert_eq!(
+            rotated.east,
+            NorthRedstone::Side.to_wire_connection().to_east()
+        );
+        assert_eq!(
+            rotated.south,
+            EastRedstone::Up.to_wire_connection().to_south()
+        );
+        assert_eq!(
+            rotated.west,
+            SouthRedstone::None.to_wire_connection().to_west()
+        );
+    }
+
+    #[test]
+    fn rotate_counter_clockwise_90_is_inverse_of_clockwise_90() {
+        let w = wire(
+            NorthRedstone::Side,
+            SouthRedstone::Up,
+            EastRedstone::None,
+            WestRedstone::Side,
+        );
+        let round_tripped = rotate_wire(
+            rotate_wire(w, Rotation::Clockwise90),
+            Rotation::CounterClockwise90,
+        );
+        assert_eq!(round_tripped, w);
+    }
+
+    #[test]
+    fn rotate_180_twice_is_identity() {
+        let w = wire(
+            NorthRedstone::Side,
+            SouthRedstone::Up,
+            EastRedstone::None,
+            WestRedstone::Side,
+        );
+        let twice = rotate_wire(rotate_wire(w, Rotation::Rotate180), Rotation::Rotate180);
+        assert_eq!(twice, w);
+    }
+
+    #[test]
+    fn mirror_none_is_identity() {
+        let w = wire(
+            NorthRedstone::Side,
+            SouthRedstone::None,
+            EastRedstone::Up,
+            WestRedstone::None,
+        );
+        assert_eq!(mirror_wire(w, Mirror::None), w);
+    }
+
+    #[test]
+    fn mirror_left_right_swaps_north_south_only() {
+        let w = wire(
+            NorthRedstone::Side,
+            SouthRedstone::None,
+            EastRedstone::Up,
+            WestRedstone::None,
+        );
+        let mirrored = mirror_wire(w, Mirror::LeftRight);
+        assert_eq!(
+            mirrored.north,
+            SouthRedstone::None.to_wire_connection().to_north()
+        );
+        assert_eq!(
+            mirrored.south,
+            NorthRedstone::Side.to_wire_connection().to_south()
+        );
+        assert_eq!(mirrored.east, w.east);
+        assert_eq!(mirrored.west, w.west);
+    }
+
+    #[test]
+    fn mirror_front_back_swaps_east_west_only() {
+        let w = wire(
+            NorthRedstone::Side,
+            SouthRedstone::None,
+            EastRedstone::Up,
+            WestRedstone::None,
+        );
+        let mirrored = mirror_wire(w, Mirror::FrontBack);
+        assert_eq!(
+            mirrored.east,
+            WestRedstone::None.to_wire_connection().to_east()
+        );
+        assert_eq!(
+            mirrored.west,
+            EastRedstone::Up.to_wire_connection().to_west()
+        );
+        assert_eq!(mirrored.north, w.north);
+        assert_eq!(mirrored.south, w.south);
+    }
+
+    #[test]
+    fn mirror_applied_twice_is_identity() {
+        let w = wire(
+            NorthRedstone::Side,
+            SouthRedstone::Up,
+            EastRedstone::None,
+            WestRedstone::Side,
+        );
+        assert_eq!(
+            mirror_wire(mirror_wire(w, Mirror::LeftRight), Mirror::LeftRight),
+            w
+        );
+        assert_eq!(
+            mirror_wire(mirror_wire(w, Mirror::FrontBack), Mirror::FrontBack),
+            w
+        );
+    }
 }

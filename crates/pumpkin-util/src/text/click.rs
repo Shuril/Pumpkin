@@ -11,10 +11,16 @@ pub enum ClickEvent {
     /// Opens a file.
     OpenFile { path: Cow<'static, str> },
     /// Works in signs but only on the root text component.
-    RunCommand { command: Cow<'static, str> },
+    RunCommand {
+        #[serde(alias = "value")]
+        command: Cow<'static, str>,
+    },
     /// Replaces the contents of the chat box with the text, not necessarily a
     /// command.
-    SuggestCommand { command: Cow<'static, str> },
+    SuggestCommand {
+        #[serde(alias = "value")]
+        command: Cow<'static, str>,
+    },
     /// Only usable within written books. Changes the page of the book. Indexing
     /// starts at 1.
     ChangePage { page: u32 },

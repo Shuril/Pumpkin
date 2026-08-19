@@ -10,6 +10,7 @@ use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_util::math::position::BlockPos;
 use rustc_hash::FxHashMap;
 
+use std::collections::BTreeSet;
 use std::sync::RwLock;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicU64;
@@ -77,11 +78,18 @@ pub struct ChunkData {
     pub fluid_ticks: ChunkTickScheduler<&'static Fluid>,
     pub pending_block_entities: std::sync::Mutex<FxHashMap<BlockPos, NbtCompound>>,
     pub light_engine: std::sync::Mutex<ChunkLight>,
+    /// Section indices whose light layer changed since the last live light
+    /// update.  Initial chunk packets ignore this set; live packets consume it.
+    pub dirty_light_sections: std::sync::Mutex<BTreeSet<usize>>,
     pub light_populated: AtomicBool,
     pub status: ChunkStatus,
     pub blending_data: Option<crate::generation::blender::blending_data::BlendingData>,
     pub dirty: AtomicBool,
     pub inhabited_time: AtomicU64,
+    /// Root-level NBT fields unknown to this server version. Vanilla keeps
+    /// these fields when rewriting a chunk (for example blending data or
+    /// future structure metadata), so retain them for lossless round-trips.
+    pub unknown_nbt: std::sync::Mutex<NbtCompound>,
 }
 
 pub struct ChunkEntityData {
@@ -90,6 +98,11 @@ pub struct ChunkEntityData {
     /// Chunk Z
     pub z: i32,
     pub data: Mutex<Vec<NbtCompound>>,
+
+    /// Root-level fields from an entity-region chunk that this server version does
+    /// not interpret.  Vanilla keeps these fields when rewriting `entities/*.mca`,
+    /// so retaining them prevents future entity metadata from being silently lost.
+    pub unknown_nbt: std::sync::Mutex<NbtCompound>,
 
     pub dirty: AtomicBool,
 }
@@ -609,11 +622,13 @@ impl ChunkData {
             fluid_ticks: ChunkTickScheduler::default(),
             pending_block_entities: std::sync::Mutex::new(FxHashMap::default()),
             light_engine: std::sync::Mutex::new(ChunkLight::default()),
+            dirty_light_sections: std::sync::Mutex::new(BTreeSet::new()),
             light_populated: std::sync::atomic::AtomicBool::new(false),
             status: ChunkStatus::Full,
             blending_data: None,
             dirty: std::sync::atomic::AtomicBool::new(false),
             inhabited_time: std::sync::atomic::AtomicU64::new(0),
+            unknown_nbt: std::sync::Mutex::default(),
         }
     }
 

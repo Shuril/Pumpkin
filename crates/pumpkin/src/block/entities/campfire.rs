@@ -1,10 +1,13 @@
 use super::BlockEntity;
+use pumpkin_data::block_properties::BlockProperties;
 use pumpkin_data::item_stack::ItemStack;
+use pumpkin_data::recipes::{CookingRecipeKind, get_cooking_recipe_with_ingredient};
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
 use pumpkin_util::math::position::BlockPos;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::Mutex;
 
 pub struct CampfireBlockEntity {
@@ -12,6 +15,7 @@ pub struct CampfireBlockEntity {
     pub items: [Arc<Mutex<ItemStack>>; 4],
     pub cooking_times: [tokio::sync::Mutex<i32>; 4],
     pub cooking_total_times: [tokio::sync::Mutex<i32>; 4],
+    pub dirty: AtomicBool,
 }
 
 impl BlockEntity for CampfireBlockEntity {
@@ -58,6 +62,7 @@ impl BlockEntity for CampfireBlockEntity {
             items,
             cooking_times,
             cooking_total_times,
+            dirty: AtomicBool::new(false),
         }
     }
 
@@ -95,6 +100,79 @@ impl BlockEntity for CampfireBlockEntity {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
+
+    fn tick<'a>(
+        &'a self,
+        world: &'a Arc<crate::world::World>,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+        Box::pin(async move {
+            let state = world.get_block_state(&self.position);
+            let lit = pumpkin_data::block_properties::CampfireLikeProperties::from_state_id(
+                state.id,
+                world.get_block(&self.position),
+            )
+            .lit;
+
+            for slot in 0..self.items.len() {
+                let input = self.items[slot].lock().await.clone();
+                let Some(recipe) = (!input.is_empty())
+                    .then(|| {
+                        get_cooking_recipe_with_ingredient(
+                            input.get_item(),
+                            CookingRecipeKind::CampfireCooking,
+                        )
+                    })
+                    .flatten()
+                else {
+                    *self.cooking_times[slot].lock().await = 0;
+                    continue;
+                };
+
+                let total = recipe.cookingtime.max(1);
+                *self.cooking_total_times[slot].lock().await = total;
+                let mut time = self.cooking_times[slot].lock().await;
+                if !lit {
+                    *time = 0;
+                    continue;
+                }
+                *time += 1;
+                if *time < total {
+                    self.dirty.store(true, Ordering::Relaxed);
+                    continue;
+                }
+                *time = 0;
+                drop(time);
+
+                // Vanilla ejects the cooked result into the world instead of
+                // leaving it in the campfire slot.  Replace the input only
+                // after the recipe was resolved so component-bearing inputs
+                // cannot be lost when a datapack reload removes a recipe.
+                let mut item = self.items[slot].lock().await;
+                if item.are_items_and_components_equal(&input) {
+                    item.clear();
+                    if let Some(result_item) =
+                        pumpkin_data::item::Item::from_registry_key(recipe.result.id)
+                    {
+                        world
+                            .drop_stack(
+                                &self.position,
+                                ItemStack::new(recipe.result.count, result_item),
+                            )
+                            .await;
+                    }
+                    self.dirty.store(true, Ordering::Relaxed);
+                }
+            }
+        })
+    }
+
+    fn is_dirty(&self) -> bool {
+        self.dirty.load(Ordering::Relaxed)
+    }
+
+    fn clear_dirty(&self) {
+        self.dirty.store(false, Ordering::Relaxed);
+    }
 }
 
 impl CampfireBlockEntity {
@@ -106,6 +184,7 @@ impl CampfireBlockEntity {
             items: std::array::from_fn(|_| Arc::new(Mutex::new(ItemStack::EMPTY.clone()))),
             cooking_times: [Mutex::new(0), Mutex::new(0), Mutex::new(0), Mutex::new(0)],
             cooking_total_times: [Mutex::new(0), Mutex::new(0), Mutex::new(0), Mutex::new(0)],
+            dirty: AtomicBool::new(false),
         }
     }
 }

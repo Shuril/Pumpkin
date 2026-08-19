@@ -1,7 +1,7 @@
 use super::TreeDecorator;
 use crate::generation::proto_chunk::GenerationCache;
 use crate::{generation::block_state_provider::BlockStateProvider, world::WorldPortalExt};
-use pumpkin_data::{Block, tag::Block::MINECRAFT_LEAVES};
+use pumpkin_data::{Block, BlockState, tag::Block::MINECRAFT_LEAVES};
 use pumpkin_util::{
     math::{block_box::BlockBox, position::BlockPos},
     random::{RandomGenerator, RandomImpl},
@@ -12,6 +12,19 @@ pub struct PlaceOnGroundTreeDecorator {
     pub radius: i32,
     pub height: i32,
     pub block_state_provider: BlockStateProvider,
+}
+
+#[inline]
+fn can_place_above(
+    state: &BlockState,
+    above_state: &BlockState,
+    top_no_leaves: i32,
+    above_y: i32,
+) -> bool {
+    (above_state.is_air() || above_state.id.to_block_id() == Block::VINE.id)
+        && state.is_solid_render()
+        && !state.id.to_block_id().has_tag(MINECRAFT_LEAVES)
+        && top_no_leaves <= above_y
 }
 
 impl PlaceOnGroundTreeDecorator {
@@ -65,20 +78,50 @@ impl PlaceOnGroundTreeDecorator {
         pos: BlockPos,
         random: &mut RandomGenerator,
     ) {
-        let state = GenerationCache::get_block_state(chunk, &pos.0);
+        let state = GenerationCache::get_block_state(chunk, &pos.0).to_state();
         let up_pos = pos.up();
-        let up_state = GenerationCache::get_block_state(chunk, &up_pos.0);
-        // TODO
-        if (up_state.to_state().is_air() || up_state.to_block_id() == Block::VINE)
-            && state.to_state().is_full_cube()
-            && !state.to_block_id().has_tag(MINECRAFT_LEAVES)
-        // TODO: using heightmap seems not to work
-        {
+        let up_state = GenerationCache::get_block_state(chunk, &up_pos.0).to_state();
+        let top_no_leaves =
+            chunk.top_motion_blocking_block_no_leaves_height_exclusive(pos.0.x, pos.0.z);
+        if can_place_above(&state, &up_state, top_no_leaves, up_pos.0.y) {
             chunk.set_block_state(
                 &up_pos.0,
                 self.block_state_provider
                     .get(random, up_pos, chunk, block_registry),
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use pumpkin_data::Block;
+
+    use super::can_place_above;
+
+    #[test]
+    fn place_on_ground_requires_solid_non_leaf_support_and_heightmap_clearance() {
+        let air = Block::AIR.default_state;
+        assert!(can_place_above(Block::STONE.default_state, air, 65, 65));
+        assert!(!can_place_above(Block::STONE.default_state, air, 66, 65));
+        assert!(!can_place_above(Block::GLASS.default_state, air, 65, 65));
+        assert!(!can_place_above(
+            Block::OAK_LEAVES.default_state,
+            air,
+            65,
+            65
+        ));
+        assert!(!can_place_above(
+            Block::STONE.default_state,
+            Block::STONE.default_state,
+            65,
+            65
+        ));
+        assert!(can_place_above(
+            Block::STONE.default_state,
+            Block::VINE.default_state,
+            65,
+            65
+        ));
     }
 }

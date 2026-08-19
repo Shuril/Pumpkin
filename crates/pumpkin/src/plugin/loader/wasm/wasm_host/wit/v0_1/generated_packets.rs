@@ -450,6 +450,7 @@ pub fn serialize_java_packet(
             let p = pumpkin_protocol::java::client::play::CRecipeBookAdd {
                 replace: data.replace.try_into().unwrap_or_default(),
                 dynamic_recipes: &[],
+                allowed_builtin_recipe_ids: None,
             };
             let mut buf = Vec::new();
             let _ = crate::net::java::JavaClient::write_packet_for_version(&p, version, &mut buf);

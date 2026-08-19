@@ -6,6 +6,7 @@ use pumpkin_data::{
     block_properties::{
         BlockProperties, ComparatorLikeProperties, HorizontalFacing, ModeComparator,
     },
+    sound::{Sound, SoundCategory},
 };
 use pumpkin_macros::pumpkin_block;
 use pumpkin_util::math::{boundingbox::BoundingBox, position::BlockPos};
@@ -34,6 +35,9 @@ impl BlockBehaviour for ComparatorBlock {
 
     fn normal_use<'a>(&'a self, args: NormalUseArgs<'a>) -> BlockFuture<'a, BlockActionResult> {
         Box::pin(async move {
+            if !args.player.abilities.lock().await.allow_modify_world {
+                return BlockActionResult::Pass;
+            }
             let state = args.world.get_block_state(args.position);
             let props = ComparatorLikeProperties::from_state_id(state.id, args.block);
             self.on_use(props, args.world, *args.position, args.block)
@@ -293,6 +297,15 @@ impl RedstoneGateBlock<ComparatorLikeProperties> for ComparatorBlock {
 }
 
 impl ComparatorBlock {
+    #[must_use]
+    const fn mode_click_pitch(mode: ModeComparator) -> f32 {
+        if matches!(mode, ModeComparator::Subtract) {
+            0.55
+        } else {
+            0.5
+        }
+    }
+
     async fn on_use(
         &self,
         mut props: ComparatorLikeProperties,
@@ -300,9 +313,10 @@ impl ComparatorBlock {
         block_pos: BlockPos,
         block: &Block,
     ) {
-        // Vanilla Parity TODO:
-        // playSound(player, pos, SoundEvents.COMPARATOR_CLICK, SoundSource.BLOCKS, 0.3F, pitch);
-        // Pitch is 0.55F if SUBTRACT, 0.5F if COMPARE.
+        // Vanilla plays a short mode-specific click when the comparator is
+        // toggled.  Keep this at the state mutation boundary so cancelled or
+        // permission-denied interactions never produce a client-only sound.
+        let pitch = Self::mode_click_pitch(props.mode);
 
         props.mode = match props.mode {
             ModeComparator::Compare => ModeComparator::Subtract,
@@ -311,8 +325,15 @@ impl ComparatorBlock {
 
         let state_id = props.to_state_id(block);
         world
-            .set_block_state(&block_pos, state_id, BlockFlags::empty())
+            .set_block_state(&block_pos, state_id, BlockFlags::NOTIFY_LISTENERS)
             .await;
+        world.play_sound_raw(
+            Sound::BlockComparatorClick as u16,
+            SoundCategory::Blocks,
+            &block_pos.to_centered_f64(),
+            0.3,
+            pitch,
+        );
 
         self.update(world, block_pos, BlockState::from_id(state_id), block)
             .await;
@@ -402,5 +423,23 @@ impl ComparatorBlock {
             RedstoneGateBlock::update_target(self, world, pos, props.to_state_id(block), block)
                 .await;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ComparatorBlock;
+    use pumpkin_data::block_properties::ModeComparator;
+
+    #[test]
+    fn mode_click_pitch_matches_vanilla() {
+        assert_eq!(
+            ComparatorBlock::mode_click_pitch(ModeComparator::Compare),
+            0.5
+        );
+        assert_eq!(
+            ComparatorBlock::mode_click_pitch(ModeComparator::Subtract),
+            0.55
+        );
     }
 }

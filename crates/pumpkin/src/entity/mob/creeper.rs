@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::{
     Arc, Weak,
     atomic::{AtomicBool, AtomicI32, Ordering},
@@ -22,12 +23,47 @@ use crate::entity::{
         melee_attack::MeleeAttackGoal, revenge::RevengeGoal, swim::SwimGoal,
         wander_around::WanderAroundGoal,
     },
+    area_effect_cloud::AreaEffectCloudEntity,
     mob::{Mob, MobEntity},
     player::Player,
 };
+use uuid::Uuid;
 
 const DEFAULT_FUSE_TIME: i32 = 30;
 const DEFAULT_EXPLOSION_RADIUS: i32 = 3;
+
+/// Convert the effects currently carried by a mob into the immutable effect
+/// entries consumed by an area-effect cloud.  Keeping this conversion in one
+/// place is important: the cloud must retain the duration/amplifier/visual
+/// flags of every active effect, while the internal `HashMap` itself remains
+/// owned by the living entity.
+fn lingering_cloud_effects(
+    active_effects: &HashMap<
+        &'static pumpkin_data::effect::StatusEffect,
+        pumpkin_data::potion::Effect,
+    >,
+) -> Vec<(
+    &'static pumpkin_data::effect::StatusEffect,
+    i32,
+    u8,
+    bool,
+    bool,
+    bool,
+)> {
+    active_effects
+        .values()
+        .map(|effect| {
+            (
+                effect.effect_type,
+                effect.duration,
+                effect.amplifier,
+                effect.ambient,
+                effect.show_particles,
+                effect.show_icon,
+            )
+        })
+        .collect()
+}
 
 pub struct CreeperEntity {
     pub mob_entity: MobEntity,
@@ -119,8 +155,75 @@ impl CreeperEntity {
         let world = entity.world.load();
         let pos = entity.pos.load();
         world.explode(pos, radius * multiplier).await;
-        // TODO: spawn area effect cloud with potion effects
+
+        // Vanilla creepers leave a lingering cloud only when they carry at
+        // least one active effect.  Snapshot the map before spawning: the
+        // cloud owns its copy and therefore cannot race with effect ticking or
+        // death cleanup on the creeper.
+        let effects = {
+            let active_effects = self.mob_entity.living_entity.active_effects.lock().await;
+            lingering_cloud_effects(&active_effects)
+        };
+        if !effects.is_empty() {
+            let cloud_entity = Entity::from_uuid(
+                Uuid::new_v4(),
+                world.clone(),
+                pos,
+                &EntityType::AREA_EFFECT_CLOUD,
+            );
+            let cloud = AreaEffectCloudEntity::create(
+                cloud_entity,
+                ItemStack::new(0, &Item::GLASS_BOTTLE),
+                effects,
+                300,
+                2.5,
+                20,
+                10,
+                -0.5,
+                0,
+            );
+            world.spawn_entity(cloud).await;
+        }
         entity.remove().await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::lingering_cloud_effects;
+    use pumpkin_data::{effect::StatusEffect, potion::Effect};
+    use std::collections::HashMap;
+
+    #[test]
+    fn lingering_cloud_keeps_active_effect_parameters() {
+        let mut active = HashMap::new();
+        active.insert(
+            &StatusEffect::POISON,
+            Effect {
+                effect_type: &StatusEffect::POISON,
+                duration: 87,
+                amplifier: 2,
+                ambient: true,
+                show_particles: false,
+                show_icon: true,
+                blend: false,
+            },
+        );
+
+        let entries = lingering_cloud_effects(&active);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].0.id, StatusEffect::POISON.id);
+        assert_eq!(entries[0].1, 87);
+        assert_eq!(entries[0].2, 2);
+        assert!(entries[0].3);
+        assert!(!entries[0].4);
+        assert!(entries[0].5);
+    }
+
+    #[test]
+    fn creeper_without_effects_does_not_create_cloud_entries() {
+        let active = HashMap::new();
+        assert!(lingering_cloud_effects(&active).is_empty());
     }
 }
 
@@ -237,8 +340,10 @@ impl Mob for CreeperEntity {
             );
 
             if player.gamemode.load() != pumpkin_util::GameMode::Creative {
-                // TODO: Handle DamageResult::Broken to broadcast item break and update player slot.
-                let _ = item_stack.damage_item(1);
+                // Keep the complete vanilla item-use pipeline (durability, break
+                // event/stat and the main/off-hand break animation).  The network
+                // handler commits the mutated stack after this interaction returns.
+                let _ = player.damage_item_stack_for_use(item_stack, 1).await;
             }
 
             true

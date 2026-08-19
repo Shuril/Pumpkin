@@ -172,7 +172,10 @@ impl DungeonFeature {
             }
         }
 
-        // TODO: set spawner entity type
+        // The dungeon's generated SpawnData selects the vanilla weighted
+        // skeleton/zombie/spider type.  The block-entity loader consumes this
+        // nested `SpawnData.entity.id` shape for both block and minecart
+        // spawners.
         let mob = DUNGEON_MOBS[random.next_bounded_i32(DUNGEON_MOBS.len() as i32) as usize];
         chunk.set_block_state(&pos.0, Block::SPAWNER.default_state);
 

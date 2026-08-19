@@ -8,7 +8,8 @@ use crate::block::blocks::plant::big_dripleaf_stem::{
 use crate::block::blocks::redstone::block_receives_redstone_power;
 use crate::block::{
     BlockBehaviour, BlockFuture, BrokenArgs, CanPlaceAtArgs, GetStateForNeighborUpdateArgs,
-    OnEntityStepArgs, OnNeighborUpdateArgs, OnPlaceArgs, OnScheduledTickArgs, PlacedArgs,
+    OnEntityStepArgs, OnNeighborUpdateArgs, OnPlaceArgs, OnProjectileHitArgs, OnScheduledTickArgs,
+    PlacedArgs,
 };
 use crate::entity::EntityBase;
 use crate::entity::ai::pathfinder::node::Coordinate;
@@ -81,7 +82,20 @@ impl BlockBehaviour for BigDripleafBlock {
             }
         })
     }
-    //TODO: onProjectileHit
+    fn on_projectile_hit<'a>(&'a self, args: OnProjectileHitArgs<'a>) -> BlockFuture<'a, ()> {
+        Box::pin(async move {
+            // Vanilla projectiles force a big dripleaf directly to FULL tilt
+            // and keep the normal 100-tick recovery schedule.
+            set_tilt_and_schedule_tick(
+                args.state.id,
+                args.world,
+                args.position,
+                Tilt::Full,
+                Some(Sound::BlockBigDripleafTiltDown),
+            )
+            .await;
+        })
+    }
     fn can_place_at(&self, args: CanPlaceAtArgs<'_>) -> bool {
         <Self as PlantBlockBase>::can_place_at(self, args.block_accessor, args.position)
     }
@@ -181,7 +195,7 @@ async fn set_tilt_and_schedule_tick(
         world.schedule_block_tick(
             &Block::BIG_DRIPLEAF,
             *pos,
-            tick_delay as u8,
+            tick_delay as u32,
             pumpkin_world::tick::TickPriority::Normal,
         );
     }

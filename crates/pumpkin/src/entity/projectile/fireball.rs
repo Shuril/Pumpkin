@@ -52,7 +52,12 @@ impl EntityBase for FireballEntity {
         caller: &'a Arc<dyn EntityBase>,
         server: &'a Server,
     ) -> EntityBaseFuture<'a, ()> {
-        Box::pin(async move { self.thrown.process_tick(caller, server).await })
+        Box::pin(async move {
+            // AbstractHurtingProjectile keeps fireballs incendiary for their
+            // whole flight, including the block-hit callback.
+            self.set_on_fire_for(1.0);
+            self.thrown.process_tick(caller, server).await;
+        })
     }
 
     fn get_entity(&self) -> &Entity {
@@ -69,6 +74,10 @@ impl EntityBase for FireballEntity {
 
     fn cast_any(&self) -> &dyn std::any::Any {
         self
+    }
+
+    fn projectile_owner_id(&self) -> Option<i32> {
+        self.thrown.owner_id
     }
 
     fn on_hit(&self, hit: ProjectileHit) -> EntityBaseFuture<'_, ()> {
@@ -93,8 +102,10 @@ impl EntityBase for FireballEntity {
             }
 
             let hit_pos = hit.hit_pos();
-            // Explosion sets fire if mob griefing is enabled (assuming true for now)
-            world.explode(hit_pos, self.explosion_power).await;
+            // Fireballs are the incendiary explosion source.  The world
+            // applies the normal fire-survival predicate and random one-in-
+            // three placement chance after the blast has removed blocks.
+            world.explode_with_fire(hit_pos, self.explosion_power).await;
         })
     }
 }

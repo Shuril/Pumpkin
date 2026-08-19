@@ -83,9 +83,19 @@ impl Goal for PickUpBlockGoal {
 
             let default_state_id = block.default_state.id;
 
-            // TODO: Emit game event (BLOCK_DESTROY)
             world
                 .set_block_state(&target_pos, BlockStateId::AIR, BlockFlags::NOTIFY_ALL)
+                .await;
+            // EndermanAi emits BLOCK_DESTROY from the removed block and keeps
+            // the enderman as the event source.  Dispatch after the
+            // authoritative mutation so sensors never observe a cancelled
+            // pickup or a stale block state.
+            world
+                .emit_game_event_from(
+                    target_pos,
+                    crate::world::game_event::GameEventKind::BlockDestroy,
+                    Some(entity.entity_uuid),
+                )
                 .await;
             self.enderman.set_carried_block(Some(default_state_id));
         })

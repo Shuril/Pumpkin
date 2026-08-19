@@ -43,6 +43,7 @@ pub mod gamemode;
 pub mod gameprofile;
 pub mod hex_color;
 pub mod message;
+pub mod nbt;
 pub mod players;
 pub mod position_2d;
 pub mod position_3d;
@@ -125,6 +126,7 @@ pub enum Arg<'a> {
     CommandTree(CommandTree),
     Item(&'a str),
     ItemPredicate(&'a str),
+    Nbt(pumpkin_nbt::compound::NbtCompound),
     ResourceLocation(&'a str),
     Block(&'a str),
     BlockPredicate(&'a str),

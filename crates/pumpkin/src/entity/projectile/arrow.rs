@@ -67,6 +67,11 @@ pub struct ArrowEntity {
     pub life: AtomicU32,
     pub shake_time: AtomicU8,
     pub has_hit: AtomicBool,
+    /// Vanilla keeps a per-flight set of entity ids already hit by a
+    /// piercing arrow.  It is intentionally not persisted: loading an arrow
+    /// starts a fresh collision pass, just like AbstractArrow's transient
+    /// `piercingIgnoreEntityIds` set.
+    pub piercing_ignore_entity_ids: RwLock<Vec<i32>>,
     pub last_block_pos: Arc<std::sync::RwLock<Option<BlockPos>>>,
 }
 
@@ -103,6 +108,7 @@ impl ArrowEntity {
             life: AtomicU32::new(0),
             shake_time: AtomicU8::new(0),
             has_hit: AtomicBool::new(false),
+            piercing_ignore_entity_ids: RwLock::new(Vec::new()),
             last_block_pos: Arc::new(std::sync::RwLock::new(None)),
         }
     }
@@ -115,7 +121,7 @@ impl ArrowEntity {
     ) -> Self {
         let mut owner_pos = shooter.pos.load();
         owner_pos.y = owner_pos.y + f64::from(shooter.entity_dimension.load().eye_height) - 0.1;
-        entity.pos.store(owner_pos);
+        entity.set_pos(owner_pos);
         entity.set_velocity(Vector3::new(0.0, 0.1, 0.0));
 
         Self {
@@ -133,6 +139,7 @@ impl ArrowEntity {
             life: AtomicU32::new(0),
             shake_time: AtomicU8::new(0),
             has_hit: AtomicBool::new(false),
+            piercing_ignore_entity_ids: RwLock::new(Vec::new()),
             last_block_pos: Arc::new(std::sync::RwLock::new(None)),
         }
     }
@@ -242,8 +249,8 @@ impl ArrowEntity {
         self.pierce_level.store(level, Ordering::Relaxed);
     }
 
-    pub const fn set_base_damage(&self, _damage: f64) {
-        // TODO: implement this
+    pub const fn set_base_damage(&mut self, damage: f64) {
+        self.base_damage = damage;
     }
 
     #[allow(dead_code)]
@@ -413,6 +420,15 @@ impl EntityBase for ArrowEntity {
                 if self.should_skip_collision(entity, &cand) {
                     continue;
                 }
+                if self.pierce_level.load(Ordering::Relaxed) > 0
+                    && self
+                        .piercing_ignore_entity_ids
+                        .read()
+                        .await
+                        .contains(&cand.get_entity().entity_id)
+                {
+                    continue;
+                }
 
                 let ebb = cand.get_entity().bounding_box.load().expand(0.3, 0.3, 0.3);
                 if let Some(t) = calculate_ray_intersection(&start_pos, &velocity, &ebb)
@@ -435,6 +451,7 @@ impl EntityBase for ArrowEntity {
                     return;
                 }
 
+                world.on_projectile_hit(caller.as_ref(), &h).await;
                 caller.on_hit(h).await;
             }
         })
@@ -461,14 +478,6 @@ impl EntityBase for ArrowEntity {
                         .write()
                         .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(pos);
 
-                    let block = world.get_block(&pos);
-                    if block == &pumpkin_data::Block::TARGET {
-                        let player_opt = self.owner_id.and_then(|id| world.get_player_by_id(id));
-                        if let Some(player) = player_opt {
-                            player.trigger_advancement(crate::entity::player::advancement::trigger::AdvancementTrigger::Bullseye).await;
-                        }
-                    }
-
                     // Stop the arrow
                     entity.velocity.store(Vector3::new(0.0, 0.0, 0.0));
                     entity.set_pos(hit_pos);
@@ -493,6 +502,22 @@ impl EntityBase for ArrowEntity {
                     hit_pos,
                     ..
                 } => {
+                    // AbstractArrow records the target before applying damage
+                    // and discards the arrow once `pierce + 1` entities have
+                    // been recorded.  Keep the same ordering so a plugin or
+                    // damage callback cannot make one target count twice.
+                    let pierce = self.pierce_level.load(Ordering::Relaxed);
+                    if pierce > 0 {
+                        let target_id = target.get_entity().entity_id;
+                        let mut ignored = self.piercing_ignore_entity_ids.write().await;
+                        if ignored.contains(&target_id) || ignored.len() >= pierce as usize + 1 {
+                            entity.remove().await;
+                            self.has_hit.store(false, Ordering::Release);
+                            return;
+                        }
+                        ignored.push(target_id);
+                    }
+
                     // Calculate damage
                     let velocity = entity.velocity.load();
                     let power = velocity.length();
@@ -564,12 +589,15 @@ impl EntityBase for ArrowEntity {
                     }
 
                     // Check pierce level
-                    let pierce = self.pierce_level.load(Ordering::Relaxed);
                     if pierce == 0 {
                         // No piercing - remove arrow
                         entity.remove().await;
+                    } else {
+                        // `has_hit` is only a re-entrancy guard for one tick;
+                        // a piercing arrow must be allowed to test the next
+                        // segment on the following tick.
+                        self.has_hit.store(false, Ordering::Release);
                     }
-                    // If piercing > 0, arrow continues (TODO: would need to track pierced entities)
                 }
             }
         })
@@ -621,6 +649,10 @@ impl EntityBase for ArrowEntity {
 
     fn cast_any(&self) -> &dyn std::any::Any {
         self
+    }
+
+    fn projectile_owner_id(&self) -> Option<i32> {
+        self.owner_id
     }
 }
 

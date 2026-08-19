@@ -733,7 +733,7 @@ impl ToTokens for ItemComponents {
             tokens.extend(quote! { (BreakSound, &BreakSoundImpl), });
         }
         if self.bucket_entity_data.is_some() {
-            tokens.extend(quote! { (BucketEntityData, &BucketEntityDataImpl), });
+            tokens.extend(quote! { (BucketEntityData, &BucketEntityDataImpl::EMPTY), });
         }
         if self.bundle_contents.is_some() {
             tokens.extend(quote! { (BundleContents, &BundleContentsImpl { items: Vec::new() }), });
@@ -821,7 +821,11 @@ impl ToTokens for ItemComponents {
             tokens.extend(quote! { (PiercingWeapon, &PiercingWeaponImpl), });
         }
         if self.pot_decorations.is_some() {
-            tokens.extend(quote! { (PotDecorations, &PotDecorationsImpl), });
+            tokens.extend(quote! {
+                (PotDecorations, &PotDecorationsImpl {
+                    decorations: [None, None, None, None],
+                }),
+            });
         }
         if self.potion_contents.is_some() {
             tokens.extend(quote! {
@@ -870,10 +874,23 @@ impl ToTokens for ItemComponents {
             tokens.extend(quote! { (TooltipDisplay, &TooltipDisplayImpl), });
         }
         if self.use_effects.is_some() {
-            tokens.extend(quote! { (UseEffects, &UseEffectsImpl), });
+            tokens.extend(quote! { (UseEffects, &DEFAULT_USE_EFFECTS), });
         }
         if self.use_remainder.is_some() {
-            tokens.extend(quote! { (UseRemainder, &UseRemainderImpl), });
+            let remainder = self
+                .use_remainder
+                .as_ref()
+                .and_then(|value| value.get("id"))
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_else(|| panic!("use_remainder must contain an item id"));
+            let remainder = remainder.strip_prefix("minecraft:").unwrap_or(remainder);
+            let remainder_ident = format_ident!("{}", remainder.to_shouty_snake_case());
+            tokens.extend(quote! {
+                (UseRemainder, &UseRemainderImpl {
+                    remainder: &Item::#remainder_ident,
+                    count: 1,
+                }),
+            });
         }
         if self.writable_book_content.is_some() {
             tokens.extend(

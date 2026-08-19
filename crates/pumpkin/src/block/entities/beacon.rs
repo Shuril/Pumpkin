@@ -111,6 +111,31 @@ impl BeaconBlockEntity {
         levels
     }
 
+    /// A beacon is active only while the vertical beam reaches the sky.  A
+    /// block may let the beam through when its light opacity is below 15;
+    /// bedrock is the one vanilla opaque exception and is intentionally
+    /// transparent to beacon beams.
+    fn beam_reaches_sky(&self, world: &Arc<World>) -> bool {
+        let top = world
+            .get_heightmap_height(
+                pumpkin_world::chunk::ChunkHeightmapType::WorldSurface,
+                self.position.0.x,
+                self.position.0.z,
+            )
+            .max(self.position.0.y);
+        for y in (self.position.0.y + 1)..=top {
+            let state =
+                world.get_block_state(&BlockPos::new(self.position.0.x, y, self.position.0.z));
+            if state.opacity >= 15
+                && world.get_block(&BlockPos::new(self.position.0.x, y, self.position.0.z))
+                    != &pumpkin_data::Block::BEDROCK
+            {
+                return false;
+            }
+        }
+        true
+    }
+
     /// Replicates Java's `applyEffects` bounding box mapping and duration mapping
     async fn apply_effects(&self, world: &Arc<World>, levels: i32) {
         if levels <= 0 {
@@ -248,10 +273,7 @@ impl BlockEntity for BeaconBlockEntity {
                 let levels = self.update_base(world);
                 self.levels.store(levels, Ordering::Relaxed);
 
-                // TODO: Beam Section validation (scanning upward to heightmap to check for sky visibility)
-                // is typically checked here before applying effects in Vanilla.
-
-                if levels > 0 {
+                if levels > 0 && self.beam_reaches_sky(world) {
                     self.apply_effects(world, levels).await;
                 }
             }

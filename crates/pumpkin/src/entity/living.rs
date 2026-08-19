@@ -1,4 +1,3 @@
-use pumpkin_data::item::Item;
 use pumpkin_data::meta_data_type::MetaDataType;
 use pumpkin_data::potion::Effect;
 use pumpkin_data::tag::{self, Taggable};
@@ -9,7 +8,6 @@ use pumpkin_inventory::screen_handler::InventoryPlayer;
 use pumpkin_protocol::bedrock::client::take_item_actor::CTakeItemActor;
 use pumpkin_protocol::bedrock::server::actor_event::{ActorEventType, SActorEvent};
 use pumpkin_protocol::codec::var_ulong::VarULong;
-use pumpkin_util::GameMode;
 use pumpkin_util::Hand;
 use pumpkin_util::math::position::BlockPos;
 use std::sync::Arc;
@@ -33,18 +31,22 @@ use crate::entity::mob::slime::SlimeEntity;
 use crate::entity::player::statistics::{CustomStatistic, StatisticCategory};
 use crate::entity::{EntityBaseFuture, NbtFuture};
 use crate::server::Server;
-use crate::world::loot::{LootContextParameters, LootTableExt};
+use crate::world::loot::{LootContextParameters, LootTableExt, derive_loot_seed};
 use crossbeam::atomic::AtomicCell;
 use pumpkin_data::attributes::Attributes;
+use pumpkin_data::block_properties::{
+    BlockProperties, LadderLikeProperties, OakTrapdoorLikeProperties,
+};
 use pumpkin_data::damage::DeathMessageType;
 use pumpkin_data::data_component_impl::Operation;
 use pumpkin_data::data_component_impl::food::{ConsumableImpl, ConsumeEffect};
 use pumpkin_data::data_component_impl::{
-    AttributeModifiersImpl, BlocksAttacksImpl, DeathProtectionImpl, EnchantmentsImpl,
-    EquipmentSlot, EquippableImpl, FoodImpl,
+    AttributeModifiersImpl, BlocksAttacksImpl, DEFAULT_USE_EFFECTS, DeathProtectionImpl,
+    EnchantmentsImpl, EquipmentSlot, EquippableImpl, FoodImpl, UseEffectsImpl,
 };
 use pumpkin_data::effect::StatusEffect;
 use pumpkin_data::entity::{EntityPose, EntityStatus, EntityType};
+use pumpkin_data::fluid::Fluid;
 use pumpkin_data::item_stack::{DamageResult, ItemStack};
 use pumpkin_data::sound::SoundCategory;
 use pumpkin_data::{Block, Enchantment, translation};
@@ -54,7 +56,7 @@ use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
 use pumpkin_protocol::codec::var_int::VarInt;
 use pumpkin_protocol::java::client::play::{
-    CEntityStatus, CHurtAnimation, CSetPlayerInventory, CTakeItemEntity, CUpdateMobEffect,
+    CEntityStatus, CHurtAnimation, CSetPlayerInventory, CTakeItemEntity,
 };
 use pumpkin_protocol::{
     codec::item_stack_seralizer::ItemStackSerializer,
@@ -66,6 +68,37 @@ use rand::RngExt;
 use std::sync::RwLock;
 use tokio::sync::Mutex;
 use uuid::Uuid;
+
+/// Returns the vanilla `amplifier + 1` value without overflowing the packed
+/// u8 representation used by network/NBT effects.  Amplifier 255 is a valid
+/// byte on the wire even though normal commands use much smaller values.
+#[inline]
+fn amplifier_level(amplifier: u8) -> f64 {
+    f64::from(amplifier) + 1.0
+}
+
+/// Resolves the active-use hand to the entity equipment slot.
+///
+/// `Hand::Right` is the main hand and `Hand::Left` is the off-hand in both
+/// Java and Bedrock. Keeping this conversion in one helper avoids swapping
+/// the slots in damage, break-status, or equipment-update paths.
+#[inline]
+fn equipment_slot_for_active_hand(hand: Hand) -> EquipmentSlot {
+    match hand {
+        Hand::Right => EquipmentSlot::MAIN_HAND,
+        Hand::Left => EquipmentSlot::OFF_HAND,
+    }
+}
+
+/// Applies the vanilla `minecraft:use_effects.speed_multiplier` to movement
+/// while a living entity is actively using an item.  The component is
+/// optional on plugin-created stacks; in that case vanilla defaults are used
+/// only when an active item exists, while entities not using an item retain
+/// their normal speed.
+#[inline]
+fn apply_use_effect_speed(speed: f64, effects: Option<&UseEffectsImpl>) -> f64 {
+    effects.map_or(speed, |effects| speed * f64::from(effects.speed_multiplier))
+}
 
 /// Represents a living entity within the game world.
 ///
@@ -100,6 +133,11 @@ pub struct LivingEntity {
     pub jumping_cooldown: AtomicU8,
 
     pub climbing: AtomicBool,
+
+    /// Effects hidden behind a stronger active instance.  Vanilla keeps these
+    /// instances alive so a short, strong effect can downgrade to the weaker
+    /// effect instead of disappearing when it expires.
+    pub hidden_effects: Mutex<HashMap<&'static StatusEffect, Vec<Effect>>>,
 
     /// The position where the entity was last climbing, used for death messages
     pub climbing_pos: AtomicCell<Option<BlockPos>>,
@@ -173,6 +211,7 @@ impl LivingEntity {
             active_hand: Mutex::new(None),
             livings_flags: AtomicU8::new(0),
             active_effects: Mutex::new(HashMap::new()),
+            hidden_effects: Mutex::new(HashMap::new()),
             entity_equipment: Arc::new(Mutex::new(EntityEquipment::new())),
             equipment_drop_chances: Arc::new(Mutex::new(HashMap::new())),
             equipment_slots: Arc::new(build_equipment_slots()),
@@ -203,6 +242,7 @@ impl LivingEntity {
             })
             .collect();
         let je_packet = CSetEquipment::new(self.entity_id().into(), equipment_java);
+        let chunk_pos = self.entity.chunk_pos.load();
 
         let mut sent_editioned = false;
         for (slot, stack) in equipment {
@@ -224,8 +264,9 @@ impl LivingEntity {
                 self.entity
                     .world
                     .load()
-                    .broadcast_packet_except_editioned_sync(
-                        &[self.entity.entity_uuid],
+                    .broadcast_to_entity_trackers_editioned_sync(
+                        self.entity_id(),
+                        chunk_pos,
                         &je_packet,
                         &be_packet,
                     );
@@ -237,7 +278,7 @@ impl LivingEntity {
             self.entity
                 .world
                 .load()
-                .broadcast_packet_except(&[self.entity.entity_uuid], &je_packet);
+                .broadcast_java_to_entity_trackers_sync(self.entity_id(), chunk_pos, &je_packet);
         }
     }
 
@@ -265,6 +306,34 @@ impl LivingEntity {
         *self.active_hand.lock().await = Some(hand);
         self.set_living_flag(Self::USING_ITEM_FLAG, true);
         self.set_living_flag(Self::OFF_HAND_ACTIVE_FLAG, hand == Hand::Left);
+
+        // Java's VibrationSystem emits ITEM_INTERACT_START when an item use
+        // begins.  Route this through the authoritative stack so a custom
+        // `minecraft:use_effects.interact_vibrations=false` component can
+        // suppress the pulse exactly like vanilla.
+        if let Some(item) = self.item_in_use.lock().await.clone() {
+            let world = self.entity.world.load();
+            world
+                .emit_game_event_from_item(
+                    self.entity.block_pos.load(),
+                    crate::world::game_event::GameEventKind::ItemInteractStart,
+                    Some(self.entity.entity_uuid),
+                    &item,
+                )
+                .await;
+        }
+    }
+
+    /// Returns the effective use-effects record for the item currently being
+    /// consumed/charged.  Vanilla treats the absent component as its default
+    /// record; no record is returned when the entity is not using an item.
+    async fn active_use_effects(&self) -> Option<UseEffectsImpl> {
+        self.item_in_use.lock().await.as_ref().map(|stack| {
+            stack
+                .get_data_component::<UseEffectsImpl>()
+                .cloned()
+                .unwrap_or_else(|| DEFAULT_USE_EFFECTS.clone())
+        })
     }
 
     fn set_living_flag(&self, flag: u8, value: bool) {
@@ -527,13 +596,87 @@ impl LivingEntity {
         self.entity.entity_id
     }
 
+    /// Mirrors `MobEffectInstance#update` for the part that decides whether
+    /// the active instance may be replaced.  A weaker/shorter application must
+    /// not reset an effect that is already running; an equal amplifier only
+    /// extends it when the new duration is longer (infinite `-1` wins).
+    fn should_replace_effect(current: &Effect, incoming: &Effect) -> bool {
+        incoming.amplifier > current.amplifier
+            || (incoming.amplifier == current.amplifier
+                && (current.duration != -1
+                    && (incoming.duration == -1 || incoming.duration > current.duration)))
+    }
+
+    /// Implements the data-driven part of `LivingEntity#canBeAffected` for
+    /// effects whose immunity is represented by an entity-type tag.  Keeping
+    /// this as a pure helper makes the rule auditable and testable without
+    /// constructing a world-backed entity.
+    fn can_receive_effect(
+        entity_type: &'static EntityType,
+        effect_type: &'static StatusEffect,
+    ) -> bool {
+        !((effect_type == &StatusEffect::INFESTED
+            && entity_type.has_tag(&tag::EntityType::MINECRAFT_IMMUNE_TO_INFESTED))
+            || (effect_type == &StatusEffect::OOZING
+                && entity_type.has_tag(&tag::EntityType::MINECRAFT_IMMUNE_TO_OOZING))
+            || ((effect_type == &StatusEffect::POISON
+                || effect_type == &StatusEffect::REGENERATION)
+                && entity_type.has_tag(&tag::EntityType::MINECRAFT_IGNORES_POISON_AND_REGEN)))
+    }
+
     pub async fn add_effect(&self, effect: Effect) {
+        // Match LivingEntity#canBeAffected.  These entity tags are generated
+        // from the vanilla registry and keep immunity data-driven rather than
+        // baking mob lists into gameplay code.
+        if !Self::can_receive_effect(self.entity.entity_type, effect.effect_type) {
+            return;
+        }
+
+        // Vanilla merges repeated applications instead of unconditionally
+        // overwriting the active instance.  Remove the old instance first when
+        // the new one wins so attribute modifiers, absorption and visibility
+        // state are rebuilt exactly once by the normal add path.  The full
+        // hidden-effect chain is a separate parity item; this still prevents
+        // the common weaker/shorter application from changing live state.
+        if let Some(current) = self.get_effect(effect.effect_type).await {
+            if Self::should_replace_effect(&current, &effect) {
+                // A stronger but shorter effect hides the current instance.
+                // It will be restored after the stronger effect expires.
+                if effect.amplifier > current.amplifier
+                    && effect.duration >= 0
+                    && (current.duration == -1 || effect.duration < current.duration)
+                {
+                    self.hidden_effects
+                        .lock()
+                        .await
+                        .entry(effect.effect_type)
+                        .or_default()
+                        .insert(0, current.clone());
+                }
+                self.remove_effect_internal(effect.effect_type, false).await;
+            } else if effect.duration > current.duration && current.duration != -1 {
+                // A weaker but longer effect is hidden behind the active one.
+                self.hidden_effects
+                    .lock()
+                    .await
+                    .entry(effect.effect_type)
+                    .or_default()
+                    .insert(0, effect);
+                return;
+            } else {
+                return;
+            }
+        }
+
         // Apply instant effects immediately before storing
         if effect.effect_type == &StatusEffect::INSTANT_HEALTH {
-            let heal_amount = 4.0 * (1 << effect.amplifier) as f32;
+            // Java's shift operator masks the shift distance; use the wrapping
+            // equivalent here so malformed/high amplifier NBT cannot panic a
+            // debug server while ordinary (0..30) effects remain identical.
+            let heal_amount = 4.0 * (1_i32.wrapping_shl(u32::from(effect.amplifier))) as f32;
             self.heal(heal_amount);
         } else if effect.effect_type == &StatusEffect::INSTANT_DAMAGE {
-            let damage_amount = 6.0 * (1 << effect.amplifier) as f32;
+            let damage_amount = 6.0 * (1_i32.wrapping_shl(u32::from(effect.amplifier))) as f32;
             let dyn_self = self
                 .entity
                 .world
@@ -610,33 +753,20 @@ impl LivingEntity {
             }
         }
 
-        // Broadcast effect to nearby players
-        let mut flag: i8 = 0;
-        if effect.ambient {
-            flag |= 1;
-        }
-        if effect.show_particles {
-            flag |= 2;
-        }
-        if effect.show_icon {
-            flag |= 4;
-        }
-        if effect.blend {
-            flag |= 8;
-        }
-
-        let packet = CUpdateMobEffect::new(
-            self.entity.entity_id.into(),
-            VarInt(i32::from(effect.effect_type.id)),
-            effect.amplifier.into(),
-            effect.duration.into(),
-            flag,
-        );
-
-        self.entity.world.load().broadcast_packet_all(&packet);
+        // Effects are entity-scoped.  Use the world helper so the update is
+        // sent only to clients that have the entity's chunk delivered, with
+        // the same tracking barrier as effect removal and other entity data.
+        self.entity
+            .world
+            .load()
+            .send_add_mob_effect(&self.entity, &effect);
     }
 
-    pub async fn remove_effect(&self, effect_type: &'static StatusEffect) -> bool {
+    async fn remove_effect_internal(
+        &self,
+        effect_type: &'static StatusEffect,
+        clear_hidden: bool,
+    ) -> bool {
         // Remove the effect
         let succeeded = self
             .active_effects
@@ -645,7 +775,17 @@ impl LivingEntity {
             .remove(&effect_type)
             .is_some();
 
-        // Broadcast effect removal
+        if !succeeded {
+            // Vanilla's removeEffect is a no-op when the effect is absent:
+            // no packet and no attribute/metadata reset should be emitted.
+            return false;
+        }
+
+        if clear_hidden {
+            self.hidden_effects.lock().await.remove(&effect_type);
+        }
+
+        // Broadcast effect removal only after an active instance was removed.
         self.entity
             .world
             .load()
@@ -706,6 +846,10 @@ impl LivingEntity {
         succeeded
     }
 
+    pub async fn remove_effect(&self, effect_type: &'static StatusEffect) -> bool {
+        self.remove_effect_internal(effect_type, true).await
+    }
+
     pub async fn has_effect(&self, effect: &'static StatusEffect) -> bool {
         let effects = self.active_effects.lock().await;
         effects.contains_key(&effect)
@@ -728,7 +872,14 @@ impl LivingEntity {
     // Check if the entity is in water
     pub fn is_in_water(&self) -> bool {
         let block_pos = self.entity.block_pos.load();
-        self.entity.world.load().get_block(&block_pos) == &Block::WATER
+        // `LivingEntity.isInWater` is fluid-based, not a block-id equality:
+        // flowing water, bubble columns and waterlogged blocks all expose the
+        // water tag even when their backing block is not `minecraft:water`.
+        self.entity
+            .world
+            .load()
+            .get_fluid(&block_pos)
+            .has_tag(&tag::Fluid::MINECRAFT_WATER)
     }
 
     // Check if the entity is in powder snow
@@ -860,6 +1011,16 @@ impl LivingEntity {
 
         self.movement_input.store(movement_input);
 
+        // Vanilla stops sprinting while an item whose use-effects component
+        // disallows sprinting is being used.  Do this before travel so both
+        // friction and the movement-speed branch observe the same state.
+        if let Some(effects) = self.active_use_effects().await
+            && !effects.can_sprint
+            && self.entity.is_sprinting()
+        {
+            self.entity.set_sprinting(false).await;
+        }
+
         // TODO: Tick AI
 
         if self.jumping.load(SeqCst) && should_swim_in_fluids {
@@ -906,15 +1067,47 @@ impl LivingEntity {
 
         // Strider is the only entity that has canWalkOnFluid = false
 
+        let player_flying = if let Some(player) = caller.get_player() {
+            player.is_flying().await
+        } else {
+            false
+        };
+        let original_flying_y = player_flying.then(|| self.entity.velocity.load().y);
+
         if (touching_water || self.entity.touching_lava.load(SeqCst))
             && should_swim_in_fluids
             && self.entity.entity_type != &EntityType::STRIDER
         {
+            // Player.travel adds look-directed vertical swimming motion before
+            // the common fluid integrator.  The upper-fluid check prevents the
+            // boost when the player's head is already in a full fluid column.
+            if let Some(player) = caller.get_player()
+                && player.is_swimming(player_flying).await
+            {
+                let look_y = f64::from(self.entity.rotation().y);
+                let position = self.entity.pos.load();
+                let above = BlockPos::floored_v(position.add_raw(0.0, 0.9, 0.0));
+                let head_fluid = self.entity.world.load().get_fluid(&above).id != Fluid::EMPTY.id;
+                if look_y <= 0.0 || self.jumping.load(Relaxed) || !head_fluid {
+                    let multiplier = if look_y < -0.2 { 0.085 } else { 0.06 };
+                    let mut velocity = self.entity.velocity.load();
+                    velocity.y += (look_y - velocity.y) * multiplier;
+                    self.entity.velocity.store(velocity);
+                }
+            }
             self.travel_in_fluid(caller, touching_water).await;
+        } else if self.entity.is_fall_flying() {
+            self.travel_fall_flying(caller).await;
         } else {
-            // TODO: Gliding
-
             self.travel_in_air(caller).await;
+        }
+
+        // Player.travel preserves the pre-flight vertical input while the
+        // common air integrator applies horizontal steering and drag.
+        if let Some(original_y) = original_flying_y {
+            let mut velocity = self.entity.velocity.load();
+            velocity.y = original_y * 0.6;
+            self.entity.velocity.store(velocity);
         }
 
         // TODO: Apply Soul Speed boot durability when tick_block_underneath is implemented.
@@ -930,7 +1123,11 @@ impl LivingEntity {
     async fn travel_in_air<'a>(&'a self, caller: &'a Arc<dyn EntityBase>) {
         // applyMovementInput
 
-        let effective_speed = self.get_attribute_value(&Attributes::MOVEMENT_SPEED);
+        let use_effects = self.active_use_effects().await;
+        let effective_speed = apply_use_effect_speed(
+            self.get_attribute_value(&Attributes::MOVEMENT_SPEED),
+            use_effects.as_ref(),
+        );
 
         let (speed, friction) = if self.entity.on_ground.load(SeqCst) {
             // getVelocityAffectingPos
@@ -955,7 +1152,7 @@ impl LivingEntity {
                 0.02
             };
 
-            (speed, 0.91)
+            (apply_use_effect_speed(speed, use_effects.as_ref()), 0.91)
         };
 
         self.entity
@@ -982,7 +1179,7 @@ impl LivingEntity {
         let levitation = self.get_effect(&StatusEffect::LEVITATION).await;
 
         if let Some(lev) = levitation {
-            velo.y += 0.05f64.mul_add(f64::from(lev.amplifier + 1), -velo.y) * 0.2;
+            velo.y += 0.05f64.mul_add(amplifier_level(lev.amplifier), -velo.y) * 0.2;
         } else {
             velo.y -= self.get_effective_gravity(caller).await;
 
@@ -1008,8 +1205,81 @@ impl LivingEntity {
         self.entity.velocity.store(velo);
     }
 
+    /// Applies the server-side Elytra flight integrator from
+    /// `LivingEntity.travelFallFlying`.  Elytra movement is deliberately
+    /// separate from ordinary air travel: pitch controls lift, horizontal
+    /// velocity is steered toward the look vector, and the vanilla drag
+    /// constants are applied after the lift calculation.  Keeping this in the
+    /// living entity also makes gliding work for non-player entities which
+    /// expose the fall-flying flag through a plugin or a custom item.
+    async fn travel_fall_flying<'a>(&'a self, caller: &'a Arc<dyn EntityBase>) {
+        // A ladder/vine immediately ends gliding in vanilla.  Fall back to
+        // normal air travel for this tick so the entity does not get stuck in
+        // the climbable block.
+        if self.climbing.load(Relaxed) {
+            self.travel_in_air(caller).await;
+            if self.entity.is_fall_flying() {
+                self.entity.set_fall_flying(false).await;
+            }
+            return;
+        }
+
+        let previous = self.entity.velocity.load();
+        let look = self.entity.rotation();
+        let look = Vector3::new(f64::from(look.x), f64::from(look.y), f64::from(look.z));
+        let pitch = f64::from(self.entity.pitch.load()).to_radians();
+        let look_horizontal = look.x.hypot(look.z);
+        let horizontal_speed = previous.x.hypot(previous.z);
+        let gravity = self.get_effective_gravity(caller).await;
+        let lift = pitch.cos().powi(2);
+
+        let mut movement = previous.add_raw(0.0, gravity * (-1.0 + lift * 0.75), 0.0);
+        if movement.y < 0.0 && look_horizontal > f64::EPSILON {
+            let conversion = movement.y * -0.1 * lift;
+            movement = movement.add_raw(
+                look.x / look_horizontal * conversion,
+                conversion,
+                look.z / look_horizontal * conversion,
+            );
+        }
+        if pitch < 0.0 && look_horizontal > f64::EPSILON {
+            let conversion = horizontal_speed * -pitch.sin() * 0.04;
+            movement = movement.add_raw(
+                -look.x / look_horizontal * conversion,
+                conversion * 3.2,
+                -look.z / look_horizontal * conversion,
+            );
+        }
+        if look_horizontal > f64::EPSILON {
+            movement = movement.add_raw(
+                (look.x / look_horizontal * horizontal_speed - movement.x) * 0.1,
+                0.0,
+                (look.z / look_horizontal * horizontal_speed - movement.z) * 0.1,
+            );
+        }
+
+        self.entity
+            .velocity
+            .store(movement.multiply(0.99, 0.98, 0.99));
+        self.make_move(caller).await;
+
+        // Elytra collisions use kinetic-energy damage rather than fall
+        // damage.  The speed delta is measured after collision resolution;
+        // this exactly matches `handleFallFlyingCollisions` and avoids
+        // damaging an entity that merely touches a wall at low speed.
+        if self.entity.horizontal_collision.load(SeqCst) {
+            let current = self.entity.velocity.load();
+            let damage = (horizontal_speed - current.x.hypot(current.z)) * 10.0 - 3.0;
+            if damage > 0.0 {
+                self.damage(&**caller, damage as f32, DamageType::FLY_INTO_WALL)
+                    .await;
+            }
+        }
+    }
+
     async fn travel_in_fluid<'a>(&'a self, caller: &'a Arc<dyn EntityBase>, water: bool) {
         let movement_input = self.movement_input.load();
+        let use_effects = self.active_use_effects().await;
 
         let falling = self.entity.velocity.load().y <= 0.0;
         let gravity = self.get_effective_gravity(caller).await;
@@ -1041,8 +1311,10 @@ impl LivingEntity {
                 friction = 0.96;
             }
 
-            self.entity
-                .update_velocity_from_input(movement_input, speed);
+            self.entity.update_velocity_from_input(
+                movement_input,
+                apply_use_effect_speed(speed, use_effects.as_ref()),
+            );
 
             self.make_move(caller).await;
 
@@ -1056,7 +1328,10 @@ impl LivingEntity {
             self.apply_fluid_moving_speed(&mut velo.y, gravity, falling);
             self.entity.velocity.store(velo);
         } else {
-            self.entity.update_velocity_from_input(movement_input, 0.02);
+            self.entity.update_velocity_from_input(
+                movement_input,
+                apply_use_effect_speed(0.02, use_effects.as_ref()),
+            );
 
             self.make_move(caller).await;
 
@@ -1113,54 +1388,67 @@ impl LivingEntity {
     }
 
     fn check_climbing(&self) {
-        // If spectator: return false
+        // LivingEntity.onClimbable in vanilla is evaluated after movement and
+        // records the exact block that granted the climb state.  Spectators
+        // and Elytra players inside a glide-through block must never attach to
+        // a ladder, even when the block carries the climbable tag.
+        if self.entity.is_spectator() {
+            self.climbing.store(false, Relaxed);
+            self.climbing_pos.store(None);
+            return;
+        }
 
-        // TODO
-        // let mut pos = self.entity.block_pos.load();
+        let pos = self.entity.block_pos.load();
+        let world = self.entity.world.load();
+        let (block, state_id) = world.get_block_and_state_id(&pos);
 
-        // let world = self.entity.world.read().await;
+        if self.entity.is_fall_flying() && block.has_tag(&tag::Block::MINECRAFT_CAN_GLIDE_THROUGH) {
+            self.climbing.store(false, Relaxed);
+            self.climbing_pos.store(None);
+            return;
+        }
 
-        // let (block, state) = world.get_block_and_state(&pos);
+        if block.has_tag(&tag::Block::MINECRAFT_CLIMBABLE) {
+            self.climbing.store(true, Relaxed);
+            self.climbing_pos.store(Some(pos));
+            return;
+        }
 
-        // let name = block.properties(state.id).map(|props| props.name());
+        // Vanilla also treats an open trapdoor directly above a ladder as a
+        // climbable surface, but only when both horizontal facings agree.
+        if block.has_tag(&tag::Block::MINECRAFT_TRAPDOORS) {
+            let trapdoor = OakTrapdoorLikeProperties::from_state_id(state_id, block);
+            if trapdoor.r#open {
+                let below = pos.down();
+                let (below_block, below_state_id) = world.get_block_and_state_id(&below);
+                if below_block == &Block::LADDER {
+                    let ladder = LadderLikeProperties::from_state_id(below_state_id, below_block);
+                    if ladder.r#facing == trapdoor.r#facing {
+                        self.climbing.store(true, Relaxed);
+                        self.climbing_pos.store(Some(pos));
+                        return;
+                    }
+                }
+            }
+        }
 
-        // if let Some(name) = name {
-        //     if name == "LadderLikeProperties"
-        //         || name == "ScaffoldingLikeProperties"
-        //         || name == "CaveVinesLikeProperties"
-        //         || name == "CaveVinesPlantLikeProperties"
-        //     {
-        //         self.climbing.store(true, Relaxed);
-
-        //         self.climbing_pos.store(Some(pos));
-
-        //         return;
-        //     }
-
-        //     if name == "OakTrapdoorLikeProperties" {
-        //         let trapdoor = OakTrapdoorLikeProperties::from_state_id(state.id, &block);
-
-        //         pos.0.y -= 1;
-
-        //         let (down_block, down_state) = world.get_block_and_state(&pos);
-
-        //         let is_ladder = down_block
-        //             .properties(down_state.id)
-        //             .is_some_and(|down_props| down_props.name() == "LadderLikeProperties");
-
-        //         if is_ladder {
-        //             let ladder = LadderLikeProperties::from_state_id(down_state.id, &down_block);
-
-        //             if trapdoor.r#facing == ladder.r#facing {
-        //                 self.climbing.store(true, Relaxed);
-
-        //                 self.climbing_pos.store(Some(pos));
-
-        //                 return;
-        //             }
-        //         }
-        //     }
-        // }
+        // Spider and CaveSpider override LivingEntity#onClimbable in vanilla:
+        // their climb state is driven by horizontal collision rather than by
+        // the block's climbable tag.  This must be evaluated here, immediately
+        // after movement, because travel_in_air uses the flag in the same
+        // tick to apply the upward wall-climb velocity.
+        if self.entity.entity_type == &EntityType::SPIDER
+            || self.entity.entity_type == &EntityType::CAVE_SPIDER
+        {
+            let climbing = self.entity.horizontal_collision.load(SeqCst);
+            self.climbing.store(climbing, Relaxed);
+            if climbing {
+                self.climbing_pos.store(Some(self.entity.block_pos.load()));
+            } else if self.entity.on_ground.load(SeqCst) {
+                self.climbing_pos.store(None);
+            }
+            return;
+        }
 
         self.climbing.store(false, Relaxed);
 
@@ -1256,7 +1544,7 @@ impl LivingEntity {
         strength *= self.get_attribute_value(&Attributes::JUMP_STRENGTH);
         strength *= f64::from(self.entity.get_jump_velocity_multiplier());
         if let Some(effect) = self.get_effect(&StatusEffect::JUMP_BOOST).await {
-            strength += 0.1 * f64::from(effect.amplifier + 1);
+            strength += 0.1 * amplifier_level(effect.amplifier);
         }
         strength
     }
@@ -1268,6 +1556,37 @@ impl LivingEntity {
         ground: bool,
         dont_damage: bool,
     ) {
+        // Player.causeFallDamage() returns false for players with the
+        // `mayfly` ability, even when they are not currently holding the
+        // flying flag.  Clear the accumulator as well so enabling flight
+        // cannot leave a stale distance to be applied after a mode change.
+        let player_can_fly = if let Some(player) = caller.get_player() {
+            player.abilities.lock().await.allow_flying
+        } else {
+            false
+        };
+        if ground && player_can_fly {
+            self.fall_distance.store(0.0);
+            return;
+        }
+
+        // `fall_damage` is a world gamerule, so it must cover both normal
+        // landing damage and custom block landing callbacks (beds, hay,
+        // slime, etc.).  Clear the accumulated distance while disabled so
+        // toggling the rule cannot apply stale damage later.
+        if !self
+            .entity
+            .world
+            .load()
+            .level_info
+            .load()
+            .game_rules
+            .fall_damage
+        {
+            self.fall_distance.store(0.0);
+            return;
+        }
+
         if ground {
             let fall_distance = self.fall_distance.swap(0.0);
             if fall_distance <= 0.0
@@ -1337,6 +1656,78 @@ impl LivingEntity {
         }
     }
 
+    /// Returns the client translation keys for vanilla's `FallLocation`.
+    ///
+    /// Vanilla records the last climbable block while an entity is moving and
+    /// uses that block (or the current water state) when it builds a fall
+    /// death message.  Keeping the mapping in one small, data-driven helper
+    /// prevents the generic message from hiding useful context for ladders,
+    /// scaffolding and the different vine families.  The Bedrock translation
+    /// table does not expose every Java key, so it intentionally falls back to
+    /// the closest Bedrock-supported key for those variants.
+    fn fall_location_translation_keys(block: &Block) -> (&'static str, &'static str) {
+        if block == &Block::LADDER || block.has_tag(&tag::Block::MINECRAFT_TRAPDOORS) {
+            (
+                translation::java::DEATH_FELL_ACCIDENT_LADDER,
+                translation::bedrock::DEATH_FELL_ACCIDENT_LADDER,
+            )
+        } else if block == &Block::VINE {
+            (
+                translation::java::DEATH_FELL_ACCIDENT_VINES,
+                translation::bedrock::DEATH_FELL_ACCIDENT_VINES,
+            )
+        } else if block == &Block::WEEPING_VINES || block == &Block::WEEPING_VINES_PLANT {
+            (
+                translation::java::DEATH_FELL_ACCIDENT_WEEPING_VINES,
+                translation::bedrock::DEATH_FELL_ACCIDENT_VINES,
+            )
+        } else if block == &Block::TWISTING_VINES || block == &Block::TWISTING_VINES_PLANT {
+            (
+                translation::java::DEATH_FELL_ACCIDENT_TWISTING_VINES,
+                translation::bedrock::DEATH_FELL_ACCIDENT_VINES,
+            )
+        } else if block == &Block::SCAFFOLDING {
+            (
+                translation::java::DEATH_FELL_ACCIDENT_SCAFFOLDING,
+                translation::bedrock::DEATH_FELL_ACCIDENT_GENERIC,
+            )
+        } else {
+            (
+                translation::java::DEATH_FELL_ACCIDENT_OTHER_CLIMBABLE,
+                translation::bedrock::DEATH_FELL_ACCIDENT_GENERIC,
+            )
+        }
+    }
+
+    async fn fall_death_translation_keys(
+        dyn_self: &dyn EntityBase,
+    ) -> (&'static str, &'static str) {
+        let Some(living) = dyn_self.get_living_entity() else {
+            return (
+                translation::java::DEATH_FELL_ACCIDENT_GENERIC,
+                translation::bedrock::DEATH_FELL_ACCIDENT_GENERIC,
+            );
+        };
+
+        if let Some(climbing_pos) = living.climbing_pos.load() {
+            let world = living.entity.world.load();
+            let block = world.get_block(&climbing_pos);
+            return Self::fall_location_translation_keys(block);
+        }
+
+        if living.is_in_water() {
+            return (
+                translation::java::DEATH_FELL_ACCIDENT_GENERIC,
+                translation::bedrock::DEATH_FELL_ACCIDENT_WATER,
+            );
+        }
+
+        (
+            translation::java::DEATH_FELL_ACCIDENT_GENERIC,
+            translation::bedrock::DEATH_FELL_ACCIDENT_GENERIC,
+        )
+    }
+
     pub async fn get_death_message(
         dyn_self: &dyn EntityBase,
         damage_type: DamageType,
@@ -1365,10 +1756,10 @@ impl LivingEntity {
                 }
             }
             DeathMessageType::FallVariants => {
-                //TODO
+                let (java_key, bedrock_key) = Self::fall_death_translation_keys(dyn_self).await;
                 TextComponent::translate_cross(
-                    translation::java::DEATH_FELL_ACCIDENT_GENERIC,
-                    translation::bedrock::DEATH_FELL_ACCIDENT_GENERIC,
+                    java_key,
+                    bedrock_key,
                     [dyn_self.get_display_name().await],
                 )
             }
@@ -1384,6 +1775,7 @@ impl LivingEntity {
 
     pub async fn on_death(
         &self,
+        _dyn_self: &dyn EntityBase,
         damage_type: DamageType,
         source: Option<&dyn EntityBase>,
         cause: Option<&dyn EntityBase>,
@@ -1401,7 +1793,7 @@ impl LivingEntity {
             self.jumping.store(false, Relaxed);
 
             // Statistics updates
-            self.update_death_stats(&*dyn_self, cause).await;
+            self.update_death_stats(dyn_self.as_ref(), cause).await;
 
             // Plays the death sound
             world.send_entity_status(
@@ -1434,18 +1826,29 @@ impl LivingEntity {
 
             let is_raining = world.is_raining().await;
             let is_thundering = world.is_thundering().await;
+            let loot_block_pos = self.entity.block_pos.load();
+            let loot_position = self.entity.pos.load();
+            let world_time = world.level_info.load().day_time as u64;
+            let entity_uuid = self.entity.entity_uuid.as_u128();
 
             let params = LootContextParameters {
                 killed_by_player: cause.map(|c| c.get_entity().entity_type == &EntityType::PLAYER),
                 this_entity: Some(self.entity.entity_type),
                 killer_entity: cause.map(|c| c.get_entity().entity_type),
                 direct_killer_entity: source.map(|s| s.get_entity().entity_type),
-                position: Some(self.entity.pos.load()),
-                world_time: world.level_info.load().day_time as u64,
+                position: Some(loot_position),
+                biome: Some(world.get_biome(&loot_block_pos).registry_id),
+                world_time,
                 damage_type: Some(damage_type),
                 tool,
                 is_raining: Some(is_raining),
                 is_thundering: Some(is_thundering),
+                random_seed: Some(derive_loot_seed(
+                    world.level.seed.0,
+                    Some(loot_position),
+                    world_time,
+                    (entity_uuid as u64) ^ ((entity_uuid >> 64) as u64) ^ 0x454e54495459,
+                )),
                 is_on_fire: Some(
                     self.entity
                         .fire_ticks
@@ -1458,11 +1861,19 @@ impl LivingEntity {
             // Drop loot
             self.drop_loot(params.clone()).await;
 
+            // `Mob#dropCustomDeathLoot` runs after the regular entity loot
+            // table in vanilla.  Keep the hook in the shared death path so
+            // custom drops (for example an Enderman's carried block) obey the
+            // same gamerules, context position and deterministic RNG policy.
+            if let Some(mob) = dyn_self.get_mob() {
+                mob.mob_drop_custom_death_loot().await;
+            }
+
             // Award experience
             if params.killed_by_player.unwrap_or(false)
                 && world.level_info.load().game_rules.mob_drops
             {
-                let amount = dyn_self.get_experience_reward(cause);
+                let amount = dyn_self.get_experience_reward_async(cause).await;
                 if amount > 0 {
                     ExperienceOrbEntity::spawn(&world, self.entity.pos.load(), amount).await;
                 }
@@ -1472,7 +1883,7 @@ impl LivingEntity {
             self.drop_equipment(looting_level).await;
 
             // Broadcast death message if it's a player and the gamerule is enabled
-            self.broadcast_death_message(&*dyn_self, damage_type, source, cause)
+            self.broadcast_death_message(dyn_self.as_ref(), damage_type, source, cause)
                 .await;
 
             self.reset_effects_and_attributes().await;
@@ -1626,25 +2037,40 @@ impl LivingEntity {
         }
     }
 
-    async fn drop_loot(&self, params: LootContextParameters) {
+    async fn drop_loot(&self, mut params: LootContextParameters) {
+        let world = self.entity.world.load();
+        params.attach_biome_resolver(&world);
         if let Some(loot_table) = &self.get_entity().entity_type.loot_table {
             let pos = self.entity.block_pos.load();
             for stack in loot_table.get_loot(params) {
-                self.entity.world.load().drop_stack(&pos, stack).await;
+                world.drop_stack(&pos, stack).await;
             }
         }
     }
 
     async fn tick_effects(&self) {
-        let mut effects_to_remove = Vec::new();
         let mut effects_to_apply = Vec::new();
+        let mut effects_to_promote = Vec::new();
 
         {
             let mut effects = self.active_effects.lock().await;
+            let mut hidden = self.hidden_effects.lock().await;
             let entity_age = self.entity.age.load(Relaxed);
             for effect in effects.values_mut() {
                 if effect.duration == 0 {
-                    effects_to_remove.push(effect.effect_type);
+                    // A zero-duration active effect can be present after an
+                    // NBT load or an externally scheduled tick.  Treat it the
+                    // same as an effect that reached zero during this tick so
+                    // the next hidden instance is promoted instead of being
+                    // discarded by remove_effect's hidden-chain cleanup.
+                    let promoted = hidden.get_mut(&effect.effect_type).and_then(|chain| {
+                        if chain.is_empty() {
+                            None
+                        } else {
+                            Some(chain.remove(0))
+                        }
+                    });
+                    effects_to_promote.push((effect.effect_type, promoted));
                     continue;
                 }
 
@@ -1661,13 +2087,37 @@ impl LivingEntity {
                 if effect.duration != -1 {
                     effect.duration -= 1;
                 }
+
+                if let Some(chain) = hidden.get_mut(&effect.effect_type) {
+                    for hidden_effect in chain.iter_mut() {
+                        if hidden_effect.duration > 0 {
+                            hidden_effect.duration -= 1;
+                        }
+                    }
+                    chain.retain(|hidden_effect| hidden_effect.duration != 0);
+                }
+
+                if effect.duration == 0 {
+                    let promoted = hidden.get_mut(&effect.effect_type).and_then(|chain| {
+                        if chain.is_empty() {
+                            None
+                        } else {
+                            Some(chain.remove(0))
+                        }
+                    });
+                    effects_to_promote.push((effect.effect_type, promoted));
+                }
             }
         }
 
-        // Call the central removal function for each expired effect
-        // This will now trigger your logs and absorption resets!
-        for effect_type in effects_to_remove {
-            self.remove_effect(effect_type).await;
+        for (effect_type, promoted) in effects_to_promote {
+            self.remove_effect_internal(effect_type, false).await;
+            if let Some(promoted) = promoted {
+                self.hidden_effects.lock().await.remove(&effect_type);
+                self.add_effect(promoted).await;
+            } else {
+                self.hidden_effects.lock().await.remove(&effect_type);
+            }
         }
 
         for (effect_type, amplifier) in effects_to_apply {
@@ -1765,7 +2215,7 @@ impl LivingEntity {
                 && let Some(player) = entity.get_player()
             {
                 // Add hunger and saturation
-                let hunger = amplifier + 1;
+                let hunger = amplifier.saturating_add(1);
                 player.hunger_manager.add_hunger(hunger);
                 player.hunger_manager.add_saturation(hunger as f32 * 2.0);
             }
@@ -1845,13 +2295,22 @@ impl LivingEntity {
         false
     }
 
-    async fn damage_armor_items(&self, caller: &dyn EntityBase, damage_amount: f32) {
+    async fn damage_armor_items(
+        &self,
+        caller: &dyn EntityBase,
+        damage_amount: f32,
+        damage_type: &DamageType,
+    ) {
         // Formula: armor loses floor(incoming_damage / 4) durability, minimum 1.
         let armor_damage = (damage_amount / 4.0).floor().max(1.0) as i32;
         let mut equipment_updates = Vec::new();
 
-        // TODO: Falling anvil/stalactite should only damage the helmet slot.
-        // TODO: Implement DAMAGE_RESISTANT component checks (e.g. netherite vs fire).
+        // DamageTypeTags.DAMAGES_HELMET is data-driven in vanilla and currently
+        // contains falling_anvil, falling_block and falling_stalactite.  Do
+        // not approximate it by matching names: datapacks can add damage types
+        // to the tag and the generated Taggable implementation will then keep
+        // this durability rule in sync.
+        let helmet_only = damage_type.has_tag(&tag::DamageType::MINECRAFT_DAMAGES_HELMET);
 
         let armor_slots: Vec<(usize, ItemStack, EquipmentSlot)> = {
             let equipment_lock = self.entity_equipment.lock().await;
@@ -1869,6 +2328,9 @@ impl LivingEntity {
         };
 
         for (slot_index, mut stack, slot) in armor_slots {
+            if helmet_only && slot != EquipmentSlot::HEAD {
+                continue;
+            }
             if stack.is_empty() {
                 continue;
             }
@@ -2085,22 +2547,81 @@ impl NBTStorage for LivingEntity {
             };
             // Persist current absorption amount
             nbt.put("AbsorptionAmount", NbtTag::Float(self.absorption.load()));
-            nbt.put("fall_distance", NbtTag::Float(fall_distance));
+            // Vanilla stores this common Entity field as a double.  Keep the
+            // old lower-case Pumpkin key out of new saves; the reader below
+            // still accepts it for worlds written by older builds.
+            nbt.put("FallDistance", NbtTag::Double(f64::from(fall_distance)));
             {
                 let effects = self.active_effects.lock().await;
+                let hidden_effects = self.hidden_effects.lock().await;
                 if !effects.is_empty() {
                     // Iterate effects and create Box<[NbtTag]>
                     let mut effects_list = Vec::with_capacity(effects.len());
                     for effect in effects.values() {
                         let mut effect_nbt = pumpkin_nbt::compound::NbtCompound::new();
                         effect.write_nbt(&mut effect_nbt).await;
+                        if let Some(chain) = hidden_effects.get(&effect.effect_type) {
+                            // The first entry is the next effect to promote; encode
+                            // the rest as vanilla's recursive hidden_effect chain.
+                            let mut nested = None;
+                            for hidden_effect in chain.iter().rev() {
+                                let mut hidden_nbt = pumpkin_nbt::compound::NbtCompound::new();
+                                hidden_effect.write_nbt(&mut hidden_nbt).await;
+                                if let Some(inner) = nested.take() {
+                                    hidden_nbt.put_compound("hidden_effect", inner);
+                                }
+                                nested = Some(hidden_nbt);
+                            }
+                            if let Some(nested) = nested {
+                                effect_nbt.put_compound("hidden_effect", nested);
+                            }
+                        }
                         effects_list.push(NbtTag::Compound(effect_nbt));
                     }
                     nbt.put("active_effects", NbtTag::List(effects_list));
                 }
             }
-            //TODO: write equipment
-            // todo more...
+            // Java 26.2 stores living equipment as an `equipment` compound
+            // keyed by the canonical slot names.  Keep the old list form too:
+            // older servers and existing Pumpkin worlds still use HandItems /
+            // ArmorItems and are accepted by the reader below.
+            let equipment = self.entity_equipment.lock().await;
+            let slots = [
+                ("mainhand", EquipmentSlot::MAIN_HAND),
+                ("offhand", EquipmentSlot::OFF_HAND),
+                ("feet", EquipmentSlot::FEET),
+                ("legs", EquipmentSlot::LEGS),
+                ("chest", EquipmentSlot::CHEST),
+                ("head", EquipmentSlot::HEAD),
+            ];
+            let mut equipment_nbt = NbtCompound::new();
+            for &(name, ref slot) in &slots {
+                let stack = equipment.get(&slot);
+                let mut item = NbtCompound::new();
+                if !stack.is_empty() {
+                    stack.write_item_stack(&mut item);
+                }
+                if !item.child_tags.is_empty() {
+                    equipment_nbt.put_compound(name, item);
+                }
+            }
+            if !equipment_nbt.child_tags.is_empty() {
+                nbt.put_compound("equipment", equipment_nbt);
+            }
+
+            let drop_chances = self.equipment_drop_chances.lock().await;
+            if self.entity.entity_type.mob {
+                let mut chance_nbt = NbtCompound::new();
+                for &(name, ref slot) in &slots {
+                    let chance = drop_chances.get(&slot).copied().unwrap_or(0.085);
+                    if (chance - 0.085).abs() > f32::EPSILON {
+                        chance_nbt.put_float(name, chance);
+                    }
+                }
+                if !chance_nbt.child_tags.is_empty() {
+                    nbt.put_compound("drop_chances", chance_nbt);
+                }
+            }
         })
     }
 
@@ -2117,7 +2638,11 @@ impl NBTStorage for LivingEntity {
 
             // Load fall distance, but if this entity is currently marked dead ensure we don't restore
             // a lethal fall distance that would immediately re-kill on spawn.
-            let fd = nbt.get_float("fall_distance").unwrap_or(0.0);
+            let fd = nbt
+                .get_double("FallDistance")
+                .or_else(|| nbt.get_float("FallDistance").map(f64::from))
+                .or_else(|| nbt.get_float("fall_distance").map(f64::from))
+                .unwrap_or(0.0) as f32;
             if self.dead.load(Relaxed) {
                 self.fall_distance.store(0.0);
             } else {
@@ -2125,6 +2650,7 @@ impl NBTStorage for LivingEntity {
             }
             {
                 let mut active_effects = self.active_effects.lock().await;
+                let mut hidden_effects = self.hidden_effects.lock().await;
                 let nbt_effects = nbt.get_list("active_effects");
                 if let Some(nbt_effects) = nbt_effects {
                     for effect in nbt_effects {
@@ -2133,10 +2659,125 @@ impl NBTStorage for LivingEntity {
                                 Effect::create_from_nbt(&mut effect_nbt.clone()).await
                             {
                                 effect.blend = true; // TODO: change, is taken from effect give command
+                                let effect_type = effect.effect_type;
+                                let mut chain = Vec::new();
+                                let mut nested = effect_nbt.get_compound("hidden_effect").cloned();
+                                while let Some(mut nested_nbt) = nested {
+                                    if let Some(mut hidden_effect) =
+                                        Effect::create_from_nbt(&mut nested_nbt).await
+                                    {
+                                        hidden_effect.blend = true;
+                                        chain.push(hidden_effect);
+                                        nested = nested_nbt.get_compound("hidden_effect").cloned();
+                                    } else {
+                                        break;
+                                    }
+                                }
                                 active_effects.insert(effect.effect_type, effect);
+                                if !chain.is_empty() {
+                                    hidden_effects.insert(effect_type, chain);
+                                }
                             } else {
                                 warn!("Unable to read effect from nbt");
                             }
+                        }
+                    }
+                }
+            }
+            // Read Java 26.2's canonical equipment map, then accept legacy
+            // Pumpkin/older-Minecraft HandItems and ArmorItems lists.
+            {
+                let mut equipment = self.entity_equipment.lock().await;
+                if let Some(saved) = nbt.get_compound("equipment") {
+                    for (name, slot) in [
+                        ("mainhand", EquipmentSlot::MAIN_HAND),
+                        ("offhand", EquipmentSlot::OFF_HAND),
+                        ("feet", EquipmentSlot::FEET),
+                        ("legs", EquipmentSlot::LEGS),
+                        ("chest", EquipmentSlot::CHEST),
+                        ("head", EquipmentSlot::HEAD),
+                    ] {
+                        if let Some(item) = saved.get_compound(name) {
+                            equipment.put(
+                                &slot,
+                                ItemStack::read_item_stack(item)
+                                    .unwrap_or_else(|| ItemStack::EMPTY.clone()),
+                            );
+                        }
+                    }
+                }
+                for (index, slot) in [EquipmentSlot::MAIN_HAND, EquipmentSlot::OFF_HAND]
+                    .into_iter()
+                    .enumerate()
+                {
+                    if let Some(NbtTag::Compound(item)) =
+                        nbt.get_list("HandItems").and_then(|list| list.get(index))
+                    {
+                        equipment.put(
+                            &slot,
+                            ItemStack::read_item_stack(item)
+                                .unwrap_or_else(|| ItemStack::EMPTY.clone()),
+                        );
+                    }
+                }
+                for (index, slot) in [
+                    EquipmentSlot::FEET,
+                    EquipmentSlot::LEGS,
+                    EquipmentSlot::CHEST,
+                    EquipmentSlot::HEAD,
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    if let Some(NbtTag::Compound(item)) =
+                        nbt.get_list("ArmorItems").and_then(|list| list.get(index))
+                    {
+                        equipment.put(
+                            &slot,
+                            ItemStack::read_item_stack(item)
+                                .unwrap_or_else(|| ItemStack::EMPTY.clone()),
+                        );
+                    }
+                }
+            }
+            {
+                let mut drop_chances = self.equipment_drop_chances.lock().await;
+                if let Some(saved) = nbt.get_compound("drop_chances") {
+                    for (name, slot) in [
+                        ("mainhand", EquipmentSlot::MAIN_HAND),
+                        ("offhand", EquipmentSlot::OFF_HAND),
+                        ("feet", EquipmentSlot::FEET),
+                        ("legs", EquipmentSlot::LEGS),
+                        ("chest", EquipmentSlot::CHEST),
+                        ("head", EquipmentSlot::HEAD),
+                    ] {
+                        if let Some(chance) = saved.get_float(name) {
+                            drop_chances.insert(slot, chance);
+                        }
+                    }
+                }
+                if let Some(list) = nbt.get_list("HandDropChances") {
+                    for (index, slot) in [EquipmentSlot::MAIN_HAND, EquipmentSlot::OFF_HAND]
+                        .into_iter()
+                        .enumerate()
+                    {
+                        if let Some(NbtTag::Float(chance)) = list.get(index) {
+                            drop_chances.insert(slot, *chance);
+                        }
+                    }
+                }
+                if let Some(list) = nbt.get_list("ArmorDropChances") {
+                    for (index, slot) in [
+                        EquipmentSlot::FEET,
+                        EquipmentSlot::LEGS,
+                        EquipmentSlot::CHEST,
+                        EquipmentSlot::HEAD,
+                    ]
+                    .into_iter()
+                    .enumerate()
+                    {
+                        if let Some(NbtTag::Float(chance)) = list.get(index) {
+                            drop_chances.insert(slot, *chance);
                         }
                     }
                 }
@@ -2192,6 +2833,12 @@ impl EntityBase for LivingEntity {
                 if self.has_effect(&StatusEffect::FIRE_RESISTANCE).await {
                     return false;
                 }
+            }
+
+            if damage_type == DamageType::FREEZE
+                && !world.level_info.load().game_rules.freeze_damage
+            {
+                return false;
             }
 
             // Vanilla parity: entities in FREEZE_HURTS_EXTRA_TYPES take 5x freezing damage.
@@ -2306,7 +2953,7 @@ impl EntityBase for LivingEntity {
                 if !bypasses_cooldown_protection && damage_type != DamageType::STARVE {
                     self.get_effect(&StatusEffect::RESISTANCE)
                         .await
-                        .map_or(0.0, |e| 0.2 * (e.amplifier + 1) as f32)
+                        .map_or(0.0, |e| 0.2 * amplifier_level(e.amplifier) as f32)
                 } else {
                     0.0
                 };
@@ -2391,37 +3038,61 @@ impl EntityBase for LivingEntity {
                         }
                     }
 
-                    let active_hand = self.active_hand.lock().await;
-                    if let Some(hand) = *active_hand {
-                        let slot = if hand == Hand::Left {
-                            EquipmentSlot::MAIN_HAND
-                        } else {
-                            EquipmentSlot::OFF_HAND
-                        };
+                    let active_hand = *self.active_hand.lock().await;
+                    if let Some(hand) = active_hand {
+                        let slot = equipment_slot_for_active_hand(hand);
+                        let durability_damage = amount.ceil().max(1.0) as i32;
+                        let mut result = DamageResult::Untouched;
+                        let mut updated_stack = ItemStack::EMPTY.clone();
+                        let mut damaged_item_id = 0;
 
-                        let mut equipment_guard = self.entity_equipment.lock().await;
-                        if let Some(stack) = equipment_guard.equipment.get_mut(&slot) {
-                            let durability_damage = (amount / 1.0).floor().max(1.0) as i32;
-                            if stack.damage_item(durability_damage) == DamageResult::Broken {
-                                if let Some(player) = caller.get_player() {
+                        {
+                            let mut equipment_guard = self.entity_equipment.lock().await;
+                            if let Some(stack) = equipment_guard.equipment.get_mut(&slot) {
+                                damaged_item_id = stack.item.id;
+                                result = stack.damage_item(durability_damage);
+                                if result != DamageResult::Untouched {
+                                    updated_stack = stack.clone();
+                                }
+                            }
+                        }
+
+                        if result != DamageResult::Untouched {
+                            // A player must receive the inventory-slot update
+                            // as well as the entity equipment packet. Other
+                            // living entities only need the equipment stream.
+                            if let Some(player) = caller.get_player() {
+                                let inventory_slot = match hand {
+                                    Hand::Right => player.inventory().get_selected_slot() as usize,
+                                    Hand::Left => PlayerInventory::OFF_HAND_SLOT,
+                                };
+                                player
+                                    .sync_hand_slot(inventory_slot, updated_stack.clone())
+                                    .await;
+                                if result == DamageResult::Broken {
                                     player
                                         .increment_stat(
                                             StatisticCategory::Broken,
-                                            stack.item.id as i32,
+                                            damaged_item_id as i32,
                                             1,
                                         )
                                         .await;
                                 }
+                            } else {
+                                self.send_equipment_changes(&[(slot.clone(), updated_stack)]);
+                            }
+
+                            if result == DamageResult::Broken {
                                 world.send_entity_status(
                                     &self.entity,
                                     crate::entity::equipment_break_status(&slot),
                                     None,
                                 );
-                                *stack = ItemStack::EMPTY.clone();
-                                let broken_stack = stack.clone();
-                                drop(equipment_guard);
-
-                                self.send_equipment_changes(&[(slot, broken_stack)]);
+                                world.play_sound(
+                                    Sound::ItemShieldBreak,
+                                    SoundCategory::Players,
+                                    &player_pos,
+                                );
                                 self.clear_active_hand().await;
                             }
                         }
@@ -2445,7 +3116,9 @@ impl EntityBase for LivingEntity {
                 };
 
             // Finalize state
-            self.last_damage_taken.store(amount);
+            // The cooldown compares against the full post-reduction damage of the
+            // previous hit, not the raw incoming amount.
+            self.last_damage_taken.store(effective_amount);
             let damage_amount = damage_amount.max(0.0);
 
             let Some(server) = world.server.upgrade() else {
@@ -2592,14 +3265,15 @@ impl EntityBase for LivingEntity {
             if clamped_health <= 0.0
                 && (bypasses_cooldown_protection || !self.try_use_death_protector(caller).await)
             {
-                self.on_death(damage_type, source, cause).await;
+                self.on_death(caller, damage_type, source, cause).await;
             }
 
             // Armor durability is based on incoming raw damage, not post-absorption remaining.
             // Armor loses floor(raw_damage / 4) durability, minimum 1.
             // Not applied when the source is in `#minecraft:bypasses_armor`.
             if damage_amount > 0.0 && !bypasses_armor_durability(&damage_type) {
-                self.damage_armor_items(caller, damage_amount).await;
+                self.damage_armor_items(caller, damage_amount, &damage_type)
+                    .await;
             }
 
             true
@@ -2699,7 +3373,21 @@ impl EntityBase for LivingEntity {
                     && self.item_use_time.fetch_sub(1, Ordering::Relaxed) <= 0
                 {
                     // Consume item
-                    let mut is_potion = false;
+                    // ITEM_INTERACT_FINISH is emitted at the same tick as the
+                    // successful completion, before the active hand is
+                    // cleared.  This preserves the item component used to
+                    // decide whether the vibration is allowed.
+                    self.entity
+                        .world
+                        .load()
+                        .emit_game_event_from_item(
+                            self.entity.block_pos.load(),
+                            crate::world::game_event::GameEventKind::ItemInteractFinish,
+                            Some(self.entity.entity_uuid),
+                            item,
+                        )
+                        .await;
+
                     if let Some(food) = item.get_data_component::<FoodImpl>()
                         && let Some(player) = caller.get_player()
                     {
@@ -2715,7 +3403,6 @@ impl EntityBase for LivingEntity {
                     if item.get_data_component::<pumpkin_data::data_component_impl::PotionContentsImpl>().is_some() {
                         let effects = crate::item::potion::PotionContents::read_potion_effects(item);
                         crate::item::potion::PotionContents::apply_effects_to(self, effects, 1.0, crate::item::potion::PotionApplicationSource::Normal).await;
-                        is_potion = true;
                     }
 
                     if let Some(player) = caller.get_player() {
@@ -2734,16 +3421,10 @@ impl EntityBase for LivingEntity {
                         // Check main hand (hotbar selected)
                         let mut held = player.inventory.held_item().await;
                         if held.are_items_and_components_equal(item) {
-                            if is_potion {
-                                if player.gamemode.load() != GameMode::Creative {
-                                    held.decrement(1);
-                                    if held.is_empty() {
-                                        held = ItemStack::new(1, &Item::GLASS_BOTTLE);
-                                    }
-                                }
-                            } else {
-                                held.decrement_unless_creative(player.gamemode.load(), 1);
-                            }
+                            held.decrement_unless_creative_with_remainder(
+                                player.gamemode.load(),
+                                1,
+                            );
                             player.inventory.set_held_item(held).await;
                             handled = true;
                         }
@@ -2752,16 +3433,10 @@ impl EntityBase for LivingEntity {
                             // Check off-hand
                             let mut off_hand = player.inventory.off_hand_item().await;
                             if off_hand.are_items_and_components_equal(item) {
-                                if is_potion {
-                                    if player.gamemode.load() != GameMode::Creative {
-                                        off_hand.decrement(1);
-                                        if off_hand.is_empty() {
-                                            off_hand = ItemStack::new(1, &Item::GLASS_BOTTLE);
-                                        }
-                                    }
-                                } else {
-                                    off_hand.decrement_unless_creative(player.gamemode.load(), 1);
-                                }
+                                off_hand.decrement_unless_creative_with_remainder(
+                                    player.gamemode.load(),
+                                    1,
+                                );
                                 player
                                     .inventory
                                     .set_stack_in_hand(Hand::Left, off_hand)
@@ -2778,16 +3453,10 @@ impl EntityBase for LivingEntity {
                                 .get_stack_in_hand(caller.as_ref(), hand_to_modify)
                                 .await;
 
-                            if is_potion {
-                                if player.gamemode.load() != GameMode::Creative {
-                                    item_stack.decrement(1);
-                                    if item_stack.is_empty() {
-                                        item_stack = ItemStack::new(1, &Item::GLASS_BOTTLE);
-                                    }
-                                }
-                            } else {
-                                item_stack.decrement_unless_creative(player.gamemode.load(), 1);
-                            }
+                            item_stack.decrement_unless_creative_with_remainder(
+                                player.gamemode.load(),
+                                1,
+                            );
                             player
                                 .inventory
                                 .set_stack_in_hand(hand_to_modify, item_stack)
@@ -2931,6 +3600,91 @@ mod consumable_effect_tests {
         assert!(!consume_effect_probability_applies(0.5, 0.5));
     }
 }
+
+#[cfg(test)]
+mod effect_merge_tests {
+    use super::{LivingEntity, StatusEffect};
+    use pumpkin_data::entity::EntityType;
+    use pumpkin_data::potion::Effect;
+
+    fn effect(duration: i32, amplifier: u8) -> Effect {
+        Effect {
+            effect_type: &StatusEffect::SPEED,
+            duration,
+            amplifier,
+            ambient: false,
+            show_particles: true,
+            show_icon: true,
+            blend: false,
+        }
+    }
+
+    #[test]
+    fn weaker_or_shorter_effect_does_not_replace_active_instance() {
+        let current = effect(200, 2);
+        assert!(!LivingEntity::should_replace_effect(
+            &current,
+            &effect(20, 1)
+        ));
+        assert!(!LivingEntity::should_replace_effect(
+            &current,
+            &effect(100, 2)
+        ));
+    }
+
+    #[test]
+    fn stronger_or_longer_effect_replaces_active_instance() {
+        let current = effect(200, 2);
+        assert!(LivingEntity::should_replace_effect(
+            &current,
+            &effect(20, 3)
+        ));
+        assert!(LivingEntity::should_replace_effect(
+            &current,
+            &effect(201, 2)
+        ));
+        assert!(LivingEntity::should_replace_effect(
+            &current,
+            &effect(-1, 2)
+        ));
+    }
+
+    #[test]
+    fn hidden_effects_promote_in_vanilla_order() {
+        let mut hidden = vec![effect(40, 1), effect(80, 0)];
+        assert_eq!(hidden.remove(0).amplifier, 1);
+        assert_eq!(hidden.remove(0).amplifier, 0);
+        assert!(hidden.is_empty());
+    }
+
+    #[test]
+    fn tagged_entities_reject_only_their_immune_effects() {
+        assert!(!LivingEntity::can_receive_effect(
+            &EntityType::SILVERFISH,
+            &StatusEffect::INFESTED
+        ));
+        assert!(!LivingEntity::can_receive_effect(
+            &EntityType::SLIME,
+            &StatusEffect::OOZING
+        ));
+        assert!(!LivingEntity::can_receive_effect(
+            &EntityType::SKELETON,
+            &StatusEffect::POISON
+        ));
+        assert!(!LivingEntity::can_receive_effect(
+            &EntityType::SKELETON,
+            &StatusEffect::REGENERATION
+        ));
+        assert!(LivingEntity::can_receive_effect(
+            &EntityType::PLAYER,
+            &StatusEffect::POISON
+        ));
+        assert!(LivingEntity::can_receive_effect(
+            &EntityType::SILVERFISH,
+            &StatusEffect::OOZING
+        ));
+    }
+}
 /// Returns `true` if `damage_type` is in `#minecraft:bypasses_armor` (1.21.11).
 /// These sources bypass armor entirely (fall, drown, freeze, etc.).
 pub(crate) const fn bypasses_armor_durability(damage_type: &DamageType) -> bool {
@@ -2985,6 +3739,61 @@ pub(crate) const fn bypasses_armor_durability(damage_type: &DamageType) -> bool 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn active_hand_maps_to_the_matching_equipment_slot() {
+        assert!(matches!(
+            equipment_slot_for_active_hand(Hand::Right),
+            EquipmentSlot::MainHand(_)
+        ));
+        assert!(matches!(
+            equipment_slot_for_active_hand(Hand::Left),
+            EquipmentSlot::OffHand(_)
+        ));
+    }
+
+    #[test]
+    fn fall_location_translation_uses_vanilla_variants() {
+        assert_eq!(
+            LivingEntity::fall_location_translation_keys(&Block::LADDER),
+            (
+                translation::java::DEATH_FELL_ACCIDENT_LADDER,
+                translation::bedrock::DEATH_FELL_ACCIDENT_LADDER
+            )
+        );
+        assert_eq!(
+            LivingEntity::fall_location_translation_keys(&Block::WEEPING_VINES),
+            (
+                translation::java::DEATH_FELL_ACCIDENT_WEEPING_VINES,
+                translation::bedrock::DEATH_FELL_ACCIDENT_VINES
+            )
+        );
+        assert_eq!(
+            LivingEntity::fall_location_translation_keys(&Block::SCAFFOLDING),
+            (
+                translation::java::DEATH_FELL_ACCIDENT_SCAFFOLDING,
+                translation::bedrock::DEATH_FELL_ACCIDENT_GENERIC
+            )
+        );
+        assert_eq!(
+            LivingEntity::fall_location_translation_keys(&Block::CAVE_VINES),
+            (
+                translation::java::DEATH_FELL_ACCIDENT_OTHER_CLIMBABLE,
+                translation::bedrock::DEATH_FELL_ACCIDENT_GENERIC
+            )
+        );
+    }
+
+    #[test]
+    fn use_effect_speed_multiplier_only_scales_active_item_motion() {
+        let effects = UseEffectsImpl {
+            can_sprint: false,
+            interact_vibrations: true,
+            speed_multiplier: 0.2,
+        };
+        assert!((apply_use_effect_speed(1.0, Some(&effects)) - 0.2).abs() < 1e-6);
+        assert!((apply_use_effect_speed(1.0, None) - 1.0).abs() < 1e-6);
+    }
 
     // ── bypasses_armor_durability ─────────────────────────────────────
 

@@ -10,7 +10,7 @@ use pumpkin_data::entity::EntityType;
 use pumpkin_data::translation;
 use pumpkin_macros::pumpkin_block_from_tag;
 use pumpkin_util::GameMode;
-use pumpkin_util::math::position::BlockPos;
+use pumpkin_util::math::{boundingbox::BoundingBox, position::BlockPos};
 use pumpkin_world::world::BlockFlags;
 
 use crate::block::BlockFuture;
@@ -258,7 +258,28 @@ impl BlockBehaviour for BedBlock {
 
             // Make sure the bed is not occupied
             if bed_props.occupied {
-                // TODO: Wake up villager
+                // Vanilla gives a villager occupying the bed one chance to
+                // leave it before reporting `bed.occupied` to the player.
+                // Query only the head block's one-block AABB; checking the
+                // whole bed would incorrectly wake a villager standing beside
+                // the foot half.
+                let bed_box = BoundingBox::new(
+                    bed_head_pos.to_f64(),
+                    bed_head_pos.to_f64().add_raw(1.0, 1.0, 1.0),
+                );
+                if let Some(villager) =
+                    args.world
+                        .get_entities_at_box(&bed_box)
+                        .into_iter()
+                        .find(|entity| {
+                            entity.get_entity().entity_type.id == EntityType::VILLAGER.id
+                                && entity.get_entity().pose.load()
+                                    == pumpkin_data::entity::EntityPose::Sleeping
+                        })
+                {
+                    villager.wake_from_bed();
+                    return BlockActionResult::SuccessServer;
+                }
 
                 args.player
                     .send_system_message_raw(
@@ -363,7 +384,7 @@ impl BlockBehaviour for BedBlock {
                 }
             }
 
-            args.player.sleep(bed_head_pos);
+            args.player.sleep(bed_head_pos).await;
             args.player
                 .trigger_advancement(
                     crate::entity::player::advancement::trigger::AdvancementTrigger::SleptInBed,

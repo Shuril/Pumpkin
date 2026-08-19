@@ -1,9 +1,9 @@
 use std::pin::Pin;
 use std::sync::Arc;
 
-use crate::entity::Entity;
 use crate::entity::player::Player;
 use crate::entity::vehicle::minecart::MinecartEntity;
+use crate::entity::{Entity, EntityBase};
 use crate::item::{ItemBehaviour, ItemMetadata};
 use crate::server::Server;
 use pumpkin_data::BlockDirection;
@@ -21,7 +21,7 @@ use pumpkin_util::math::vector3::Vector3;
 pub struct MinecartItem;
 
 impl MinecartItem {
-    fn item_to_entity(item: &Item) -> &'static EntityType {
+    pub(crate) fn item_to_entity(item: &Item) -> &'static EntityType {
         match item.id {
             val if val == Item::MINECART.id => &EntityType::MINECART,
             val if val == Item::TNT_MINECART.id => &EntityType::TNT_MINECART,
@@ -89,6 +89,14 @@ impl ItemBehaviour for MinecartItem {
             let minecart_entity = Arc::new(MinecartEntity::new(entity));
             world.spawn_entity(minecart_entity).await;
             item.decrement_unless_creative(player.gamemode.load(), 1);
+            world
+                .emit_game_event_from_item(
+                    location,
+                    crate::world::game_event::GameEventKind::EntityPlace,
+                    Some(player.get_entity().entity_uuid),
+                    item,
+                )
+                .await;
         })
     }
 

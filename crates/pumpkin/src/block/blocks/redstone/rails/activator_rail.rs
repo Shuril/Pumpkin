@@ -22,19 +22,6 @@ use super::common::{
     update_flanking_rails_shape,
 };
 
-// TODO: Fix redstone rail power extension behavior
-// Currently, redstone sources (like redstone torch) can incorrectly extend rail power
-// when placed at any powered rail position. In Minecraft, power should only extend
-// when a redstone source is placed at the LAST powered rail or at an unpowered rail.
-//
-// Example of INCORRECT current behavior:
-// redstone_torch [powered_rail×9] [unpowered_rail×3]
-// If redstone torch is placed at 6th powered rail → power extends (WRONG)
-//
-// Example of CORRECT Minecraft behavior:
-// redstone_torch [powered_rail×9] [unpowered_rail×3]
-// Power should only extend when redstone source is at 9th rail (last powered) or unpowered rail
-
 #[pumpkin_block("minecraft:activator_rail")]
 pub struct ActivatorRailBlock;
 
@@ -63,11 +50,6 @@ impl BlockBehaviour for ActivatorRailBlock {
             let final_state_id = args.world.get_block_state_id(args.position);
             let rail_props = RailProperties::new(final_state_id, args.block);
 
-            self.update_connected_rails(args.world, args.position, &rail_props, true, 0)
-                .await;
-            self.update_connected_rails(args.world, args.position, &rail_props, false, 0)
-                .await;
-
             for direction in rail_props.directions() {
                 let neighbor_pos = args.position.offset(direction.to_offset());
 
@@ -80,31 +62,11 @@ impl BlockBehaviour for ActivatorRailBlock {
                         false,
                     )
                     .await;
-                    self.update_connected_rails(
-                        args.world,
-                        &neighbor_pos,
-                        &neighbor_rail.1,
-                        true,
-                        0,
-                    )
-                    .await;
-                    self.update_connected_rails(
-                        args.world,
-                        &neighbor_pos,
-                        &neighbor_rail.1,
-                        false,
-                        0,
-                    )
-                    .await;
                 }
 
                 let up_pos = neighbor_pos.up();
                 if let Some(neighbor_rail) = Self::find_rail_at_position(args.world, &up_pos) {
                     self.update_powered_state_internal(args.world, neighbor_rail.0, &up_pos, false)
-                        .await;
-                    self.update_connected_rails(args.world, &up_pos, &neighbor_rail.1, true, 0)
-                        .await;
-                    self.update_connected_rails(args.world, &up_pos, &neighbor_rail.1, false, 0)
                         .await;
                 }
 
@@ -117,10 +79,6 @@ impl BlockBehaviour for ActivatorRailBlock {
                         false,
                     )
                     .await;
-                    self.update_connected_rails(args.world, &down_pos, &neighbor_rail.1, true, 0)
-                        .await;
-                    self.update_connected_rails(args.world, &down_pos, &neighbor_rail.1, false, 0)
-                        .await;
                 }
             }
         })
@@ -136,14 +94,6 @@ impl BlockBehaviour for ActivatorRailBlock {
             }
 
             self.update_powered_state(args.world, args.block, args.position)
-                .await;
-
-            let state_id = args.world.get_block_state_id(args.position);
-            let rail_props = RailProperties::new(state_id, args.block);
-
-            self.update_connected_rails(args.world, args.position, &rail_props, true, 0)
-                .await;
-            self.update_connected_rails(args.world, args.position, &rail_props, false, 0)
                 .await;
         })
     }

@@ -79,6 +79,13 @@ pub trait GenerationCache: HeightLimitView + BlockAccessor {
     fn get_block_state(&self, pos: &Vector3<i32>) -> BlockStateId;
     fn get_fluid_and_fluid_state(&self, position: &Vector3<i32>) -> (Fluid, FluidState);
     fn set_block_state(&mut self, pos: &Vector3<i32>, block_state: &BlockState);
+    fn schedule_block_tick(
+        &mut self,
+        pos: &Vector3<i32>,
+        block: &'static Block,
+        delay: u32,
+        priority: TickPriority,
+    );
     fn add_block_entity(&mut self, pos: &Vector3<i32>, nbt: NbtCompound);
     fn top_motion_blocking_block_height_exclusive(&self, x: i32, z: i32) -> i32;
     fn top_motion_blocking_block_no_leaves_height_exclusive(&self, x: i32, z: i32) -> i32;
@@ -92,6 +99,11 @@ pub trait GenerationCache: HeightLimitView + BlockAccessor {
         chunk_x: i32,
         chunk_z: i32,
     ) -> Option<&crate::generation::blender::blending_data::BlendingData>;
+
+    /// Sea level belonging to the generator that owns this cache.  Features
+    /// must read this value instead of assuming the Overworld's y=63; Nether
+    /// and custom dimension generators are allowed to choose another level.
+    fn sea_level(&self) -> i32;
 }
 
 const AIR_BLOCK: Block = Block::AIR;
@@ -143,13 +155,17 @@ pub struct ProtoChunk {
     bottom_y: i8,
     generation_height: u16,
     generation_bottom_y: i8,
+    sea_level: i32,
     pub stage: StagedChunkEnum,
     pub light: ChunkLight,
     pub carving_mask: crate::generation::carver::mask::CarvingMask,
     pub blending_data: Option<crate::generation::blender::blending_data::BlendingData>,
     pub pending_block_entities: Vec<NbtCompound>,
     pending_structure_entities: Vec<NbtCompound>,
+    pub block_ticks: Vec<ScheduledTick<&'static Block>>,
     pub fluid_ticks: Vec<ScheduledTick<&'static Fluid>>,
+    pub inhabited_time: u64,
+    pub unknown_nbt: NbtCompound,
 }
 
 pub struct TerrainCache {
@@ -203,6 +219,13 @@ impl ProtoChunk {
             super::generator::WorldGenerator::Flat(_) => (height, bottom_y),
         };
 
+        let sea_level = match generator {
+            super::generator::WorldGenerator::Noise(noise_gen) => noise_gen.settings.sea_level,
+            // Flat generators do not carry a separate noise-settings object;
+            // vanilla's flat world defaults to the standard sea level.
+            super::generator::WorldGenerator::Flat(_) => 63,
+        };
+
         let default_block = match generator {
             super::generator::WorldGenerator::Noise(noise_gen) => noise_gen.default_block,
             super::generator::WorldGenerator::Flat(_) => Block::AIR.default_state,
@@ -238,6 +261,7 @@ impl ProtoChunk {
             bottom_y,
             generation_height,
             generation_bottom_y,
+            sea_level,
             stage: StagedChunkEnum::Empty,
             light: ChunkLight {
                 sky_light: (0..section_count)
@@ -254,7 +278,10 @@ impl ProtoChunk {
             blending_data: None,
             pending_block_entities: Vec::new(),
             pending_structure_entities: Vec::new(),
+            block_ticks: Vec::new(),
             fluid_ticks: Vec::new(),
+            inhabited_time: 0,
+            unknown_nbt: NbtCompound::new(),
         }
     }
 
@@ -273,6 +300,23 @@ impl ProtoChunk {
         proto_chunk
             .blending_data
             .clone_from(&chunk_data.blending_data);
+        proto_chunk.block_ticks = chunk_data.block_ticks.to_vec();
+        proto_chunk.fluid_ticks = chunk_data.fluid_ticks.to_vec();
+        proto_chunk.pending_block_entities = chunk_data
+            .pending_block_entities
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .values()
+            .cloned()
+            .collect();
+        proto_chunk.inhabited_time = chunk_data
+            .inhabited_time
+            .load(std::sync::atomic::Ordering::Relaxed);
+        proto_chunk.unknown_nbt = chunk_data
+            .unknown_nbt
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
 
         let section_data = &chunk_data.section;
         let heightmap_data = chunk_data
@@ -419,6 +463,23 @@ impl ProtoChunk {
             priority: TickPriority::Normal,
             position: BlockPos::new(x, y, z),
             value: fluid,
+        });
+    }
+
+    pub fn schedule_block_tick(
+        &mut self,
+        x: i32,
+        y: i32,
+        z: i32,
+        block: &'static Block,
+        delay: u32,
+        priority: TickPriority,
+    ) {
+        self.block_ticks.push(ScheduledTick {
+            delay,
+            priority,
+            position: BlockPos::new(x, y, z),
+            value: block,
         });
     }
 
@@ -1658,6 +1719,15 @@ impl GenerationCache for ProtoChunk {
     fn set_block_state(&mut self, pos: &Vector3<i32>, block_state: &BlockState) {
         Self::set_block_state(self, pos.x, pos.y, pos.z, block_state);
     }
+    fn schedule_block_tick(
+        &mut self,
+        pos: &Vector3<i32>,
+        block: &'static Block,
+        delay: u32,
+        priority: TickPriority,
+    ) {
+        Self::schedule_block_tick(self, pos.x, pos.y, pos.z, block, delay, priority);
+    }
     fn add_block_entity(&mut self, _pos: &Vector3<i32>, nbt: NbtCompound) {
         self.add_block_entity(nbt);
     }
@@ -1688,5 +1758,9 @@ impl GenerationCache for ProtoChunk {
         _cz: i32,
     ) -> Option<&crate::generation::blender::blending_data::BlendingData> {
         None
+    }
+
+    fn sea_level(&self) -> i32 {
+        self.sea_level
     }
 }

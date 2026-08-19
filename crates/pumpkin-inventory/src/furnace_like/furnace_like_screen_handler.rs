@@ -106,6 +106,11 @@ impl FurnaceLikeScreenHandler {
         let player_inventory: Arc<dyn Inventory> = player_inventory.clone();
         handler.add_player_slots(&player_inventory);
 
+        // Match AbstractFurnaceMenu's open lifecycle. Some furnace-like
+        // inventories use this callback for viewer counts and dirty-state
+        // bookkeeping, even when the basic implementation is a no-op.
+        handler.inventory.on_open().await;
+
         handler
     }
 
@@ -151,7 +156,12 @@ impl ScreenHandler for FurnaceLikeScreenHandler {
     fn on_closed<'a>(&'a mut self, player: &'a dyn InventoryPlayer) -> ScreenHandlerFuture<'a, ()> {
         Box::pin(async move {
             self.default_on_closed(player).await;
-            // TODO: self.inventory.on_closed(player).await;
+            // Container inventories receive the close callback after the
+            // cursor stack has been handled.  Furnace-like block entities
+            // use this hook to decrement viewers and mark their state dirty;
+            // omitting it leaves stale viewers after a disconnect and can
+            // keep a block entity ticking forever.
+            self.inventory.on_close().await;
         })
     }
 

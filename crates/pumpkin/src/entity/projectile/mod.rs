@@ -12,6 +12,7 @@ use std::{
 pub mod arrow;
 pub mod egg;
 pub mod ender_pearl;
+pub mod experience_bottle;
 pub mod eye_of_ender;
 pub mod fireball;
 pub mod firework_rocket;
@@ -39,6 +40,7 @@ pub fn is_projectile(entity_type: &EntityType) -> bool {
         || *entity_type == EntityType::FIREBALL
         || *entity_type == EntityType::SMALL_FIREBALL
         || *entity_type == EntityType::FISHING_BOBBER
+        || *entity_type == EntityType::EXPERIENCE_BOTTLE
 }
 
 pub struct ThrownItemEntity {
@@ -53,7 +55,7 @@ impl ThrownItemEntity {
     pub fn new(entity: Entity, owner: &Entity, gravity: f64) -> Self {
         let mut owner_pos = owner.pos.load();
         owner_pos.y += owner.get_eye_height() - 0.1;
-        entity.pos.store(owner_pos);
+        entity.set_pos(owner_pos);
         Self {
             entity,
             owner_id: Some(owner.entity_id),
@@ -220,6 +222,7 @@ impl ThrownItemEntity {
                 return;
             }
 
+            world.on_projectile_hit(caller.as_ref(), &h).await;
             // Just trigger hit effects and remove
             caller.on_hit(h).await;
             entity.remove().await;

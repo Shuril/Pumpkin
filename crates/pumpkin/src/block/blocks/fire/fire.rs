@@ -115,9 +115,28 @@ impl FireBlock {
         total_burn_chance
     }
 
-    const fn is_near_rain(_world: &World, _pos: &BlockPos) -> bool {
-        // TODO: Implement proper rain checking when weather is implemented
-        // For now, return false to allow fire to work
+    fn rain_probe_positions(pos: &BlockPos) -> [BlockPos; 5] {
+        [
+            *pos,
+            pos.offset(BlockDirection::West.to_offset()),
+            pos.offset(BlockDirection::East.to_offset()),
+            pos.offset(BlockDirection::North.to_offset()),
+            pos.offset(BlockDirection::South.to_offset()),
+        ]
+    }
+
+    async fn is_near_rain(world: &World, pos: &BlockPos) -> bool {
+        // Vanilla FireBlock.isNearRain checks the fire position and the four
+        // horizontal neighbours.  A fire under a roof can therefore still be
+        // extinguished when rain reaches an exposed adjacent column.  Keep
+        // the probes in the same order as the Java implementation; besides
+        // making the rule explicit this avoids accidentally checking above or
+        // below, which vanilla does not do.
+        for probe in Self::rain_probe_positions(pos) {
+            if world.is_raining_at(&probe).await {
+                return true;
+            }
+        }
         false
     }
 
@@ -154,7 +173,7 @@ impl FireBlock {
         if rand::rng().random_range(0..chance) < odds {
             let old_block = block;
             if rand::rng().random_range(0..(age + 10) as i32) < 5
-                && !Self::is_near_rain(world.as_ref(), pos)
+                && !Self::is_near_rain(world.as_ref(), pos).await
             {
                 let new_age = (age + (rand::rng().random_range(0..5) / 4)).min(15) as u8;
                 let state_id = self.get_state_for_position(world.as_ref(), &Block::FIRE, pos);
@@ -189,6 +208,23 @@ impl FireBlock {
                 TNTBlock::prime(world, pos).await;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::FireBlock;
+    use pumpkin_util::math::position::BlockPos;
+
+    #[test]
+    fn rain_probe_matches_vanilla_five_columns() {
+        let center = BlockPos::new(10, 64, -3);
+        let probes = FireBlock::rain_probe_positions(&center);
+        assert_eq!(probes[0], center);
+        assert_eq!(probes[1], BlockPos::new(9, 64, -3));
+        assert_eq!(probes[2], BlockPos::new(11, 64, -3));
+        assert_eq!(probes[3], BlockPos::new(10, 64, -4));
+        assert_eq!(probes[4], BlockPos::new(10, 64, -2));
     }
 }
 
@@ -314,7 +350,7 @@ impl BlockBehaviour for FireBlock {
             let age = fire_props.age;
 
             // Check if rain should extinguish the fire
-            if !infiniburn && Self::is_near_rain(world.as_ref(), pos) {
+            if !infiniburn && Self::is_near_rain(world.as_ref(), pos).await {
                 let rain_chance = 0.2 + (age as f32) * 0.03;
                 if rand::random::<f32>() < rain_chance {
                     world
@@ -467,7 +503,7 @@ impl BlockBehaviour for FireBlock {
 
                                 if odds > 0
                                     && rand::rng().random_range(0..rate) <= odds
-                                    && !Self::is_near_rain(world.as_ref(), &offset_pos)
+                                    && !Self::is_near_rain(world.as_ref(), &offset_pos).await
                                 {
                                     let spread_age = (new_age + rand::rng().random_range(0..5) / 4)
                                         .min(15)

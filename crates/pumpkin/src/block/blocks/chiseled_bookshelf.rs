@@ -145,7 +145,17 @@ impl ChiseledBookshelfBlock {
         slot: i8,
         item: &mut ItemStack,
     ) {
-        // TODO: Increment used stats for chiseled bookshelf on the player
+        // ChiseledBookShelfBlock awards the normal ITEM_USED statistic for the
+        // inserted item before consuming it.  Keep this at the authoritative
+        // mutation boundary so creative and survival insertions both count
+        // exactly once (the stack split below is the only consumption path).
+        player
+            .increment_stat(
+                pumpkin_data::statistic::StatisticCategory::Used,
+                item.get_item().id as i32,
+                1,
+            )
+            .await;
 
         let sound = if item.get_item() == &Item::ENCHANTED_BOOK {
             Sound::BlockChiseledBookshelfPickupEnchanted

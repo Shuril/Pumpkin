@@ -28,7 +28,7 @@ macro_rules! impl_block_entity_for_chest {
                     dirty: std::sync::atomic::AtomicBool::new(false),
                     viewers: $crate::block::viewer::ViewerCountTracker::new(),
                     loot_table: StdMutex::new(loot_table_key),
-                    loot_table_seed,
+                    loot_table_seed: StdMutex::new(loot_table_seed),
                 };
 
                 // Only read saved items when there is no pending loot table.
@@ -60,8 +60,9 @@ macro_rules! impl_block_entity_for_chest {
                     if let Some(key) = loot_table_key {
                         // Persist deferred loot: write the key and seed; skip items.
                         nbt.put_string("LootTable", key);
-                        if self.loot_table_seed != 0 {
-                            nbt.put_long("LootTableSeed", self.loot_table_seed);
+                        let loot_table_seed = *self.loot_table_seed.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                        if loot_table_seed != 0 {
+                            nbt.put_long("LootTableSeed", loot_table_seed);
                         }
                     } else {
                         // Loot has already been generated, so persist the actual items.
@@ -103,8 +104,9 @@ macro_rules! impl_block_entity_for_chest {
                 let loot_table_key = self.loot_table.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
                 if let Some(key) = loot_table_key {
                     nbt.put_string("LootTable", key);
-                    if self.loot_table_seed != 0 {
-                        nbt.put_long("LootTableSeed", self.loot_table_seed);
+                    let loot_table_seed = *self.loot_table_seed.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                    if loot_table_seed != 0 {
+                        nbt.put_long("LootTableSeed", loot_table_seed);
                     }
                 } else {
                     let items = futures::executor::block_on(self.items.read());
@@ -119,7 +121,23 @@ macro_rules! impl_block_entity_for_chest {
 
             fn take_loot_table(&self) -> Option<(String, i64)> {
                 let mut guard = self.loot_table.lock().expect("Loot table mutex should not be poisoned");
-                guard.take().map(|key| (key, self.loot_table_seed))
+                guard.take().map(|key| {
+                    let seed = *self.loot_table_seed.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                    (key, seed)
+                })
+            }
+
+            fn restore_loot_table(&self, key: String, seed: i64) {
+                let mut guard = self.loot_table.lock().expect("Loot table mutex should not be poisoned");
+                // A restore is only valid while the deferred field is empty.
+                // Refusing to overwrite a newly generated table prevents a
+                // stale async caller from resurrecting old loot.
+                if guard.is_none() {
+                    *guard = Some(key);
+                    *self.loot_table_seed.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = seed;
+                    self.dirty
+                        .store(true, std::sync::atomic::Ordering::Relaxed);
+                }
             }
 
             fn has_loot_table(&self) -> bool {
@@ -248,10 +266,16 @@ macro_rules! impl_viewer_count_listener_for_chest {
             fn on_container_open<'a>(
                 &'a self,
                 world: &'a Arc<$crate::world::World>,
-                _position: &'a pumpkin_util::math::position::BlockPos,
+                position: &'a pumpkin_util::math::position::BlockPos,
             ) -> $crate::block::viewer::ViewerFuture<'a, ()> {
                 Box::pin(async move {
                     self.play_sound(world, pumpkin_data::sound::Sound::BlockChestOpen)
+                        .await;
+                    world
+                        .emit_game_event(
+                            *position,
+                            $crate::world::game_event::GameEventKind::ContainerOpen,
+                        )
                         .await;
                 })
             }
@@ -259,10 +283,16 @@ macro_rules! impl_viewer_count_listener_for_chest {
             fn on_container_close<'a>(
                 &'a self,
                 world: &'a Arc<$crate::world::World>,
-                _position: &'a pumpkin_util::math::position::BlockPos,
+                position: &'a pumpkin_util::math::position::BlockPos,
             ) -> $crate::block::viewer::ViewerFuture<'a, ()> {
                 Box::pin(async move {
                     self.play_sound(world, pumpkin_data::sound::Sound::BlockChestClose)
+                        .await;
+                    world
+                        .emit_game_event(
+                            *position,
+                            $crate::world::game_event::GameEventKind::ContainerClose,
+                        )
                         .await;
                 })
             }
@@ -290,10 +320,24 @@ macro_rules! impl_viewer_count_listener_for_chest {
                         // Update direct neighbors
                         world.clone().update_neighbors(position, None).await;
 
+                        // A comparator reads the inventory without changing
+                        // the chest block state.  Vanilla therefore invokes
+                        // updateNeighbourForOutputSignal explicitly when the
+                        // viewer count changes (trapped chests emit a
+                        // different analog signal while open).
+                        world
+                            .clone()
+                            .update_comparators(position, &pumpkin_data::Block::TRAPPED_CHEST)
+                            .await;
+
                         // Also update neighbors of the block below (strongly powered block)
                         // This ensures redstone components adjacent to the block below are notified
                         let below_pos = position.down();
                         world.clone().update_neighbors(&below_pos, None).await;
+                        world
+                            .clone()
+                            .update_comparators(&below_pos, &pumpkin_data::Block::TRAPPED_CHEST)
+                            .await;
                     }
                 })
             }
@@ -326,7 +370,7 @@ macro_rules! impl_chest_helper_methods {
                     dirty: AtomicBool::new(false),
                     viewers: $crate::block::viewer::ViewerCountTracker::new(),
                     loot_table: StdMutex::new(None),
-                    loot_table_seed: 0,
+                    loot_table_seed: StdMutex::new(0),
                 }
             }
 

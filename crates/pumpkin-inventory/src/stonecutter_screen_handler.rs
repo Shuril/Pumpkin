@@ -106,6 +106,22 @@ impl ScreenHandler for StonecutterScreenHandler {
         self
     }
 
+    fn on_closed<'a>(&'a mut self, player: &'a dyn InventoryPlayer) -> ScreenHandlerFuture<'a, ()> {
+        Box::pin(async move {
+            self.default_on_closed(player).await;
+            // Stonecutter output is a virtual preview.  Vanilla returns the
+            // real input stack when the menu is removed and never leaves a
+            // stale preview that can be duplicated after reopening.
+            self.output_inventory
+                .set_stack(0, ItemStack::EMPTY.clone())
+                .await;
+            self.drop_inventory(player, self.input_inventory.clone())
+                .await;
+            self.input_inventory.on_close().await;
+            self.output_inventory.on_close().await;
+        })
+    }
+
     fn on_slot_click<'a>(
         &'a mut self,
         slot_index: i32,

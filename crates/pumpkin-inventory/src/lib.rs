@@ -90,6 +90,5 @@ pub fn build_equipment_slots() -> HashMap<usize, EquipmentSlot> {
     );
 
     equipment_slots.insert(PlayerInventory::OFF_HAND_SLOT, EquipmentSlot::OFF_HAND);
-    equipment_slots.insert(PlayerInventory::OFF_HAND_SLOT, EquipmentSlot::OFF_HAND);
     equipment_slots
 }

@@ -38,6 +38,7 @@ use pumpkin_util::text::TextComponent;
 use pumpkin_world::world_info::anvil::{
     AnvilLevelInfo, LEVEL_DAT_BACKUP_FILE_NAME, LEVEL_DAT_FILE_NAME,
 };
+use pumpkin_world::world_info::data_files::read_weather;
 use pumpkin_world::world_info::{LevelData, WorldInfoError, WorldInfoReader, WorldInfoWriter};
 use rand::seq::{IndexedRandom, SliceRandom};
 use rsa::RsaPublicKey;
@@ -52,6 +53,8 @@ use tokio::task::{JoinHandle, JoinSet};
 use tokio_util::task::TaskTracker;
 
 mod connection_cache;
+pub mod datapack;
+pub mod function_scheduler;
 mod key_store;
 pub mod recipe;
 pub mod scheduler;
@@ -65,6 +68,7 @@ use crate::command::args::entities::{
     EntityFilter, EntityFilterSort, EntitySelectorType, TargetSelector, ValueCondition,
 };
 use crate::data::advancement_data::AdvancementManager;
+use crate::server::function_scheduler::FunctionScheduler;
 use crate::server::scheduler::TaskScheduler;
 
 /// Represents a Minecraft server instance.
@@ -136,6 +140,8 @@ pub struct Server {
     pub player_idle_timeout: AtomicI32,
     /// Manages scheduled tasks (e.g. from plugins)
     pub task_scheduler: Arc<TaskScheduler>,
+    /// Persistent `/schedule function` callbacks.
+    pub function_scheduler: Mutex<FunctionScheduler>,
     tasks: TaskTracker,
     runtime: tokio::runtime::Handle,
 
@@ -301,6 +307,7 @@ impl Server {
             tasks: TaskTracker::new(),
             runtime: tokio::runtime::Handle::current(),
             task_scheduler: Arc::new(TaskScheduler::new()),
+            function_scheduler: Mutex::new(FunctionScheduler::new()),
             server_guid: rand::random(),
             player_idle_timeout: AtomicI32::new(0),
             mojang_public_keys: ArcSwap::from_pointee(Vec::new()),
@@ -308,6 +315,43 @@ impl Server {
             level_info,
         };
         let server = Arc::new(server);
+
+        if let Err(error) = server
+            .bossbars
+            .lock()
+            .await
+            .load_from_world_path(&world_path)
+        {
+            warn!(%error, "Failed to load custom boss bars; starting with an empty manager");
+        }
+
+        // Build the datapack candidate before worlds become visible. The
+        // recipe manager is replaced only after the complete candidate has
+        // parsed successfully, so a malformed pack cannot publish a partial
+        // registry.
+        let enabled_datapacks = server.level_info.load().data_packs.enabled.clone();
+        match datapack::DataPackLoader::load(&world_path, &enabled_datapacks) {
+            Ok(snapshot) => {
+                if !snapshot.unsupported_recipe_types.is_empty() {
+                    warn!(
+                        count = snapshot.unsupported_recipe_types.len(),
+                        "datapack recipes with unsupported serializers were skipped"
+                    );
+                }
+                server
+                    .recipe_manager
+                    .replace_datapack_snapshot(
+                        snapshot.recipes,
+                        snapshot.tags,
+                        snapshot.functions,
+                        snapshot.resources,
+                    )
+                    .await;
+            }
+            Err(error) => {
+                error!("Datapack reload failed; keeping built-in recipes: {error}");
+            }
+        }
 
         let gen_pool = Arc::new(
             rayon::ThreadPoolBuilder::new()
@@ -365,6 +409,26 @@ impl Server {
         }
 
         server.worlds.store(Arc::new(worlds_vec));
+        // WeatherData lives in data/minecraft/weather.dat in vanilla. Load it
+        // once before publishing worlds so every dimension starts with the
+        // same persisted weather state and no tick can observe a half-loaded
+        // timer.
+        if let Some(overworld) = server.worlds.load().first() {
+            let weather_data = read_weather(&world_path);
+            *overworld.weather.lock().await =
+                crate::world::weather::Weather::from_data(&weather_data);
+        }
+        let persisted_schedule =
+            pumpkin_world::world_info::data_files::read_scheduled_functions(&world_path);
+        server
+            .function_scheduler
+            .lock()
+            .await
+            .load(persisted_schedule);
+        // Vanilla invokes the load function tag only after all dimensions and
+        // the command registry are available. A failed individual function is
+        // reported to the console but does not abort server startup.
+        server.run_datapack_function_tag("minecraft:load").await;
         if let Ok(k) = keys {
             server.mojang_public_keys.store(Arc::new(k));
         }
@@ -414,6 +478,170 @@ impl Server {
                 error!("No default world exists");
                 std::process::exit(1);
             })
+    }
+
+    /// Atomically reloads enabled directory datapacks and their dynamic
+    /// recipes. The old recipe snapshot remains active if validation fails.
+    pub async fn reload_datapacks(self: &Arc<Self>) -> Result<usize, datapack::DataPackError> {
+        let world_path = self.basic_config.get_world_path();
+        let enabled_datapacks = self.level_info.load().data_packs.enabled.clone();
+        let snapshot = datapack::DataPackLoader::load(&world_path, &enabled_datapacks)?;
+        let count = snapshot.recipes.len();
+        let dynamic_recipes = snapshot.recipes;
+        self.recipe_manager
+            .replace_datapack_snapshot(
+                dynamic_recipes.clone(),
+                snapshot.tags,
+                snapshot.functions,
+                snapshot.resources,
+            )
+            .await;
+
+        let valid_recipe_ids = self.recipe_manager.valid_recipe_ids().await;
+        for player in self.get_all_players() {
+            player.prune_recipe_book(&valid_recipe_ids).await;
+            if let crate::net::ClientPlatform::Java(java_client) = player.client.as_ref() {
+                // Rebuild the complete per-player display registry even when
+                // no old key was pruned: a pack can replace the recipe body
+                // under the same id, and the client must receive the new
+                // ingredients/result as well.
+                let known_recipes = player.known_recipes().await;
+                let dynamic_for_client = dynamic_recipes
+                    .iter()
+                    .filter(|recipe| known_recipes.contains(&recipe::recipe_id(recipe)))
+                    .cloned()
+                    .collect::<Vec<_>>();
+                let builtin_recipe_ids = recipe::RecipeManager::built_in_recipe_ids();
+                let known_builtin_recipes = known_recipes
+                    .intersection(&builtin_recipe_ids)
+                    .cloned()
+                    .collect::<std::collections::HashSet<_>>();
+                java_client
+                    .send_packet_now(
+                        &pumpkin_protocol::java::client::play::CRecipeBookAdd::new_filtered(
+                            true,
+                            &dynamic_for_client,
+                            &known_builtin_recipes,
+                        ),
+                    )
+                    .await;
+            }
+        }
+        self.run_datapack_function_tag("minecraft:load").await;
+        Ok(count)
+    }
+
+    /// Executes a function tag in declaration order. Function tags are global
+    /// server work, so they run once per server tick (not once per dimension)
+    /// and use the console source just like vanilla's command function manager.
+    pub async fn run_datapack_function_tag(self: &Arc<Self>, tag_id: &str) -> i32 {
+        let function_ids = self
+            .recipe_manager
+            .tag_snapshot()
+            .await
+            .ordered_members(tag_id);
+        if function_ids.is_empty() {
+            return 0;
+        }
+        let source = CommandSender::Console.into_source(self).await;
+        let mut result = 0;
+        for function_id in function_ids {
+            if self.recipe_manager.function(&function_id).await.is_none() {
+                // Optional function-tag entries are ignored by vanilla.
+                continue;
+            }
+            let input = format!("function {function_id}");
+            let command_result = {
+                let dispatcher = self.command_dispatcher.read().await;
+                dispatcher.execute_input(&input, &source).await
+            };
+            match command_result {
+                Ok(value) => result += value,
+                Err(error) => {
+                    CommandDispatcher::send_error_to_source(&source, error, &input).await;
+                }
+            }
+        }
+        result
+    }
+
+    pub async fn schedule_function(
+        &self,
+        id: String,
+        trigger_time: i64,
+        tag: bool,
+        replace: bool,
+    ) -> bool {
+        let (inserted, snapshot) = {
+            let mut scheduler = self.function_scheduler.lock().await;
+            let inserted = scheduler.schedule(id, trigger_time, tag, replace);
+            (inserted, scheduler.snapshot())
+        };
+        self.persist_function_schedule(&snapshot);
+        inserted
+    }
+
+    pub async fn clear_scheduled_functions(&self, id: &str, tag: Option<bool>) -> usize {
+        let (removed, snapshot) = {
+            let mut scheduler = self.function_scheduler.lock().await;
+            let removed = scheduler.clear(id, tag);
+            (removed, scheduler.snapshot())
+        };
+        self.persist_function_schedule(&snapshot);
+        removed
+    }
+
+    #[must_use]
+    pub async fn scheduled_function_ids(&self) -> Vec<String> {
+        self.function_scheduler.lock().await.ids()
+    }
+
+    fn persist_function_schedule(
+        &self,
+        events: &[pumpkin_world::world_info::data_files::ScheduledFunctionData],
+    ) {
+        if let Err(error) = pumpkin_world::world_info::data_files::write_scheduled_functions(
+            &self.basic_config.get_world_path(),
+            self.level_info.load().data_version,
+            events,
+        ) {
+            error!(%error, "Failed to persist scheduled functions");
+        }
+    }
+
+    async fn run_due_scheduled_functions(self: &Arc<Self>, now: i64) {
+        let due = self.function_scheduler.lock().await.due(now);
+        if due.is_empty() {
+            return;
+        }
+        for event in due {
+            if event.tag {
+                self.run_datapack_function_tag(&event.id).await;
+            } else {
+                self.run_datapack_function(&event.id).await;
+            }
+        }
+        let snapshot = self.function_scheduler.lock().await.snapshot();
+        self.persist_function_schedule(&snapshot);
+    }
+
+    async fn run_datapack_function(self: &Arc<Self>, function_id: &str) -> i32 {
+        if self.recipe_manager.function(function_id).await.is_none() {
+            return 0;
+        }
+        let source = CommandSender::Console.into_source(self).await;
+        let input = format!("function {function_id}");
+        let command_result = {
+            let dispatcher = self.command_dispatcher.read().await;
+            dispatcher.execute_input(&input, &source).await
+        };
+        match command_result {
+            Ok(value) => value,
+            Err(error) => {
+                CommandDispatcher::send_error_to_source(&source, error, &input).await;
+                0
+            }
+        }
     }
 
     pub async fn create_world(self: &Arc<Self>, name: String, dimension: Dimension) -> Arc<World> {
@@ -601,7 +829,28 @@ impl Server {
         for world in self.worlds.load().iter() {
             world.shutdown().await;
         }
-        let level_data = self.level_info.load();
+        let mut level_data = (**self.level_info.load()).clone();
+        if let Some(overworld) = self
+            .worlds
+            .load()
+            .iter()
+            .find(|world| world.dimension == Dimension::OVERWORLD)
+        {
+            level_data.day_time = overworld.get_time_of_day().await;
+            let weather = overworld.weather.lock().await;
+            let data = weather.to_data();
+            let weather_path = self.basic_config.get_world_path();
+            if let Err(err) = pumpkin_world::world_info::data_files::write_weather(
+                &weather_path,
+                &pumpkin_world::world_info::data_files::WeatherData {
+                    data_version: level_data.data_version,
+                    ..data
+                },
+            ) {
+                error!("Failed to save weather state: {err}");
+            }
+            level_data.clear_weather_time = weather.clear_weather_time;
+        }
         // then lets save the world info
 
         if let Err(err) = self
@@ -609,6 +858,22 @@ impl Server {
             .write_world_info(&level_data, &self.basic_config.get_world_path())
         {
             error!("Failed to save level.dat: {err}");
+        }
+        let scheduled_functions = self.function_scheduler.lock().await.snapshot();
+        if let Err(err) = pumpkin_world::world_info::data_files::write_scheduled_functions(
+            &self.basic_config.get_world_path(),
+            level_data.data_version,
+            &scheduled_functions,
+        ) {
+            error!("Failed to save scheduled functions: {err}");
+        }
+        if let Err(error) = self
+            .bossbars
+            .lock()
+            .await
+            .save_to_world_path(&self.basic_config.get_world_path(), level_data.data_version)
+        {
+            error!(%error, "Failed to save custom boss bars");
         }
         info!("Completed worlds");
     }
@@ -911,6 +1176,16 @@ impl Server {
     /// Ticks the game logic for all worlds. This is the part that is affected by `/tick freeze`.
     pub async fn tick_worlds(self: &Arc<Self>) {
         self.task_scheduler.tick(self).await;
+        if let Some(overworld) = self
+            .worlds
+            .load()
+            .iter()
+            .find(|world| world.dimension == Dimension::OVERWORLD)
+        {
+            self.run_due_scheduled_functions(overworld.get_world_age().await)
+                .await;
+        }
+        self.run_datapack_function_tag("minecraft:tick").await;
 
         let mut set = JoinSet::new();
 

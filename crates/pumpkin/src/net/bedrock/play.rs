@@ -727,6 +727,7 @@ impl BedrockClient {
                                     placed_block,
                                     &server,
                                     &dummy_use_item_on,
+                                    &stack,
                                     data.block_position,
                                     face,
                                 )

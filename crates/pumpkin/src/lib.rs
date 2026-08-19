@@ -703,6 +703,8 @@ fn setup_stdin_console(server: Arc<Server>) {
                         )
                         .await;
                 }
+            } else {
+                break;
             }
         }
     });

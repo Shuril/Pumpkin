@@ -165,6 +165,30 @@ impl Block {
         None
     }
 
+    /// Returns a new [`BlockState`] reference for the given [`BlockStateId`]
+    /// with the `waterlogged` property forced to `false`.
+    ///
+    /// Falling blocks use this when they carry a waterlogged block through the
+    /// world: vanilla removes the fluid property from the carried block state
+    /// while leaving the source fluid behind at the original position.
+    #[must_use]
+    pub fn without_waterlogged(&self, id: BlockStateId) -> Option<&'static BlockState> {
+        if !self.is_waterlogged(id) {
+            return Some(BlockState::from_id(id));
+        }
+
+        let props_source = self.properties(id)?;
+        let mut props: Vec<(&str, &str)> = props_source
+            .to_props()
+            .iter()
+            .map(|(key, value)| (*key, *value))
+            .collect();
+        let index = props.iter().position(|(key, _)| *key == "waterlogged")?;
+        props[index] = ("waterlogged", "false");
+        let state_id = self.from_properties(&props).to_state_id(self);
+        Some(BlockState::from_id(state_id))
+    }
+
     /// Returns whether this block is solid (based on default state)
     #[must_use]
     pub const fn is_solid(&self) -> bool {
@@ -268,4 +292,33 @@ impl std::fmt::Display for BlockId {
 pub struct Flammable {
     pub spread_chance: u8,
     pub burn_chance: u8,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Block;
+
+    #[test]
+    fn waterlogged_state_can_be_normalized_back_to_dry() {
+        let block = &Block::OAK_FENCE;
+        let waterlogged = block
+            .with_waterlogged(block.default_state.id)
+            .expect("oak fence must expose waterlogged=true");
+        assert!(block.is_waterlogged(waterlogged.id));
+
+        let dry = block
+            .without_waterlogged(waterlogged.id)
+            .expect("oak fence must expose waterlogged=false");
+        assert!(!block.is_waterlogged(dry.id));
+        assert_eq!(dry.id, block.default_state.id);
+    }
+
+    #[test]
+    fn non_waterloggable_state_is_preserved() {
+        let block = &Block::STONE;
+        let dry = block
+            .without_waterlogged(block.default_state.id)
+            .expect("non-waterloggable states are already dry");
+        assert_eq!(dry.id, block.default_state.id);
+    }
 }

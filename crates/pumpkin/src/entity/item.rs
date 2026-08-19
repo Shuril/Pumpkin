@@ -128,7 +128,12 @@ impl ItemEntity {
         item_stack.item_count < item_stack.get_max_stack_size()
     }
 
-    async fn try_merge(&self) {
+    /// Merge this item with intersecting item entities in the same world.
+    ///
+    /// The normal tick path calls this periodically, but authoritative block
+    /// drops may use it immediately after spawning so a burst of identical
+    /// drops does not expose a transient duplicate entity to clients.
+    pub(crate) async fn try_merge(&self) {
         let bounding_box = self.entity.bounding_box.load().expand(0.5, 0.0, 0.5);
 
         let world = self.entity.world.load();
@@ -170,8 +175,13 @@ impl ItemEntity {
             (high_stack, low_stack)
         };
 
+        // Item counts are network/save data and can exceed the ordinary
+        // vanilla stack size.  Widen the sum before comparing so two forged
+        // 255-count stacks cannot wrap to a small value and merge into a
+        // duplicated stack (or panic in debug builds).
+        let combined_count = u16::from(self_stack.item_count) + u16::from(other_stack.item_count);
         if !self_stack.are_equal(&other_stack)
-            || self_stack.item_count + other_stack.item_count > self_stack.get_max_stack_size()
+            || combined_count > u16::from(self_stack.get_max_stack_size())
         {
             return;
         }

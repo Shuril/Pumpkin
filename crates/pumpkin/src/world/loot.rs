@@ -3,6 +3,7 @@ use pumpkin_data::entity::EntityType;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::tag;
 use pumpkin_data::{Block, BlockState, item::Item};
+use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::{
     loot_table::{
         LootCondition, LootFunction, LootFunctionBonusParameter, LootFunctionNumberProvider,
@@ -10,7 +11,36 @@ use pumpkin_util::{
     },
     random::{RandomGenerator, RandomImpl, get_seed, xoroshiro128::Xoroshiro},
 };
-use rand::RngExt;
+use serde_json::Value;
+use std::sync::Arc;
+
+use crate::world::World;
+
+/// Derives a stable loot RNG seed for a world-bound source.  Vanilla owns one
+/// world RNG stream, but Pumpkin evaluates loot in async tasks where borrowing
+/// that stream would couple unrelated block/entity operations.  Hashing the
+/// same observable inputs gives replay-stable output without sharing mutable
+/// RNG state; the `salt` separates block, explosion, entity and command
+/// sources that happen to occur at the same position and tick.
+#[must_use]
+pub fn derive_loot_seed(
+    world_seed: u64,
+    position: Option<pumpkin_util::math::vector3::Vector3<f64>>,
+    world_time: u64,
+    salt: u64,
+) -> u64 {
+    let mut value = world_seed ^ world_time.rotate_left(29) ^ salt;
+    if let Some(position) = position {
+        value ^= position.x.to_bits().rotate_left(7);
+        value ^= position.y.to_bits().rotate_left(19);
+        value ^= position.z.to_bits().rotate_left(37);
+    }
+    // SplitMix64 finalizer; this is a hash, not a gameplay RNG, so the exact
+    // constants are intentionally fixed as part of the replay contract.
+    value = (value ^ (value >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
+    value = (value ^ (value >> 27)).wrapping_mul(0x94d049bb133111eb);
+    value ^ (value >> 31)
+}
 
 #[derive(Default, Clone)]
 pub struct LootContextParameters {
@@ -22,6 +52,15 @@ pub struct LootContextParameters {
     pub killer_entity: Option<&'static EntityType>,
     pub direct_killer_entity: Option<&'static EntityType>,
     pub position: Option<pumpkin_util::math::vector3::Vector3<f64>>,
+    /// Biome at the context position, using the generated registry name
+    /// without a namespace (for example `plains`).
+    pub biome: Option<&'static str>,
+    /// Optional world-backed lookup for `LocationCheck` predicates with an
+    /// offset.  Keeping the resolver in the context avoids borrowing a
+    /// `World` through the loot-table data and lets deferred/async callers
+    /// retain the exact lookup semantics.  Callers that cannot provide a
+    /// resolver deliberately fail closed for non-zero offsets.
+    pub biome_resolver: Option<Arc<dyn Fn(BlockPos) -> &'static str + Send + Sync>>,
     pub world_time: u64,
     pub damage_type: Option<DamageType>,
     pub tool: Option<ItemStack>,
@@ -30,6 +69,25 @@ pub struct LootContextParameters {
     /// Whether the killed entity was on fire at death time.
     /// Computed from `Entity.fire_ticks > 0`.
     pub is_on_fire: Option<bool>,
+    /// Stable seed for every roll in this evaluation. Runtime callers should
+    /// derive it with [`derive_loot_seed`], while deferred container loot uses
+    /// the seed persisted next to its loot-table key. `None` is retained only
+    /// for extension/test callers and uses a fresh seed.
+    pub random_seed: Option<u64>,
+}
+
+impl LootContextParameters {
+    /// Attach the authoritative world biome lookup unless a caller already
+    /// supplied a custom resolver (for example a test or a generation view).
+    pub fn attach_biome_resolver(&mut self, world: &Arc<World>) {
+        if self.biome_resolver.is_some() {
+            return;
+        }
+        let world = Arc::clone(world);
+        self.biome_resolver = Some(Arc::new(move |position| {
+            world.get_biome(&position).registry_id
+        }));
+    }
 }
 
 pub trait LootTableExt {
@@ -39,12 +97,16 @@ pub trait LootTableExt {
 impl LootTableExt for LootTable {
     fn get_loot(&self, params: LootContextParameters) -> Vec<ItemStack> {
         let mut stacks = Vec::new();
-        let mut random = RandomGenerator::Xoroshiro(Xoroshiro::from_seed(get_seed()));
+        let mut random = RandomGenerator::Xoroshiro(Xoroshiro::from_seed(
+            params.random_seed.unwrap_or_else(get_seed),
+        ));
 
         if let Some(pools) = self.pools {
             for pool in pools {
                 if let Some(conditions) = pool.conditions
-                    && !conditions.iter().all(|cond| cond.is_fulfilled(&params))
+                    && !conditions
+                        .iter()
+                        .all(|cond| cond.is_fulfilled_with_rng(&params, &mut random))
                 {
                     continue;
                 }
@@ -57,11 +119,10 @@ impl LootTableExt for LootTable {
                     let mut valid_entries = Vec::new();
 
                     for entry in pool.entries {
-                        if entry
-                            .conditions
-                            .as_ref()
-                            .is_none_or(|c| c.iter().all(|cond| cond.is_fulfilled(&params)))
-                        {
+                        if entry.conditions.as_ref().is_none_or(|c| {
+                            c.iter()
+                                .all(|cond| cond.is_fulfilled_with_rng(&params, &mut random))
+                        }) {
                             let weight = (entry.weight as f32 + entry.quality as f32 * params.luck)
                                 .floor() as i32;
                             let weight = weight.max(0);
@@ -79,7 +140,7 @@ impl LootTableExt for LootTable {
                     for (entry, weight) in valid_entries {
                         r -= weight;
                         if r < 0 {
-                            if let Some(loot) = entry.get_loot(&params) {
+                            if let Some(loot) = entry.get_loot(&params, &mut random) {
                                 for stack in loot {
                                     if stack.item_count > 0 {
                                         stacks.push(stack);
@@ -97,11 +158,20 @@ impl LootTableExt for LootTable {
 }
 
 trait LootPoolEntryExt {
-    fn get_loot(&self, params: &LootContextParameters) -> Option<Vec<ItemStack>>;
+    fn get_loot(
+        &self,
+        params: &LootContextParameters,
+        random: &mut RandomGenerator,
+    ) -> Option<Vec<ItemStack>>;
 }
 
 trait LootFunctionExt {
-    fn apply(&self, stacks: &mut Vec<ItemStack>, params: &LootContextParameters);
+    fn apply(
+        &self,
+        stacks: &mut Vec<ItemStack>,
+        params: &LootContextParameters,
+        random: &mut RandomGenerator,
+    );
 }
 
 fn apply_bonus(
@@ -110,6 +180,7 @@ fn apply_bonus(
     formula: &str,
     parameters: Option<&LootFunctionBonusParameter>,
     params: &LootContextParameters,
+    random: &mut RandomGenerator,
 ) {
     let enchantment_level = params.tool.as_ref().map_or(0, |tool| {
         pumpkin_data::Enchantment::from_name(enchantment_name)
@@ -125,7 +196,7 @@ fn apply_bonus(
                         let n = enchantment_level + *extra;
                         let mut extra_items = 0;
                         for _ in 0..n {
-                            if rand::rng().random::<f32>() < *probability {
+                            if random.next_f32() < *probability {
                                 extra_items += 1;
                             }
                         }
@@ -137,12 +208,12 @@ fn apply_bonus(
                         parameters
                     {
                         let extra =
-                            rand::rng().random_range(0..=(enchantment_level * *bonus_multiplier));
+                            random.next_bounded_i32(enchantment_level * *bonus_multiplier + 1);
                         stack.item_count = stack.item_count.saturating_add(extra as u8);
                     }
                 }
                 "minecraft:ore_drops" if enchantment_level > 0 => {
-                    let multiplier = rand::rng().random_range(0..=(enchantment_level + 1));
+                    let multiplier = random.next_bounded_i32(enchantment_level + 2);
                     if multiplier > 0 {
                         stack.item_count = stack.item_count.saturating_mul(multiplier as u8);
                     }
@@ -155,9 +226,16 @@ fn apply_bonus(
 
 impl LootFunctionExt for LootFunction {
     #[allow(clippy::too_many_lines)]
-    fn apply(&self, stacks: &mut Vec<ItemStack>, params: &LootContextParameters) {
+    fn apply(
+        &self,
+        stacks: &mut Vec<ItemStack>,
+        params: &LootContextParameters,
+        random: &mut RandomGenerator,
+    ) {
         if let Some(conditions) = self.conditions
-            && !conditions.iter().all(|cond| cond.is_fulfilled(params))
+            && !conditions
+                .iter()
+                .all(|cond| cond.is_fulfilled_with_rng(params, random))
         {
             return;
         }
@@ -166,9 +244,11 @@ impl LootFunctionExt for LootFunction {
             LootFunctionTypes::SetCount { count, add } => {
                 for stack in stacks {
                     if *add {
-                        stack.item_count += count.generate().round() as u8;
+                        stack.item_count = stack
+                            .item_count
+                            .saturating_add(count.generate(random).round().max(0.0) as u8);
                     } else {
-                        stack.item_count = count.generate().round() as u8;
+                        stack.item_count = count.generate(random).round().clamp(0.0, 255.0) as u8;
                     }
                 }
             }
@@ -195,7 +275,7 @@ impl LootFunctionExt for LootFunction {
                     for stack in stacks.iter_mut() {
                         let mut survived = 0;
                         for _ in 0..stack.item_count {
-                            if rand::rng().random::<f32>() <= survival_chance {
+                            if random.next_f32() <= survival_chance {
                                 survived += 1;
                             }
                         }
@@ -210,7 +290,14 @@ impl LootFunctionExt for LootFunction {
                 formula,
                 parameters,
             } => {
-                apply_bonus(stacks, enchantment, formula, parameters.as_ref(), params);
+                apply_bonus(
+                    stacks,
+                    enchantment,
+                    formula,
+                    parameters.as_ref(),
+                    params,
+                    random,
+                );
             }
             LootFunctionTypes::EnchantedCountIncrease {
                 enchantment,
@@ -221,7 +308,7 @@ impl LootFunctionExt for LootFunction {
                     pumpkin_data::Enchantment::from_name(enchantment)
                         .map_or(0.0, |enc| tool.get_enchantment_level(enc) as f32)
                 });
-                let mut additional = (count.generate() * level).round() as u32;
+                let mut additional = (count.generate(random) * level).round().max(0.0) as u32;
                 if let Some(lim) = limit {
                     let lim_u32 = lim.round() as u32;
                     if additional > lim_u32 {
@@ -284,7 +371,7 @@ impl LootFunctionExt for LootFunction {
                 }
             }
             LootFunctionTypes::SetOminousBottleAmplifier => {
-                let amplifier = rand::random_range(0..5); // Random 0 to 4
+                let amplifier = random.next_bounded_i32(5); // Random 0 to 4
                 for stack in stacks.iter_mut() {
                     if let Some(amplifier_comp) = stack.get_data_component_mut::<pumpkin_data::data_component_impl::OminousBottleAmplifierImpl>() {
                         amplifier_comp.amplifier = amplifier;
@@ -344,18 +431,24 @@ impl LootFunctionExt for LootFunction {
 }
 
 impl LootPoolEntryExt for LootPoolEntry {
-    fn get_loot(&self, params: &LootContextParameters) -> Option<Vec<ItemStack>> {
+    fn get_loot(
+        &self,
+        params: &LootContextParameters,
+        random: &mut RandomGenerator,
+    ) -> Option<Vec<ItemStack>> {
         if let Some(conditions) = self.conditions
-            && !conditions.iter().all(|cond| cond.is_fulfilled(params))
+            && !conditions
+                .iter()
+                .all(|cond| cond.is_fulfilled_with_rng(params, random))
         {
             return None;
         }
 
-        let mut stacks = self.content.get_stacks(params);
+        let mut stacks = self.content.get_stacks(params, random);
 
         if let Some(functions) = self.functions {
             for function in functions {
-                function.apply(&mut stacks, params);
+                function.apply(&mut stacks, params, random);
             }
         }
 
@@ -364,11 +457,19 @@ impl LootPoolEntryExt for LootPoolEntry {
 }
 
 trait LootPoolEntryTypesExt {
-    fn get_stacks(&self, params: &LootContextParameters) -> Vec<ItemStack>;
+    fn get_stacks(
+        &self,
+        params: &LootContextParameters,
+        random: &mut RandomGenerator,
+    ) -> Vec<ItemStack>;
 }
 
 impl LootPoolEntryTypesExt for LootPoolEntryTypes {
-    fn get_stacks(&self, params: &LootContextParameters) -> Vec<ItemStack> {
+    fn get_stacks(
+        &self,
+        params: &LootContextParameters,
+        random: &mut RandomGenerator,
+    ) -> Vec<ItemStack> {
         match self {
             Self::Empty | Self::Dynamic(_) => Vec::new(),
             Self::LootTable(entry) => {
@@ -376,12 +477,14 @@ impl LootPoolEntryTypesExt for LootPoolEntryTypes {
                     .value
                     .strip_prefix("minecraft:")
                     .unwrap_or(entry.value);
+                if key == "gameplay/fishing/fish" {
+                    return generate_builtin_fish_loot(random.next_i64());
+                }
                 // First try chest loot tables.
                 pumpkin_data::chest_loot_table::get_chest_loot_table(&format!("minecraft:{key}"))
                     .map_or_else(Vec::new, |chest_table| {
                         // We don't have a seed here, but we can generate a random one.
-                        let seed: i64 = rand::random();
-                        generate_chest_loot(chest_table, seed)
+                        generate_chest_loot(chest_table, random.next_i64())
                     })
             }
             Self::Item(item_entry) => {
@@ -412,7 +515,7 @@ impl LootPoolEntryTypesExt for LootPoolEntryTypes {
 
                 if tag.expand {
                     // Pick one random item from the tag
-                    let index = rand::random_range(0..items.len() as i32) as usize;
+                    let index = random.next_bounded_i32(items.len() as i32) as usize;
                     vec![ItemStack::new(1, items[index])]
                 } else {
                     // Yield one stack of every item in the tag
@@ -421,7 +524,7 @@ impl LootPoolEntryTypesExt for LootPoolEntryTypes {
             }
             Self::Alternatives(alternative_entry) => {
                 for entry in alternative_entry.children {
-                    if let Some(loot) = entry.get_loot(params) {
+                    if let Some(loot) = entry.get_loot(params, random) {
                         return loot;
                     }
                 }
@@ -430,15 +533,14 @@ impl LootPoolEntryTypesExt for LootPoolEntryTypes {
             Self::Sequence(sequence_entry) => {
                 let mut stacks = Vec::new();
                 for entry in sequence_entry.children {
-                    if entry
-                        .conditions
-                        .as_ref()
-                        .is_some_and(|c| !c.iter().all(|cond| cond.is_fulfilled(params)))
-                    {
+                    if entry.conditions.as_ref().is_some_and(|c| {
+                        !c.iter()
+                            .all(|cond| cond.is_fulfilled_with_rng(params, random))
+                    }) {
                         break;
                     }
 
-                    match entry.get_loot(params) {
+                    match entry.get_loot(params, random) {
                         Some(loot) => stacks.extend(loot),
                         // get_loot returning None also signals failure — stop.
                         None => break,
@@ -450,7 +552,7 @@ impl LootPoolEntryTypesExt for LootPoolEntryTypes {
             Self::Group(group_entry) => {
                 let mut stacks = Vec::new();
                 for entry in group_entry.children {
-                    if let Some(loot) = entry.get_loot(params) {
+                    if let Some(loot) = entry.get_loot(params, random) {
                         stacks.extend(loot);
                     }
                 }
@@ -461,7 +563,13 @@ impl LootPoolEntryTypesExt for LootPoolEntryTypes {
 }
 
 trait LootConditionExt {
+    #[allow(dead_code)]
     fn is_fulfilled(&self, params: &LootContextParameters) -> bool;
+    fn is_fulfilled_with_rng(
+        &self,
+        params: &LootContextParameters,
+        random: &mut RandomGenerator,
+    ) -> bool;
 }
 
 fn compare_entity_type(expected_type: &str, actual: &EntityType) -> bool {
@@ -524,14 +632,26 @@ fn check_damage_source_properties(
 impl LootConditionExt for LootCondition {
     #[allow(clippy::too_many_lines)]
     fn is_fulfilled(&self, params: &LootContextParameters) -> bool {
+        let mut random = RandomGenerator::Xoroshiro(Xoroshiro::from_seed(
+            params.random_seed.unwrap_or_else(get_seed),
+        ));
+        self.is_fulfilled_with_rng(params, &mut random)
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn is_fulfilled_with_rng(
+        &self,
+        params: &LootContextParameters,
+        random: &mut RandomGenerator,
+    ) -> bool {
         match self {
             Self::SurvivesExplosion => {
                 if let Some(radius) = params.explosion_radius {
-                    return rand::rng().random::<f32>() <= 1.0 / radius;
+                    return random.next_f32() <= 1.0 / radius;
                 }
                 true
             }
-            Self::RandomChance { chance } => rand::rng().random::<f32>() < *chance,
+            Self::RandomChance { chance } => random.next_f32() < *chance,
             Self::EntityProperties {
                 entity,
                 expected_type,
@@ -592,9 +712,13 @@ impl LootConditionExt for LootCondition {
                 }
                 false
             }
-            Self::Inverted(term) => !term.is_fulfilled(params),
-            Self::AnyOf(terms) => terms.iter().any(|cond| cond.is_fulfilled(params)),
-            Self::AllOf(terms) => terms.iter().all(|cond| cond.is_fulfilled(params)),
+            Self::Inverted(term) => !term.is_fulfilled_with_rng(params, random),
+            Self::AnyOf(terms) => terms
+                .iter()
+                .any(|cond| cond.is_fulfilled_with_rng(params, random)),
+            Self::AllOf(terms) => terms
+                .iter()
+                .all(|cond| cond.is_fulfilled_with_rng(params, random)),
             Self::RandomChanceWithEnchantedBonus {
                 enchantment,
                 chances,
@@ -604,7 +728,7 @@ impl LootConditionExt for LootCondition {
                         .map_or(0, |enc| tool.get_enchantment_level(enc) as usize)
                 });
                 let chance = chances.get(level).unwrap_or(chances.last().unwrap_or(&0.0));
-                rand::rng().random::<f32>() < *chance
+                random.next_f32() < *chance
             }),
             Self::TableBonus {
                 enchantment,
@@ -615,7 +739,7 @@ impl LootConditionExt for LootCondition {
                         .map_or(0, |enc| tool.get_enchantment_level(enc) as usize)
                 });
                 let chance = chances.get(level).unwrap_or(chances.last().unwrap_or(&0.0));
-                rand::rng().random::<f32>() < *chance
+                random.next_f32() < *chance
             }
             Self::TimeCheck { range, period } => {
                 let mut time = params.world_time;
@@ -627,8 +751,7 @@ impl LootConditionExt for LootCondition {
                 min.is_none_or(|min| val >= min) && max.is_none_or(|max| val <= max)
             }
             Self::ValueCheck { value, range } => {
-                let mut rng = Xoroshiro::from_seed(get_seed());
-                let val = value.get(&mut rng);
+                let val = value.get(random);
                 let (min, max) = range;
                 min.is_none_or(|min| val >= min) && max.is_none_or(|max| val <= max)
             }
@@ -666,7 +789,37 @@ impl LootConditionExt for LootCondition {
                     },
                 )
             }),
-            Self::LocationCheck { expected_biome, .. } => expected_biome.is_none(),
+            Self::LocationCheck {
+                offset_x,
+                offset_y,
+                offset_z,
+                expected_biome,
+            } => {
+                let Some(expected_biome) = expected_biome else {
+                    return true;
+                };
+                let expected = expected_biome
+                    .strip_prefix("minecraft:")
+                    .unwrap_or(expected_biome);
+                if *offset_x != 0 || *offset_y != 0 || *offset_z != 0 {
+                    let (Some(position), Some(resolve_biome)) =
+                        (params.position, params.biome_resolver.as_ref())
+                    else {
+                        // A context without a world-backed resolver cannot
+                        // answer an offset lookup.  Failing closed is safer
+                        // than silently turning a datapack predicate into an
+                        // unconditional match.
+                        return false;
+                    };
+                    let position = BlockPos::new(
+                        position.x.floor() as i32 + *offset_x,
+                        position.y.floor() as i32 + *offset_y,
+                        position.z.floor() as i32 + *offset_z,
+                    );
+                    return resolve_biome(position) == expected;
+                }
+                params.biome.is_some_and(|actual| actual == expected)
+            }
             Self::EntityScores { entity } => {
                 tracing::warn!("EntityScores check not supported for entity: {}", entity);
                 false
@@ -688,21 +841,16 @@ impl LootConditionExt for LootCondition {
 }
 
 trait LootFunctionNumberProviderExt {
-    fn generate(&self) -> f32;
+    fn generate(&self, random: &mut RandomGenerator) -> f32;
 }
 
 impl LootFunctionNumberProviderExt for LootFunctionNumberProvider {
-    fn generate(&self) -> f32 {
+    fn generate(&self, random: &mut RandomGenerator) -> f32 {
         match self {
             Self::Constant { value } => *value,
-            Self::Uniform { min, max } => rand::random::<f32>() * (max - min) + min,
-            Self::Binomial { n, p } => (0..n.floor() as u32).fold(0.0, |c, _| {
-                if rand::rng().random_bool(f64::from(*p)) {
-                    c + 1.0
-                } else {
-                    c
-                }
-            }),
+            Self::Uniform { min, max } => random.next_f32() * (max - min) + min,
+            Self::Binomial { n, p } => (0..n.floor() as u32)
+                .fold(0.0, |c, _| if random.next_f32() < *p { c + 1.0 } else { c }),
         }
     }
 }
@@ -768,14 +916,474 @@ pub fn generate_chest_loot(
     items_to_place
 }
 
+/// Evaluates the built-in `minecraft:gameplay/fishing` table for a hook with
+/// no luck bonus.  The generated registry contains entity/block/chest tables,
+/// while fishing is a separate vanilla loot-table family, so keeping this
+/// small static representation here prevents fishing from silently degrading
+/// to cod until the full typed datapack codec is available.  The item pools,
+/// weights and open-water gate mirror `VanillaFishingLoot` and its fish/junk/
+/// treasure tables; item functions that require the rod's enchantment context
+/// are deliberately applied by the caller's future typed loot context.
+#[must_use]
+pub fn generate_builtin_fishing_loot(seed: i64, open_water: bool) -> Vec<ItemStack> {
+    use pumpkin_util::random::RandomImpl;
+
+    let mut rng = Xoroshiro::from_seed(seed as u64);
+    let pool = if open_water {
+        let roll = rng.next_bounded_i32(100);
+        if roll < 10 {
+            FishingPool::Junk
+        } else if roll < 15 {
+            FishingPool::Treasure
+        } else {
+            FishingPool::Fish
+        }
+    } else if rng.next_bounded_i32(95) < 10 {
+        FishingPool::Junk
+    } else {
+        FishingPool::Fish
+    };
+
+    let item = match pool {
+        FishingPool::Fish => return vec![generate_builtin_fish_stack(&mut rng)],
+        FishingPool::Junk => weighted_fishing_item(
+            &mut rng,
+            &[
+                (&Item::LILY_PAD, 17),
+                (&Item::LEATHER_BOOTS, 10),
+                (&Item::LEATHER, 10),
+                (&Item::BONE, 10),
+                (&Item::POTION, 10),
+                (&Item::STRING, 5),
+                (&Item::FISHING_ROD, 2),
+                (&Item::BOWL, 10),
+                (&Item::STICK, 5),
+                (&Item::INK_SAC, 1),
+                (&Item::TRIPWIRE_HOOK, 10),
+                (&Item::ROTTEN_FLESH, 10),
+                (&Item::BAMBOO, 10),
+            ],
+        ),
+        FishingPool::Treasure => weighted_fishing_item(
+            &mut rng,
+            &[
+                (&Item::NAME_TAG, 1),
+                (&Item::SADDLE, 1),
+                (&Item::BOW, 1),
+                (&Item::FISHING_ROD, 1),
+                (&Item::BOOK, 1),
+                (&Item::NAUTILUS_SHELL, 1),
+            ],
+        ),
+    };
+
+    let mut stack = ItemStack::new(1, item);
+    if item == &Item::INK_SAC {
+        stack.set_count(10);
+    }
+    vec![stack]
+}
+
+#[derive(Clone, Copy)]
+enum FishingPool {
+    Fish,
+    Junk,
+    Treasure,
+}
+
+fn weighted_fishing_item<'a>(rng: &mut Xoroshiro, entries: &[(&'a Item, i32)]) -> &'a Item {
+    let total = entries
+        .iter()
+        .map(|(_, weight)| *weight)
+        .sum::<i32>()
+        .max(1);
+    let mut pick = rng.next_bounded_i32(total);
+    for (item, weight) in entries {
+        pick -= *weight;
+        if pick < 0 {
+            return item;
+        }
+    }
+    entries.last().expect("fishing pool is non-empty").0
+}
+
+/// The nested `gameplay/fishing/fish` table is also referenced by guardian
+/// entity loot. Keep that consumer on the exact fish-only pool instead of
+/// applying the outer fishing junk/treasure selection.
+#[must_use]
+pub fn generate_builtin_fish_loot(seed: i64) -> Vec<ItemStack> {
+    let mut rng = Xoroshiro::from_seed(seed as u64);
+    vec![generate_builtin_fish_stack(&mut rng)]
+}
+
+fn generate_builtin_fish_stack(rng: &mut Xoroshiro) -> ItemStack {
+    let item = weighted_fishing_item(
+        rng,
+        &[
+            (&Item::COD, 60),
+            (&Item::SALMON, 25),
+            (&Item::TROPICAL_FISH, 2),
+            (&Item::PUFFERFISH, 13),
+        ],
+    );
+    ItemStack::new(1, item)
+}
+
+/// Evaluates a datapack-provided chest loot table. Generated vanilla tables
+/// use the compact static representation above; datapacks stay owned so a
+/// reload can replace them without leaking references into the old snapshot.
+/// The evaluator supports the chest-table subset used by vanilla (item,
+/// empty, loot_table, tag, uniform or constant rolls, set_count and
+/// limit_count) and rejects unsupported shapes instead of silently deleting a
+/// deferred table.
+pub fn generate_datapack_chest_loot(
+    resources: &crate::server::datapack::DataPackResources,
+    key: &str,
+    seed: i64,
+) -> Result<Vec<ItemStack>, String> {
+    let key = canonical_loot_key(key);
+    let mut rng = Xoroshiro::from_seed(seed as u64);
+    let mut stack = Vec::new();
+    let mut visiting = std::collections::HashSet::new();
+    roll_datapack_chest_table(resources, &key, &mut rng, &mut visiting, 0, &mut stack)?;
+    Ok(stack)
+}
+
+fn canonical_loot_key(key: &str) -> String {
+    if key.contains(':') {
+        key.to_owned()
+    } else {
+        format!("minecraft:{key}")
+    }
+}
+
+#[derive(Clone, Debug)]
+enum DatapackChestEntryKind {
+    Empty,
+    Item(String),
+    LootTable(String),
+    Tag(String, bool),
+}
+
+#[derive(Clone, Debug)]
+struct DatapackChestEntry {
+    kind: DatapackChestEntryKind,
+    weight: i32,
+    min_count: i32,
+    max_count: i32,
+}
+
+#[derive(Clone, Debug)]
+struct DatapackChestPool {
+    entries: Vec<DatapackChestEntry>,
+    min_rolls: i32,
+    max_rolls: i32,
+}
+
+fn roll_datapack_chest_table(
+    resources: &crate::server::datapack::DataPackResources,
+    key: &str,
+    rng: &mut Xoroshiro,
+    visiting: &mut std::collections::HashSet<String>,
+    depth: usize,
+    output: &mut Vec<ItemStack>,
+) -> Result<(), String> {
+    const MAX_NESTED_TABLE_DEPTH: usize = 32;
+    if depth >= MAX_NESTED_TABLE_DEPTH {
+        return Err(format!(
+            "loot table nesting exceeds {MAX_NESTED_TABLE_DEPTH}"
+        ));
+    }
+    if !visiting.insert(key.to_owned()) {
+        return Err(format!("recursive loot table reference: {key}"));
+    }
+    let result = (|| {
+        let value = resources
+            .loot_tables
+            .get(key)
+            .ok_or_else(|| format!("loot table {key} is not loaded"))?;
+        let pools = value
+            .get("pools")
+            .and_then(Value::as_array)
+            .ok_or_else(|| "loot table pools must be an array".to_owned())?;
+        for pool in pools {
+            let parsed = parse_datapack_chest_pool(pool)?;
+            // Deferred chest and /loot contexts have no luck source. Vanilla
+            // multiplies bonus_rolls by luck and floors the result, therefore
+            // bonus rolls are zero here even when the provider is present.
+            let rolls = sample_range(parsed.min_rolls, parsed.max_rolls, rng);
+            for _ in 0..rolls.max(0) {
+                let total_weight = parsed
+                    .entries
+                    .iter()
+                    .map(|entry| entry.weight.max(0))
+                    .fold(0_i32, i32::saturating_add);
+                if total_weight <= 0 {
+                    continue;
+                }
+                let mut choice = rng.next_bounded_i32(total_weight);
+                let Some(entry) = parsed.entries.iter().find(|entry| {
+                    choice -= entry.weight.max(0);
+                    choice < 0
+                }) else {
+                    continue;
+                };
+                roll_datapack_chest_entry(resources, entry, rng, visiting, depth, output)?;
+            }
+        }
+        Ok::<(), String>(())
+    })();
+    visiting.remove(key);
+    result
+}
+
+fn roll_datapack_chest_entry(
+    resources: &crate::server::datapack::DataPackResources,
+    entry: &DatapackChestEntry,
+    rng: &mut Xoroshiro,
+    visiting: &mut std::collections::HashSet<String>,
+    depth: usize,
+    output: &mut Vec<ItemStack>,
+) -> Result<(), String> {
+    match &entry.kind {
+        DatapackChestEntryKind::Empty => Ok(()),
+        DatapackChestEntryKind::LootTable(key) => roll_datapack_chest_table(
+            resources,
+            &canonical_loot_key(key),
+            rng,
+            visiting,
+            depth + 1,
+            output,
+        ),
+        DatapackChestEntryKind::Item(item_key) => {
+            let key = item_key.strip_prefix("minecraft:").unwrap_or(item_key);
+            let Some(item) = Item::from_registry_key(key) else {
+                return Err(format!("loot table references unknown item {item_key}"));
+            };
+            let count =
+                sample_range(entry.min_count, entry.max_count, rng).clamp(1, u8::MAX as i32);
+            output.push(ItemStack::new(count as u8, item));
+            Ok(())
+        }
+        DatapackChestEntryKind::Tag(tag_key, expand) => {
+            let key = tag_key.strip_prefix("minecraft:").unwrap_or(tag_key);
+            let values =
+                pumpkin_data::tag::get_tag_values(tag::RegistryKey::Item, key).unwrap_or_default();
+            let items = values
+                .iter()
+                .filter_map(|value| {
+                    Item::from_registry_key(value.strip_prefix("minecraft:").unwrap_or(value))
+                })
+                .collect::<Vec<_>>();
+            if *expand && !items.is_empty() {
+                if let Some(item) = items
+                    .get(rng.next_bounded_i32(items.len().try_into().unwrap_or(i32::MAX)) as usize)
+                {
+                    let count = sample_range(entry.min_count, entry.max_count, rng)
+                        .clamp(1, u8::MAX as i32);
+                    output.push(ItemStack::new(count as u8, item));
+                }
+            } else {
+                for item in items {
+                    let count = sample_range(entry.min_count, entry.max_count, rng)
+                        .clamp(1, u8::MAX as i32);
+                    output.push(ItemStack::new(count as u8, item));
+                }
+            }
+            Ok(())
+        }
+    }
+}
+
+fn parse_datapack_chest_pool(value: &Value) -> Result<DatapackChestPool, String> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| "loot pool must be an object".to_owned())?;
+    let entries = object
+        .get("entries")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "loot pool entries must be an array".to_owned())?
+        .iter()
+        .map(parse_datapack_chest_entry)
+        .collect::<Result<Vec<_>, _>>()?;
+    if object
+        .get("conditions")
+        .is_some_and(|conditions| !conditions.as_array().is_some_and(Vec::is_empty))
+    {
+        return Err("loot pool conditions are not supported by the deferred subset".to_owned());
+    }
+    let (min_rolls, max_rolls) = parse_integer_range(object.get("rolls"), (1, 1), "rolls")?;
+    // Validate the optional provider even though a chest has luck=0 and thus
+    // cannot produce bonus rolls. This prevents malformed data from surfacing
+    // only after a player opens the chest.
+    let _ = parse_integer_range(object.get("bonus_rolls"), (0, 0), "bonus_rolls")?;
+    Ok(DatapackChestPool {
+        entries,
+        min_rolls,
+        max_rolls,
+    })
+}
+
+fn parse_datapack_chest_entry(value: &Value) -> Result<DatapackChestEntry, String> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| "loot entry must be an object".to_owned())?;
+    let entry_type = object
+        .get("type")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "loot entry type must be a string".to_owned())?;
+    if object
+        .get("conditions")
+        .is_some_and(|conditions| !conditions.as_array().is_some_and(Vec::is_empty))
+    {
+        return Err("loot entry conditions are not supported by the deferred subset".to_owned());
+    }
+    let kind = match entry_type {
+        "minecraft:empty" | "empty" => DatapackChestEntryKind::Empty,
+        "minecraft:item" | "item" => DatapackChestEntryKind::Item(
+            object
+                .get("name")
+                .and_then(Value::as_str)
+                .ok_or_else(|| "item loot entry is missing name".to_owned())?
+                .to_owned(),
+        ),
+        "minecraft:loot_table" | "loot_table" => DatapackChestEntryKind::LootTable(
+            object
+                .get("value")
+                .and_then(Value::as_str)
+                .ok_or_else(|| "loot_table entry is missing value".to_owned())?
+                .to_owned(),
+        ),
+        "minecraft:tag" | "tag" => DatapackChestEntryKind::Tag(
+            object
+                .get("name")
+                .and_then(Value::as_str)
+                .ok_or_else(|| "tag loot entry is missing name".to_owned())?
+                .to_owned(),
+            object
+                .get("expand")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+        ),
+        other => return Err(format!("unsupported chest loot entry type {other}")),
+    };
+    let weight = object
+        .get("weight")
+        .and_then(Value::as_i64)
+        .unwrap_or(1)
+        .clamp(0, i64::from(i32::MAX)) as i32;
+    let mut count: (i32, i32) = (1, 1);
+    if let Some(functions) = object.get("functions").and_then(Value::as_array) {
+        for function in functions {
+            let function_object = function
+                .as_object()
+                .ok_or_else(|| "loot function must be an object".to_owned())?;
+            match function_object.get("function").and_then(Value::as_str) {
+                Some("minecraft:set_count") | Some("set_count") => {
+                    let parsed =
+                        parse_integer_range(function_object.get("count"), (1, 1), "count")?;
+                    let add = function_object
+                        .get("add")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false);
+                    count = if add {
+                        (
+                            count.0.saturating_add(parsed.0),
+                            count.1.saturating_add(parsed.1),
+                        )
+                    } else {
+                        parsed
+                    };
+                }
+                Some("minecraft:limit_count") | Some("limit_count") => {
+                    let limits = function_object
+                        .get("limit")
+                        .and_then(Value::as_object)
+                        .ok_or_else(|| "limit_count function is missing limit".to_owned())?;
+                    if let Some(min) = limits.get("min").and_then(Value::as_i64) {
+                        count.0 = count
+                            .0
+                            .max(min.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32);
+                        count.1 = count.1.max(count.0);
+                    }
+                    if let Some(max) = limits.get("max").and_then(Value::as_i64) {
+                        let max = max.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
+                        count.0 = count.0.min(max);
+                        count.1 = count.1.min(max).max(count.0);
+                    }
+                }
+                Some(other) => return Err(format!("unsupported chest loot function {other}")),
+                None => return Err("loot function is missing function".to_owned()),
+            }
+        }
+    }
+    Ok(DatapackChestEntry {
+        kind,
+        weight,
+        min_count: count.0,
+        max_count: count.1,
+    })
+}
+
+fn parse_integer_range(
+    value: Option<&Value>,
+    default: (i32, i32),
+    field: &str,
+) -> Result<(i32, i32), String> {
+    let Some(value) = value else {
+        return Ok(default);
+    };
+    let (min, max) = if let Some(number) = value.as_f64() {
+        (number, number)
+    } else if let Some(object) = value.as_object() {
+        let min = object
+            .get("min")
+            .and_then(Value::as_f64)
+            .ok_or_else(|| format!("{field} provider is missing min"))?;
+        let max = object
+            .get("max")
+            .and_then(Value::as_f64)
+            .ok_or_else(|| format!("{field} provider is missing max"))?;
+        (min, max)
+    } else {
+        return Err(format!("{field} must be a number or uniform provider"));
+    };
+    if !min.is_finite() || !max.is_finite() || min > max {
+        return Err(format!("{field} range is invalid"));
+    }
+    let min = min.round().clamp(f64::from(i32::MIN), f64::from(i32::MAX)) as i32;
+    let max = max.round().clamp(f64::from(i32::MIN), f64::from(i32::MAX)) as i32;
+    Ok((min, max.max(min)))
+}
+
+fn sample_range(min: i32, max: i32, rng: &mut Xoroshiro) -> i32 {
+    let max = max.max(min);
+    let range = max.saturating_sub(min);
+    min.saturating_add(if range == 0 {
+        0
+    } else {
+        rng.next_bounded_i32(range.saturating_add(1))
+    })
+}
+
 /// Items are scattered randomly across the 27 chest slots.
 pub async fn fill_chest_inventory(
     inventory: &std::sync::Arc<dyn pumpkin_world::inventory::Inventory>,
     table: &pumpkin_util::chest_loot_table::ChestLootTable,
     seed: i64,
 ) {
-    let mut items_to_place = generate_chest_loot(table, seed);
+    let items_to_place = generate_chest_loot(table, seed);
+    fill_chest_inventory_items(inventory, items_to_place, seed).await;
+}
 
+/// Places already-evaluated loot into a chest using vanilla's deterministic
+/// split/shuffle pass. Keeping generation and placement separate lets dynamic
+/// datapack tables use exactly the same inventory semantics as built-ins.
+pub async fn fill_chest_inventory_items(
+    inventory: &std::sync::Arc<dyn pumpkin_world::inventory::Inventory>,
+    mut items_to_place: Vec<ItemStack>,
+    seed: i64,
+) {
     if items_to_place.is_empty() {
         return;
     }
@@ -866,6 +1474,11 @@ mod tests {
     use pumpkin_data::entity::EntityType;
     use pumpkin_data::item::Item;
     use pumpkin_data::item_stack::ItemStack;
+    use pumpkin_util::loot_table::{
+        ItemEntry, LootFunctionTypes, LootNumberProviderTypes, LootPool, LootPoolEntry,
+        LootPoolEntryTypes, LootTableEntry, LootTableType,
+    };
+    use serde_json::json;
 
     fn base_params() -> LootContextParameters {
         LootContextParameters {
@@ -878,10 +1491,288 @@ mod tests {
         }
     }
 
+    #[test]
+    fn datapack_chest_loot_is_seeded_and_applies_count_functions() {
+        let mut resources = crate::server::datapack::DataPackResources::default();
+        resources.loot_tables.insert(
+            "example:test".to_owned(),
+            json!({
+                "type": "minecraft:chest",
+                "pools": [{
+                    "rolls": 1,
+                    "entries": [{
+                        "type": "minecraft:item",
+                        "name": "minecraft:diamond",
+                        "functions": [{
+                            "function": "minecraft:set_count",
+                            "count": {"min": 2, "max": 2}
+                        }]
+                    }]
+                }]
+            }),
+        );
+
+        let first = generate_datapack_chest_loot(&resources, "example:test", 42)
+            .expect("valid datapack table");
+        let second = generate_datapack_chest_loot(&resources, "example:test", 42)
+            .expect("valid datapack table");
+        assert_eq!(first.len(), 1);
+        assert_eq!(second.len(), first.len());
+        assert_eq!(first[0].item.id, second[0].item.id);
+        assert_eq!(first[0].item_count, second[0].item_count);
+        assert_eq!(first[0].item.registry_key, "diamond");
+        assert_eq!(first[0].item_count, 2);
+    }
+
+    #[test]
+    fn datapack_chest_loot_rejects_recursive_tables_without_partial_output() {
+        let mut resources = crate::server::datapack::DataPackResources::default();
+        resources.loot_tables.insert(
+            "example:a".to_owned(),
+            json!({
+                "pools": [{
+                    "rolls": 1,
+                    "entries": [{
+                        "type": "minecraft:loot_table",
+                        "value": "example:b"
+                    }]
+                }]
+            }),
+        );
+        resources.loot_tables.insert(
+            "example:b".to_owned(),
+            json!({
+                "pools": [{
+                    "rolls": 1,
+                    "entries": [{
+                        "type": "minecraft:loot_table",
+                        "value": "example:a"
+                    }]
+                }]
+            }),
+        );
+
+        let error = match generate_datapack_chest_loot(&resources, "example:a", 42) {
+            Ok(_) => panic!("recursive tables must be rejected"),
+            Err(error) => error,
+        };
+        assert!(error.contains("recursive loot table reference"));
+    }
+
+    #[test]
+    fn builtin_fishing_loot_is_seeded_and_not_cod_only() {
+        let first = generate_builtin_fishing_loot(42, false);
+        let second = generate_builtin_fishing_loot(42, false);
+        assert_eq!(first.len(), 1);
+        assert_eq!(first[0].item.id, second[0].item.id);
+        assert_eq!(first[0].item_count, second[0].item_count);
+        assert!(
+            [
+                Item::COD.id,
+                Item::SALMON.id,
+                Item::TROPICAL_FISH.id,
+                Item::PUFFERFISH.id,
+                Item::LILY_PAD.id,
+                Item::LEATHER_BOOTS.id,
+                Item::LEATHER.id,
+                Item::BONE.id,
+                Item::POTION.id,
+                Item::STRING.id,
+                Item::FISHING_ROD.id,
+                Item::BOWL.id,
+                Item::STICK.id,
+                Item::INK_SAC.id,
+                Item::TRIPWIRE_HOOK.id,
+                Item::ROTTEN_FLESH.id,
+                Item::BAMBOO.id,
+            ]
+            .contains(&first[0].item.id)
+        );
+    }
+
+    #[test]
+    fn deferred_subset_rejects_conditions_instead_of_ignoring_them() {
+        let mut resources = crate::server::datapack::DataPackResources::default();
+        resources.loot_tables.insert(
+            "example:conditional".to_owned(),
+            json!({
+                "pools": [{
+                    "conditions": [{"condition": "minecraft:random_chance", "chance": 0.0}],
+                    "entries": [{"type": "minecraft:item", "name": "minecraft:diamond"}]
+                }]
+            }),
+        );
+        let error = match generate_datapack_chest_loot(&resources, "example:conditional", 1) {
+            Ok(_) => panic!("unsupported conditions must fail closed"),
+            Err(error) => error,
+        };
+        assert!(error.contains("conditions are not supported"));
+    }
+
+    #[test]
+    fn nested_guardian_fish_table_returns_fish_only() {
+        static ENTRIES: [LootPoolEntry; 1] = [LootPoolEntry {
+            content: LootPoolEntryTypes::LootTable(LootTableEntry {
+                value: "minecraft:gameplay/fishing/fish",
+            }),
+            weight: 1,
+            quality: 0,
+            conditions: None,
+            functions: None,
+        }];
+        static POOLS: [LootPool; 1] = [LootPool {
+            entries: &ENTRIES,
+            rolls: LootNumberProviderTypes::Constant(1.0),
+            bonus_rolls: LootNumberProviderTypes::Constant(0.0),
+            conditions: None,
+            functions: None,
+        }];
+        static TABLE: LootTable = LootTable {
+            r#type: LootTableType::Entity,
+            random_sequence: None,
+            pools: Some(&POOLS),
+        };
+
+        let loot = TABLE.get_loot(LootContextParameters {
+            random_seed: Some(123),
+            ..base_params()
+        });
+        assert_eq!(loot.len(), 1);
+        assert!(
+            [
+                Item::COD.id,
+                Item::SALMON.id,
+                Item::TROPICAL_FISH.id,
+                Item::PUFFERFISH.id,
+            ]
+            .contains(&loot[0].item.id)
+        );
+    }
+
     fn fire_aspect_sword(level: i32) -> ItemStack {
         let mut sword = ItemStack::new(1, &Item::DIAMOND_SWORD);
         sword.enchant(&Enchantment::FIRE_ASPECT, level);
         sword
+    }
+
+    #[test]
+    fn seeded_loot_uses_one_repeatable_random_stream() {
+        static FUNCTIONS: [LootFunction; 1] = [LootFunction {
+            content: LootFunctionTypes::SetCount {
+                count: LootFunctionNumberProvider::Uniform {
+                    min: 1.0,
+                    max: 16.0,
+                },
+                add: false,
+            },
+            conditions: None,
+        }];
+        static ENTRIES: [LootPoolEntry; 1] = [LootPoolEntry {
+            content: LootPoolEntryTypes::Item(ItemEntry {
+                name: "minecraft:stone",
+            }),
+            weight: 1,
+            quality: 0,
+            conditions: None,
+            functions: Some(&FUNCTIONS),
+        }];
+        static POOLS: [LootPool; 1] = [LootPool {
+            entries: &ENTRIES,
+            rolls: LootNumberProviderTypes::Constant(4.0),
+            bonus_rolls: LootNumberProviderTypes::Constant(0.0),
+            conditions: None,
+            functions: None,
+        }];
+        static TABLE: LootTable = LootTable {
+            r#type: LootTableType::Chest,
+            random_sequence: Some("test:seeded"),
+            pools: Some(&POOLS),
+        };
+
+        let first = TABLE.get_loot(LootContextParameters {
+            random_seed: Some(0x5eed),
+            ..Default::default()
+        });
+        let second = TABLE.get_loot(LootContextParameters {
+            random_seed: Some(0x5eed),
+            ..Default::default()
+        });
+        let different = TABLE.get_loot(LootContextParameters {
+            random_seed: Some(0x5eee),
+            ..Default::default()
+        });
+
+        let signature = |stacks: &[ItemStack]| {
+            stacks
+                .iter()
+                .map(|stack| (stack.item.id, stack.item_count))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(signature(&first), signature(&second));
+        assert_ne!(signature(&first), signature(&different));
+    }
+
+    #[test]
+    fn derived_loot_seed_is_stable_and_source_separated() {
+        let position = pumpkin_util::math::vector3::Vector3::new(3.0, 64.0, -9.0);
+        let first = derive_loot_seed(1234, Some(position), 77, 1);
+        assert_eq!(first, derive_loot_seed(1234, Some(position), 77, 1));
+        assert_ne!(first, derive_loot_seed(1234, Some(position), 77, 2));
+        assert_ne!(first, derive_loot_seed(1234, Some(position), 78, 1));
+        assert_ne!(first, derive_loot_seed(1235, Some(position), 77, 1));
+    }
+
+    #[test]
+    fn location_check_uses_context_biome_and_fails_closed_for_offsets() {
+        let params = LootContextParameters {
+            biome: Some("plains"),
+            ..Default::default()
+        };
+        let matches = LootCondition::LocationCheck {
+            offset_x: 0,
+            offset_y: 0,
+            offset_z: 0,
+            expected_biome: Some("minecraft:plains"),
+        };
+        let wrong = LootCondition::LocationCheck {
+            offset_x: 0,
+            offset_y: 0,
+            offset_z: 0,
+            expected_biome: Some("minecraft:desert"),
+        };
+        let offset = LootCondition::LocationCheck {
+            offset_x: 1,
+            offset_y: 0,
+            offset_z: 0,
+            expected_biome: Some("minecraft:plains"),
+        };
+        assert!(matches.is_fulfilled(&params));
+        assert!(!wrong.is_fulfilled(&params));
+        assert!(!offset.is_fulfilled(&params));
+    }
+
+    #[test]
+    fn location_check_resolves_non_zero_offset_from_containing_block() {
+        fn resolve(position: BlockPos) -> &'static str {
+            if position == BlockPos::new(11, 64, 2) {
+                "plains"
+            } else {
+                "desert"
+            }
+        }
+
+        let params = LootContextParameters {
+            position: Some(pumpkin_util::math::vector3::Vector3::new(10.9, 64.9, 2.1)),
+            biome_resolver: Some(Arc::new(resolve)),
+            ..Default::default()
+        };
+        let offset = LootCondition::LocationCheck {
+            offset_x: 1,
+            offset_y: 0,
+            offset_z: 0,
+            expected_biome: Some("minecraft:plains"),
+        };
+        assert!(offset.is_fulfilled(&params));
     }
 
     #[test]

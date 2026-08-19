@@ -21,7 +21,7 @@ pub struct ChestBlockEntity {
     /// Set during world generation; cleared when items are generated on first open.
     pub loot_table: StdMutex<Option<String>>,
     /// Seed used for deterministic loot generation, paired with `loot_table`.
-    pub loot_table_seed: i64,
+    pub loot_table_seed: StdMutex<i64>,
 }
 
 impl ChestBlockEntity {
@@ -37,3 +37,19 @@ impl_inventory_for_chest!(ChestBlockEntity);
 impl_clearable_for_chest!(ChestBlockEntity);
 impl_viewer_count_listener_for_chest!(ChestBlockEntity);
 impl_chest_helper_methods!(ChestBlockEntity);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::block::entities::BlockEntity;
+
+    #[test]
+    fn deferred_loot_table_can_be_restored_without_losing_seed() {
+        let chest = ChestBlockEntity::new(BlockPos::new(4, 70, -2));
+        chest.restore_loot_table("example:future_table".to_owned(), 1234);
+        assert_eq!(
+            chest.take_loot_table(),
+            Some(("example:future_table".to_owned(), 1234))
+        );
+    }
+}

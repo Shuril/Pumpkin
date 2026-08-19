@@ -71,9 +71,9 @@ use pumpkin_protocol::java::server::play::{
     SPlayPingRequest, SPlayerAbilities, SPlayerAction, SPlayerCommand, SPlayerInput,
     SPlayerPosition, SPlayerPositionRotation, SPlayerRotation, SPlayerSession,
     SRecipeBookChangeSettings, SRecipeBookSeenRecipe, SSeenAdvancement, SSelectTrade,
-    SSetCommandBlock, SSetCreativeSlot, SSetHeldItem, SSetJigsawBlock, SSetPlayerGround,
-    SSetTestBlock, SSwingArm, STeleportToEntity, STestInstanceBlockAction, SUpdateSign, SUseItem,
-    SUseItemOn, Status,
+    SSetCommandBlock, SSetCommandMinecart, SSetCreativeSlot, SSetHeldItem, SSetJigsawBlock,
+    SSetPlayerGround, SSetTestBlock, SSwingArm, STeleportToEntity, STestInstanceBlockAction,
+    SUpdateSign, SUseItem, SUseItemOn, Status,
 };
 use pumpkin_util::math::vector3::Vector3;
 use pumpkin_util::math::{polynomial_rolling_hash, position::BlockPos, wrap_degrees};
@@ -933,6 +933,38 @@ impl JavaClient {
         }
     }
 
+    pub async fn handle_set_command_minecart(
+        &self,
+        player: &Arc<Player>,
+        packet: SSetCommandMinecart<'_>,
+    ) {
+        if !player.is_creative() || player.permission_lvl.load() < PermissionLvl::Two {
+            return;
+        }
+        let world = player.world();
+        let Some(entity) = world.get_entity_by_id(packet.entity_id.0) else {
+            return;
+        };
+        let Some(minecart) = entity
+            .cast_any()
+            .downcast_ref::<crate::entity::vehicle::minecart::MinecartEntity>()
+        else {
+            return;
+        };
+        if minecart.get_entity().entity_type.id
+            != pumpkin_data::entity::EntityType::COMMAND_BLOCK_MINECART.id
+        {
+            return;
+        }
+        let delta = minecart.get_entity().pos.load() - player.get_entity().pos.load();
+        if delta.length_squared() > 64.0 {
+            return;
+        }
+        minecart
+            .set_command(packet.command, packet.track_output)
+            .await;
+    }
+
     pub async fn handle_set_jigsaw_block(&self, player: &Arc<Player>, jigsaw: SSetJigsawBlock<'_>) {
         if !player.is_creative() {
             return;
@@ -1030,7 +1062,7 @@ impl JavaClient {
                 debug!("todo");
             }
             Action::StartFlyingElytra => {
-                let fall_flying = entity.check_fall_flying();
+                let fall_flying = player.can_start_fall_flying().await;
                 if entity.is_fall_flying() != fall_flying {
                     entity.set_fall_flying(fall_flying).await;
                 }
@@ -1123,19 +1155,35 @@ impl JavaClient {
     #[allow(clippy::unused_async)]
     pub async fn handle_recipe_book_change_settings(
         &self,
-        _player: &Arc<Player>,
-        _packet: SRecipeBookChangeSettings,
+        player: &Arc<Player>,
+        packet: SRecipeBookChangeSettings,
     ) {
-        // Client is updating its recipe book filter/open state; no server action needed.
+        if !player
+            .update_recipe_book_settings(packet.book_type.0, packet.is_open, packet.is_filtering)
+            .await
+        {
+            tracing::debug!(
+                category = packet.book_type.0,
+                "ignored unknown recipe book category"
+            );
+        }
     }
 
-    #[allow(clippy::unused_async)]
     pub async fn handle_recipe_book_seen_recipe(
         &self,
-        _player: &Arc<Player>,
-        _packet: SRecipeBookSeenRecipe,
+        player: &Arc<Player>,
+        packet: SRecipeBookSeenRecipe,
     ) {
-        // Client acknowledged a recipe display; no server action needed.
+        let Some(server) = player.world().server.upgrade() else {
+            return;
+        };
+        if let Some(recipe_id) = server
+            .recipe_manager
+            .recipe_id_from_display_id(packet.recipe_display_id.0)
+            .await
+        {
+            player.mark_recipe_seen(recipe_id).await;
+        }
     }
 
     #[allow(clippy::too_many_lines)]
@@ -1153,7 +1201,29 @@ impl JavaClient {
         use pumpkin_data::screen::WindowType;
         use pumpkin_inventory::crafting::recipe_provider::RecipeProvider;
 
-        let target_id = packet.recipe_display_id.0 as usize;
+        let Some(recipe_id) = server
+            .recipe_manager
+            .recipe_id_from_display_id(packet.recipe_display_id.0)
+            .await
+        else {
+            return;
+        };
+        let recipe_id = crate::server::recipe::canonicalize_recipe_id(&recipe_id);
+
+        // A place-recipe packet is a request to mutate the currently open
+        // menu, not a free-standing crafting command.  Validate both the
+        // window id and the server-side recipe-book rule before touching any
+        // inventory.  This closes the vanilla race where a client sends a
+        // stale/unknown display after the gamerule or recipe book changed.
+        let limited_crafting = player.world().level_info.load().game_rules.limited_crafting;
+        let known_recipes = player.known_recipes().await;
+        if !crate::server::recipe::is_recipe_allowed(limited_crafting, &known_recipes, &recipe_id) {
+            return;
+        }
+
+        let Ok(target_id) = usize::try_from(packet.recipe_display_id.0) else {
+            return;
+        };
         let use_max = packet.use_max_items;
 
         // Count crafting display IDs.
@@ -1170,15 +1240,27 @@ impl JavaClient {
         let cooking_display_count = RECIPES_COOKING.len();
         let dynamic_recipes = server.recipe_manager.get_dynamic_recipes().await;
 
-        let (grid_width, crafting_inv) = {
+        let (grid_width, crafting_inv, window_type) = {
             let screen_handler_arc = player.current_screen_handler.lock().await.clone();
             let handler = screen_handler_arc.lock().await;
-            let grid_width: usize = match handler.window_type() {
+            let Ok(packet_container_id) = u8::try_from(packet.container_id) else {
+                return;
+            };
+            if packet_container_id != handler.sync_id() {
+                return;
+            }
+            let window_type = handler.window_type();
+            let grid_width: usize = match window_type {
                 Some(WindowType::Crafting) => 3,
                 None => 2, // player inventory 2x2
+                Some(WindowType::Furnace | WindowType::BlastFurnace | WindowType::Smoker) => 1,
                 _ => return,
             };
-            (grid_width, handler.get_behaviour().slots[1].get_inventory())
+            let input_slot = if grid_width == 1 { 0 } else { 1 };
+            let Some(grid_slot) = handler.get_behaviour().slots.get(input_slot) else {
+                return;
+            };
+            (grid_width, grid_slot.get_inventory(), window_type)
         };
 
         let grid_size = grid_width * grid_width;
@@ -1232,40 +1314,100 @@ impl JavaClient {
                 _ => return,
             }
         } else if target_id < crafting_display_count + cooking_display_count {
-            // TODO: cooking recipes
-            return;
+            let cooking_id = target_id - crafting_display_count;
+            let Some(recipe) = RECIPES_COOKING.get(cooking_id) else {
+                return;
+            };
+            let matches_window = match (window_type, recipe) {
+                (
+                    Some(WindowType::Furnace),
+                    pumpkin_data::recipes::CookingRecipeType::Smelting(_),
+                )
+                | (
+                    Some(WindowType::BlastFurnace),
+                    pumpkin_data::recipes::CookingRecipeType::Blasting(_),
+                )
+                | (
+                    Some(WindowType::Smoker),
+                    pumpkin_data::recipes::CookingRecipeType::Smoking(_),
+                ) => true,
+                _ => false,
+            };
+            if !matches_window {
+                return;
+            }
+            let ingredient = match recipe {
+                pumpkin_data::recipes::CookingRecipeType::Blasting(recipe)
+                | pumpkin_data::recipes::CookingRecipeType::Smelting(recipe)
+                | pumpkin_data::recipes::CookingRecipeType::Smoking(recipe) => &recipe.ingredient,
+                pumpkin_data::recipes::CookingRecipeType::CampfireCooking(_) => return,
+            };
+            ingredient_slots[0] = Some(GenericIngredient::Vanilla(ingredient));
         } else {
             let dynamic_id = target_id - crafting_display_count - cooking_display_count;
-            let Some(DynamicRecipe::Crafting(crafting)) = dynamic_recipes.get(dynamic_id) else {
+            let Some(recipe) = dynamic_recipes.get(dynamic_id) else {
                 return;
             };
 
-            match crafting {
-                pumpkin_protocol::codec::recipe::OwnedCraftingRecipe::Shaped {
-                    pattern,
-                    key,
-                    ..
-                } => {
-                    for (row, row_str) in pattern.iter().enumerate() {
-                        for (col, ch) in row_str.chars().enumerate() {
-                            if ch != ' '
-                                && let Some((_, ing)) = key.iter().find(|(k, _)| *k == ch)
-                                && row * grid_width + col < grid_size
-                            {
-                                ingredient_slots[row * grid_width + col] =
-                                    Some(GenericIngredient::Dynamic(ing));
+            match recipe {
+                DynamicRecipe::Crafting(crafting) => match crafting {
+                    pumpkin_protocol::codec::recipe::OwnedCraftingRecipe::Shaped {
+                        pattern,
+                        key,
+                        ..
+                    } => {
+                        for (row, row_str) in pattern.iter().enumerate() {
+                            for (col, ch) in row_str.chars().enumerate() {
+                                if ch != ' '
+                                    && let Some((_, ing)) = key.iter().find(|(k, _)| *k == ch)
+                                    && row * grid_width + col < grid_size
+                                {
+                                    ingredient_slots[row * grid_width + col] =
+                                        Some(GenericIngredient::Dynamic(ing));
+                                }
                             }
                         }
                     }
-                }
 
-                pumpkin_protocol::codec::recipe::OwnedCraftingRecipe::Shapeless {
-                    ingredients,
-                    ..
-                } => {
-                    for (i, ing) in ingredients.iter().enumerate().take(grid_size) {
-                        ingredient_slots[i] = Some(GenericIngredient::Dynamic(ing));
+                    pumpkin_protocol::codec::recipe::OwnedCraftingRecipe::Shapeless {
+                        ingredients,
+                        ..
+                    } => {
+                        for (i, ing) in ingredients.iter().enumerate().take(grid_size) {
+                            ingredient_slots[i] = Some(GenericIngredient::Dynamic(ing));
+                        }
                     }
+                },
+                DynamicRecipe::Cooking(cooking) => {
+                    let matches_window = match (window_type, cooking) {
+                        (
+                            Some(WindowType::Furnace),
+                            pumpkin_protocol::codec::recipe::OwnedCookingRecipeType::Smelting(_),
+                        )
+                        | (
+                            Some(WindowType::BlastFurnace),
+                            pumpkin_protocol::codec::recipe::OwnedCookingRecipeType::Blasting(_),
+                        )
+                        | (
+                            Some(WindowType::Smoker),
+                            pumpkin_protocol::codec::recipe::OwnedCookingRecipeType::Smoking(_),
+                        ) => true,
+                        _ => false,
+                    };
+                    if !matches_window {
+                        return;
+                    }
+                    let ingredient = match cooking {
+                        pumpkin_protocol::codec::recipe::OwnedCookingRecipeType::Blasting(recipe)
+                        | pumpkin_protocol::codec::recipe::OwnedCookingRecipeType::Smelting(recipe)
+                        | pumpkin_protocol::codec::recipe::OwnedCookingRecipeType::Smoking(recipe) => {
+                            &recipe.ingredient
+                        }
+                        pumpkin_protocol::codec::recipe::OwnedCookingRecipeType::CampfireCooking(_) => {
+                            return;
+                        }
+                    };
+                    ingredient_slots[0] = Some(GenericIngredient::Dynamic(ingredient));
                 }
             }
         }
@@ -1354,7 +1496,7 @@ impl JavaClient {
         swing_arm: SSwingArm,
     ) {
         player.update_last_action_time();
-        let Ok(hand) = Hand::try_from(swing_arm.hand.0) else {
+        let Ok(hand) = Hand::from_packet_id(swing_arm.hand.0) else {
             self.kick(TextComponent::text("Invalid hand")).await;
             return;
         };
@@ -1751,9 +1893,6 @@ impl JavaClient {
         let world = player_entity.world.load_full();
 
         let config = &server.advanced_config.pvp;
-        if !config.enabled {
-            return;
-        }
 
         if entity_id.0 == player.entity_id() {
             self.kick(TextComponent::translate_cross(
@@ -1771,14 +1910,13 @@ impl JavaClient {
             .map(|p| Arc::clone(p) as Arc<dyn EntityBase>)
             .or_else(|| world.get_entity_by_id(entity_id.0));
         let Some(target) = target else {
-            self.kick(TextComponent::translate_cross(
-                translation::java::MULTIPLAYER_DISCONNECT_INVALID_ENTITY_ATTACKED,
-                translation::java::MULTIPLAYER_DISCONNECT_INVALID_ENTITY_ATTACKED,
-                [],
-            ))
-            .await;
+            // A despawn race is normal: vanilla ignores packets for an entity
+            // that disappeared between client tick and server handling.
             return;
         };
+        if !config.enabled && player_target.is_some() {
+            return;
+        }
         if let Some(player_victim) = &player_target {
             if player_victim.living_entity.health.load() <= 0.0 {
                 return;
@@ -1818,6 +1956,25 @@ impl JavaClient {
             return;
         };
 
+        // The hand is part of the interact packet (and is mandatory for both
+        // interact variants).  Keeping this separate from the attack path is
+        // important: an off-hand item must be passed to the entity callback,
+        // and its use-cooldown must be checked independently of the hotbar.
+        let interaction_hand = match action {
+            ActionType::Attack => None,
+            ActionType::Interact | ActionType::InteractAt => {
+                let Some(raw_hand) = interact.hand.as_ref() else {
+                    self.kick(TextComponent::text("Invalid hand")).await;
+                    return;
+                };
+                let Ok(hand) = Hand::from_packet_id(raw_hand.0) else {
+                    self.kick(TextComponent::text("Invalid hand")).await;
+                    return;
+                };
+                Some(hand)
+            }
+        };
+
         // Resolve the target entity for the event
         let world = player_entity.world.load_full();
         let player_target = world.get_player_by_id(entity_id.0);
@@ -1835,6 +1992,25 @@ impl JavaClient {
                     .await;
                 return;
             }
+
+            // Item interaction is rejected at the packet boundary while the
+            // component cooldown is active.  Do this before plugin callbacks
+            // and entity behaviour so a client cannot bypass a cooldown by
+            // switching to the entity-interaction packet (or by using the
+            // off-hand, whose stack is different from held_item()).
+            if let Some(hand) = interaction_hand {
+                let stack = player.inventory().get_stack_in_hand(hand).await;
+                if let Some(cooldown) = stack.get_use_cooldown() {
+                    let group = cooldown
+                        .cooldown_group
+                        .clone()
+                        .unwrap_or_else(|| stack.item.registry_key.to_string());
+                    if player.is_on_cooldown(&group).await {
+                        return;
+                    }
+                }
+            }
+
             send_cancellable! {{
                 server;
                 PlayerInteractEntityEvent::new(
@@ -1849,13 +2025,13 @@ impl JavaClient {
                     match event.action {
                         ActionType::Attack => {
                             let config = &server.advanced_config.pvp;
-                            if !config.enabled {
-                                return;
-                            }
-
                             if entity_id.0 == player.entity_id() {
                                 self.kick(TextComponent::translate_cross(translation::java::MULTIPLAYER_DISCONNECT_INVALID_ENTITY_ATTACKED, translation::java::MULTIPLAYER_DISCONNECT_INVALID_ENTITY_ATTACKED, [],))
                                 .await;
+                                return;
+                            }
+
+                            if !config.enabled && player_target.is_some() {
                                 return;
                             }
 
@@ -1879,7 +2055,10 @@ impl JavaClient {
                             player.attack(event.target).await;
                         }
                         ActionType::Interact | ActionType::InteractAt => {
-                            let mut stack = player.inventory().held_item().await;
+                            let Some(hand) = interaction_hand else {
+                                return;
+                            };
+                            let mut stack = player.inventory().get_stack_in_hand(hand).await;
                             let target_entity = event.target.get_entity();
                             if target_entity.entity_type.resource_name == "zombie_villager"
                                 && stack.item.registry_key == "golden_apple"
@@ -1894,7 +2073,7 @@ impl JavaClient {
                                     .use_on_entity(&mut stack, player, event.target)
                                     .await;
                             }
-                            player.inventory().set_held_item(stack).await;
+                            player.inventory().set_stack_in_hand(hand, stack).await;
                         }
                     }
                 }
@@ -1912,8 +2091,6 @@ impl JavaClient {
                             player.entity_id(),
                             event.entity_id
                         );
-                        self.kick(TextComponent::translate_cross(translation::java::MULTIPLAYER_DISCONNECT_INVALID_ENTITY_ATTACKED, translation::java::MULTIPLAYER_DISCONNECT_INVALID_ENTITY_ATTACKED, [],))
-                        .await;
                     }
                 }
             }}
@@ -2284,7 +2461,7 @@ impl JavaClient {
             return Err(BlockPlacingError::InvalidBlockFace);
         };
 
-        let Ok(hand) = Hand::try_from(use_item_on.hand.0) else {
+        let Ok(hand) = Hand::from_packet_id(use_item_on.hand.0) else {
             return Err(BlockPlacingError::InvalidHand);
         };
 
@@ -2299,11 +2476,21 @@ impl JavaClient {
         let held_item_empty = held_item.is_empty();
         let off_hand_item_empty = off_hand_item.is_empty();
 
-        let item_id = if matches!(hand, Hand::Left) {
-            held_item.item.id
-        } else {
-            off_hand_item.item.id
-        };
+        let mut item = inventory.get_stack_in_hand(hand).await;
+        // The block-use path is separate from `handle_use_item`, so it must
+        // enforce the same component cooldown before statistics, cancellable
+        // interaction events, or block/item callbacks run.  Otherwise a
+        // client could bypass a cooldown simply by targeting a block.
+        if let Some(cooldown) = item.get_use_cooldown() {
+            let group = cooldown
+                .cooldown_group
+                .clone()
+                .unwrap_or_else(|| item.item.registry_key.to_string());
+            if player.is_on_cooldown(&group).await {
+                return Ok(());
+            }
+        }
+        let item_id = item.item.id;
         player
             .increment_stat(StatisticCategory::Used, item_id as i32, 1)
             .await;
@@ -2333,12 +2520,7 @@ impl JavaClient {
             }
         }}
 
-        let mut item = if matches!(hand, Hand::Left) {
-            held_item
-        } else {
-            off_hand_item
-        };
-        let equipment_slot = if matches!(hand, Hand::Left) {
+        let equipment_slot = if matches!(hand, Hand::Right) {
             EquipmentSlot::MAIN_HAND
         } else {
             EquipmentSlot::OFF_HAND
@@ -2371,7 +2553,7 @@ impl JavaClient {
             }
         }
 
-        let slot_index = if matches!(hand, Hand::Left) {
+        let slot_index = if matches!(hand, Hand::Right) {
             inventory.get_selected_slot() as usize
         } else {
             PlayerInventory::OFF_HAND_SLOT
@@ -2394,7 +2576,7 @@ impl JavaClient {
         let item_id = item.item.id;
         if let Some(block) = Block::from_item_id(item_id) {
             should_try_decrement = self
-                .run_is_block_place(player, block, server, use_item_on, position, face)
+                .run_is_block_place(player, block, server, use_item_on, &item, position, face)
                 .await?;
         }
 
@@ -2568,11 +2750,6 @@ impl JavaClient {
 
         let mut item_in_hand = inventory.get_stack_in_hand(hand).await;
 
-        let (item_id, _item) = (item_in_hand.item.id, item_in_hand.item);
-        player
-            .increment_stat(StatisticCategory::Used, item_id as i32, 1)
-            .await;
-
         let hit_result = player
             .world()
             .raycast(
@@ -2599,7 +2776,22 @@ impl JavaClient {
             PlayerInteractEvent::new(player, InteractAction::RightClickAir, &Block::AIR, None)
         };
         let (item_for_use, stack_for_use) = (item_in_hand.item, item_in_hand.clone());
-        self.prepare_hand_item_for_use(player, hand, &mut item_in_hand)
+        // A use-cooldown is authoritative on the server.  The preparation
+        // helper returns `false` when the item group is still cooling down;
+        // do not fire interaction hooks (or let an item behaviour mutate the
+        // stack) for a packet that vanilla rejects at this boundary.
+        if !self
+            .prepare_hand_item_for_use(player, hand, &mut item_in_hand)
+            .await
+        {
+            return;
+        }
+
+        // Count the use only after the cooldown gate has accepted it.  This
+        // keeps the statistic aligned with vanilla's successful interaction
+        // boundary instead of allowing rejected packets to increment it.
+        player
+            .increment_stat(StatisticCategory::Used, item_for_use.id as i32, 1)
             .await;
 
         if !self
@@ -2613,7 +2805,10 @@ impl JavaClient {
             server;
             event;
             'after: {
-                server.item_registry.on_use(&stack_for_use, player).await;
+                server
+                    .item_registry
+                    .on_use_with_hand(&stack_for_use, player, Some(hand))
+                    .await;
             }
         }}
     }
@@ -2623,7 +2818,7 @@ impl JavaClient {
         player: &Arc<Player>,
         hand: Hand,
         held: &mut ItemStack,
-    ) {
+    ) -> bool {
         let inventory = player.inventory();
 
         if let Some(cooldown) = held.get_use_cooldown() {
@@ -2632,7 +2827,7 @@ impl JavaClient {
                 .clone()
                 .unwrap_or_else(|| held.item.registry_key.to_string());
             if player.is_on_cooldown(&group).await {
-                return;
+                return false;
             }
         }
 
@@ -2665,7 +2860,7 @@ impl JavaClient {
             // the off hand lives in the same map, so holding it here would deadlock.
             let current_equipped = inventory.entity_equipment.lock().await.get(&slot);
             if current_equipped.are_items_and_components_equal(held) {
-                return;
+                return true;
             }
 
             player.enqueue_equipment_change(&slot, held).await;
@@ -2680,6 +2875,7 @@ impl JavaClient {
             inventory.entity_equipment.lock().await.put(&slot, equipped);
             inventory.set_stack_in_hand(hand, held.clone()).await;
         }
+        true
     }
 
     async fn should_continue_use_after_fish_event(
@@ -2693,7 +2889,8 @@ impl JavaClient {
             return true;
         }
 
-        // TODO: Apply fishing rod durability on retrieval based on catch type.
+        // Retrieval durability is applied by the hand-aware fishing-rod
+        // behaviour after this cancellable plugin hook succeeds.
         let mut fish_event = PlayerFishEvent::new(
             player.clone(),
             None,
@@ -2874,12 +3071,13 @@ impl JavaClient {
         block: &'static Block,
         server: &Arc<Server>,
         use_item_on: SUseItemOn,
+        item: &ItemStack,
         location: BlockPos,
         face: BlockDirection,
     ) -> Result<bool, BlockPlacingError> {
         match server
             .block_registry
-            .place_block(player, block, server, &use_item_on, location, face)
+            .place_block(player, block, server, &use_item_on, item, location, face)
             .await
         {
             Ok(Some((final_block_pos, new_state))) => {

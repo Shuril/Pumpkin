@@ -53,23 +53,21 @@ impl ItemBehaviour for FlintAndSteelItem {
                     return;
                 }
             }
-
             let ignited = Ignition::ignite_block(
                 |world: Arc<World>, pos: BlockPos, new_state_id: BlockStateId| async move {
                     world
                         .set_block_state(&pos, new_state_id, BlockFlags::NOTIFY_ALL)
                         .await;
                 },
-                player,
+                &world,
                 location,
-                face,
+                location.offset(face.to_offset()),
                 block,
             )
             .await;
 
             if ignited && player.gamemode.load() != pumpkin_util::GameMode::Creative {
-                // TODO: Handle DamageResult::Broken to broadcast item break and update player slot.
-                let _ = item.damage_item(1);
+                player.damage_item_stack_for_use(item, 1).await;
             }
         })
     }

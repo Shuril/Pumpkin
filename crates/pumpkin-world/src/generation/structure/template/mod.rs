@@ -79,6 +79,68 @@ pub fn place_template(
     processors: &[StructureProcessor],
     chunk_box: Option<&pumpkin_util::math::block_box::BlockBox>,
 ) {
+    place_template_with_pivot(
+        placer,
+        template,
+        origin,
+        offset,
+        rotation,
+        Vector3::new(0, 0, 0),
+        skip_air,
+        apply_waterlogging,
+        processors,
+        chunk_box,
+    );
+}
+
+/// Places a template with its rotation around `pivot`, matching vanilla's
+/// `StructurePlaceSettings#setRotationPivot`.  Most templates use the origin;
+/// shipwrecks are the notable exception and rotate around `(4, 0, 15)`.
+#[allow(clippy::too_many_arguments)]
+pub fn place_template_with_pivot(
+    placer: &mut impl BlockPlacer,
+    template: &StructureTemplate,
+    origin: Vector3<i32>,
+    offset: (i32, i32),
+    rotation: Rotation,
+    pivot: Vector3<i32>,
+    skip_air: bool,
+    apply_waterlogging: bool,
+    processors: &[StructureProcessor],
+    chunk_box: Option<&pumpkin_util::math::block_box::BlockBox>,
+) {
+    place_template_with_settings(
+        placer,
+        template,
+        origin,
+        offset,
+        rotation,
+        Mirror::None,
+        pivot,
+        skip_air,
+        apply_waterlogging,
+        processors,
+        chunk_box,
+    );
+}
+
+/// Fully-configurable template placement, including the mirror used by ruined
+/// portals.  This mirrors positions before rotating them, exactly as vanilla's
+/// structure-template transform does.
+#[allow(clippy::too_many_arguments)]
+pub fn place_template_with_settings(
+    placer: &mut impl BlockPlacer,
+    template: &StructureTemplate,
+    origin: Vector3<i32>,
+    offset: (i32, i32),
+    rotation: Rotation,
+    mirror: Mirror,
+    pivot: Vector3<i32>,
+    skip_air: bool,
+    apply_waterlogging: bool,
+    processors: &[StructureProcessor],
+    chunk_box: Option<&pumpkin_util::math::block_box::BlockBox>,
+) {
     let (rotated_ox, rotated_oz) = rotation.rotate_offset(offset.0, offset.1);
     let world_x = origin.x + rotated_ox;
     let world_z = origin.z + rotated_oz;
@@ -112,14 +174,12 @@ pub fn place_template(
         }
 
         // Resolve block state with rotation applied to directional properties
-        let Some(mut state) =
-            BlockStateResolver::resolve(&placed_entry, rotation, Mirror::default())
-        else {
+        let Some(mut state) = BlockStateResolver::resolve(&placed_entry, rotation, mirror) else {
             continue;
         };
 
         // Rotate block position within template bounds
-        let local_pos = rotation.transform_pos(block.pos, template.size);
+        let local_pos = transform_template_pos(block.pos, template.size, rotation, mirror, pivot);
 
         let wx = world_x + local_pos.x;
         let wy = origin.y + local_pos.y;
@@ -147,7 +207,7 @@ pub fn place_template(
         {
             *waterlogged = "true".to_string();
             if let Some(waterlogged_state) =
-                BlockStateResolver::resolve(&placed_entry, rotation, Mirror::default())
+                BlockStateResolver::resolve(&placed_entry, rotation, mirror)
             {
                 state = waterlogged_state;
             }
@@ -204,6 +264,93 @@ pub fn place_template(
 
             placer.add_block_entity(placed_nbt);
         }
+    }
+}
+
+/// Visits the data markers stored as structure blocks in a template using the
+/// exact same coordinate transform as [`place_template`].  Vanilla consumes
+/// these markers after placement to create loot containers and structure mobs;
+/// keeping their decoding here prevents individual generators from drifting
+/// from template rotation rules.
+pub fn for_each_data_marker(
+    template: &StructureTemplate,
+    origin: Vector3<i32>,
+    rotation: Rotation,
+    chunk_box: &pumpkin_util::math::block_box::BlockBox,
+    visitor: impl FnMut(&str, Vector3<i32>),
+) {
+    for_each_data_marker_with_pivot(
+        template,
+        origin,
+        rotation,
+        Vector3::new(0, 0, 0),
+        chunk_box,
+        visitor,
+    );
+}
+
+/// Visits data markers using a vanilla rotation pivot. See
+/// [`place_template_with_pivot`] for the reason this is needed.
+pub fn for_each_data_marker_with_pivot(
+    template: &StructureTemplate,
+    origin: Vector3<i32>,
+    rotation: Rotation,
+    pivot: Vector3<i32>,
+    chunk_box: &pumpkin_util::math::block_box::BlockBox,
+    mut visitor: impl FnMut(&str, Vector3<i32>),
+) {
+    for block in &template.blocks {
+        let palette_entry = &template.palette[block.state as usize];
+        if palette_entry.name != "minecraft:structure_block" {
+            continue;
+        }
+        let Some(marker) = block
+            .nbt
+            .as_ref()
+            .and_then(|nbt| nbt.get_string("metadata"))
+        else {
+            continue;
+        };
+
+        let local_pos =
+            transform_template_pos(block.pos, template.size, rotation, Mirror::None, pivot);
+        let world_pos = Vector3::new(
+            origin.x + local_pos.x,
+            origin.y + local_pos.y,
+            origin.z + local_pos.z,
+        );
+        if chunk_box.contains_pos(&world_pos) {
+            visitor(marker, world_pos);
+        }
+    }
+}
+
+/// Transforms a position inside a template. A zero pivot uses the compact
+/// bounded transform used by existing templates; non-zero pivots follow the
+/// coordinate rotation performed by vanilla's `BlockPos#rotate`.
+fn transform_template_pos(
+    pos: Vector3<i32>,
+    size: Vector3<i32>,
+    rotation: Rotation,
+    mirror: Mirror,
+    pivot: Vector3<i32>,
+) -> Vector3<i32> {
+    if pivot.x == 0 && pivot.y == 0 && pivot.z == 0 {
+        return rotation.transform_pos(mirror.transform_pos(pos, size), size);
+    }
+
+    let mirrored = match mirror {
+        Mirror::None => pos,
+        Mirror::LeftRight => Vector3::new(2 * pivot.x - pos.x, pos.y, pos.z),
+        Mirror::FrontBack => Vector3::new(pos.x, pos.y, 2 * pivot.z - pos.z),
+    };
+    let dx = mirrored.x - pivot.x;
+    let dz = mirrored.z - pivot.z;
+    match rotation {
+        Rotation::None => mirrored,
+        Rotation::Clockwise90 => Vector3::new(pivot.x - dz, mirrored.y, pivot.z + dx),
+        Rotation::Rotate180 => Vector3::new(pivot.x - dx, mirrored.y, pivot.z - dz),
+        Rotation::CounterClockwise90 => Vector3::new(pivot.x + dz, mirrored.y, pivot.z - dx),
     }
 }
 

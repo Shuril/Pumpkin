@@ -1,8 +1,10 @@
 use std::sync::Arc;
 
 use pumpkin_data::entity::EntityType;
+use pumpkin_data::tag::Taggable;
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector3::Vector3;
+use pumpkin_util::random::RandomGenerator;
 use uuid::Uuid;
 
 use crate::entity::boss::ender_dragon::EnderDragonEntity;
@@ -44,6 +46,7 @@ use crate::entity::mob::skeleton::{
 };
 use crate::entity::mob::slime::SlimeEntity;
 use crate::entity::mob::spider::SpiderEntity;
+use crate::entity::mob::sulfur_cube::SulfurCubeEntity;
 use crate::entity::mob::vex::VexEntity;
 use crate::entity::mob::vindicator::VindicatorEntity;
 use crate::entity::mob::warden::WardenEntity;
@@ -98,6 +101,7 @@ use crate::entity::projectile::ThrownItemEntity;
 use crate::entity::projectile::arrow::ArrowEntity;
 use crate::entity::projectile::egg::EggEntity;
 use crate::entity::projectile::ender_pearl::EnderPearlEntity;
+use crate::entity::projectile::experience_bottle::ExperienceBottleEntity;
 use crate::entity::projectile::eye_of_ender::EyeOfEnder;
 use crate::entity::projectile::fireball::FireballEntity;
 use crate::entity::projectile::firework_rocket::FireworkRocketEntity;
@@ -149,6 +153,7 @@ pub fn from_type(
         id if id == EntityType::CAVE_SPIDER.id => CaveSpiderEntity::new(entity),
         id if id == EntityType::GHAST.id => GhastEntity::new(entity),
         id if id == EntityType::MAGMA_CUBE.id => MagmaCubeEntity::new(entity),
+        id if id == EntityType::SULFUR_CUBE.id => SulfurCubeEntity::new(entity),
         id if id == EntityType::PHANTOM.id => PhantomEntity::new(entity),
         id if id == EntityType::WITCH.id => WitchEntity::new(entity),
         id if id == EntityType::PIGLIN.id => PiglinEntity::new(entity),
@@ -240,6 +245,9 @@ pub fn from_type(
             Arc::new(FallingEntity::new(entity, Block::SAND.default_state.id))
         }
         id if id == EntityType::EXPERIENCE_ORB.id => Arc::new(ExperienceOrbEntity::new(entity, 1)),
+        id if id == EntityType::EXPERIENCE_BOTTLE.id => {
+            Arc::new(ExperienceBottleEntity::new(entity))
+        }
         id if id == EntityType::TNT.id => Arc::new(TNTEntity::new(entity, 4.0, 80)),
         id if id == EntityType::ITEM.id => Arc::new(ItemEntity::new_for_restore(entity)),
         id if id == EntityType::ARROW.id => Arc::new(ArrowEntity::new(entity, None)),
@@ -322,9 +330,52 @@ pub fn check_spawn_rules(
     world: &World,
     pos: &BlockPos,
     is_thundering: bool,
+    random: &mut RandomGenerator,
 ) -> bool {
     let id = entity_type.id;
 
+    if id == EntityType::DROWNED.id {
+        return mob::MobEntity::check_drowned_spawn_rules(world, pos, is_thundering, random);
+    }
+    if id == EntityType::GUARDIAN.id || id == EntityType::ELDER_GUARDIAN.id {
+        return mob::MobEntity::check_guardian_spawn_rules(world, pos, random);
+    }
+    if id == EntityType::GHAST.id {
+        return mob::MobEntity::check_ghast_spawn_rules(world, pos, random);
+    }
+    if id == EntityType::BLAZE.id || id == EntityType::BREEZE.id || id == EntityType::ZOGLIN.id {
+        return mob::MobEntity::check_any_light_monster_spawn_rules(world, pos);
+    }
+    if id == EntityType::MAGMA_CUBE.id {
+        return mob::MobEntity::check_magma_cube_spawn_rules(world, pos);
+    }
+    if id == EntityType::STRIDER.id {
+        return mob::MobEntity::check_strider_spawn_rules(world, pos);
+    }
+    if id == EntityType::HOGLIN.id || id == EntityType::PIGLIN.id {
+        return mob::MobEntity::check_nether_wart_excluded_spawn_rules(world, pos);
+    }
+    if id == EntityType::ZOMBIFIED_PIGLIN.id {
+        return mob::MobEntity::check_zombified_piglin_spawn_rules(world, pos);
+    }
+    if id == EntityType::ENDERMITE.id || id == EntityType::SILVERFISH.id {
+        return mob::MobEntity::check_hidden_monster_spawn_rules(world, pos);
+    }
+    if id == EntityType::PILLAGER.id || id == EntityType::VINDICATOR.id {
+        return mob::MobEntity::check_patrolling_monster_spawn_rules(world, pos);
+    }
+    if id == EntityType::CAMEL_HUSK.id || id == EntityType::HUSK.id || id == EntityType::PARCHED.id
+    {
+        return mob::MobEntity::check_surface_monster_spawn_rules(
+            world,
+            pos,
+            is_thundering,
+            random,
+        );
+    }
+    if id == EntityType::STRAY.id {
+        return mob::MobEntity::check_stray_spawn_rules(world, pos, is_thundering, random);
+    }
     if id == EntityType::BOGGED.id
         || id == EntityType::CAVE_SPIDER.id
         || id == EntityType::CREEPER.id
@@ -343,18 +394,153 @@ pub fn check_spawn_rules(
         || id == EntityType::EVOKER.id
         || id == EntityType::ILLUSIONER.id
         || id == EntityType::VEX.id
-        || id == EntityType::VINDICATOR.id
         || id == EntityType::WARDEN.id
     {
-        return mob::MobEntity::check_monster_spawn_rules(world, pos, is_thundering);
+        return mob::MobEntity::check_monster_spawn_rules(world, pos, is_thundering, random);
     }
     if id == EntityType::BAT.id {
-        return bat::BatEntity::check_bat_spawn_rules(world, pos);
+        return bat::BatEntity::check_bat_spawn_rules(world, pos, random);
+    }
+    if id == EntityType::AXOLOTL.id {
+        return mob::MobEntity::check_axolotl_spawn_rules(world, pos);
+    }
+    if id == EntityType::GLOW_SQUID.id {
+        return mob::MobEntity::check_glow_squid_spawn_rules(world, pos);
+    }
+    if id == EntityType::TROPICAL_FISH.id {
+        return mob::MobEntity::check_tropical_fish_spawn_rules(world, pos);
+    }
+    if id == EntityType::COD.id
+        || id == EntityType::DOLPHIN.id
+        || id == EntityType::PUFFERFISH.id
+        || id == EntityType::SALMON.id
+        || id == EntityType::SQUID.id
+    {
+        return mob::MobEntity::check_surface_water_animal_spawn_rules(world, pos);
+    }
+    if id == EntityType::NAUTILUS.id {
+        return mob::MobEntity::check_nautilus_spawn_rules(world, pos);
+    }
+    if id == EntityType::CHICKEN.id
+        || id == EntityType::COW.id
+        || id == EntityType::DONKEY.id
+        || id == EntityType::HORSE.id
+        || id == EntityType::LLAMA.id
+        || id == EntityType::MULE.id
+        || id == EntityType::PIG.id
+        || id == EntityType::SHEEP.id
+    {
+        return mob::MobEntity::check_animal_spawn_rules(world, pos);
+    }
+    if id == EntityType::BEE.id {
+        return mob::MobEntity::check_animal_spawn_rules(world, pos);
+    }
+    // Panda is registered with `NO_RESTRICTIONS`, but its SpawnPlacements
+    // predicate is still the shared Animal.checkAnimalSpawnRules predicate.
+    // Keep this explicit: the conservative unrestricted fallback below must
+    // reject special mobs rather than accidentally making every unrestricted
+    // entity spawnable.
+    if id == EntityType::PANDA.id {
+        return mob::MobEntity::check_animal_spawn_rules(world, pos);
+    }
+    if id == EntityType::ARMADILLO.id {
+        return mob::MobEntity::check_tagged_animal_spawn_rules(
+            world,
+            pos,
+            &pumpkin_data::tag::Block::MINECRAFT_ARMADILLO_SPAWNABLE_ON,
+        );
+    }
+    if id == EntityType::CAMEL.id {
+        return mob::MobEntity::check_tagged_animal_spawn_rules(
+            world,
+            pos,
+            &pumpkin_data::tag::Block::MINECRAFT_CAMELS_SPAWNABLE_ON,
+        );
+    }
+    if id == EntityType::FOX.id {
+        return mob::MobEntity::check_tagged_animal_spawn_rules(
+            world,
+            pos,
+            &pumpkin_data::tag::Block::MINECRAFT_FOXES_SPAWNABLE_ON,
+        );
+    }
+    if id == EntityType::GOAT.id {
+        return mob::MobEntity::check_tagged_animal_spawn_rules(
+            world,
+            pos,
+            &pumpkin_data::tag::Block::MINECRAFT_GOATS_SPAWNABLE_ON,
+        );
+    }
+    if id == EntityType::FROG.id {
+        return mob::MobEntity::check_tagged_animal_spawn_rules(
+            world,
+            pos,
+            &pumpkin_data::tag::Block::MINECRAFT_FROGS_SPAWNABLE_ON,
+        );
+    }
+    if id == EntityType::MOOSHROOM.id {
+        return mob::MobEntity::check_tagged_animal_spawn_rules(
+            world,
+            pos,
+            &pumpkin_data::tag::Block::MINECRAFT_MOOSHROOMS_SPAWNABLE_ON,
+        );
+    }
+    if id == EntityType::RABBIT.id {
+        return mob::MobEntity::check_tagged_animal_spawn_rules(
+            world,
+            pos,
+            &pumpkin_data::tag::Block::MINECRAFT_RABBITS_SPAWNABLE_ON,
+        );
+    }
+    if id == EntityType::PARROT.id {
+        return mob::MobEntity::check_tagged_animal_spawn_rules(
+            world,
+            pos,
+            &pumpkin_data::tag::Block::MINECRAFT_PARROTS_SPAWNABLE_ON,
+        );
+    }
+    if id == EntityType::POLAR_BEAR.id {
+        return mob::MobEntity::check_polar_bear_spawn_rules(world, pos);
+    }
+    if id == EntityType::OCELOT.id {
+        return mob::MobEntity::check_ocelot_spawn_rules(world, pos, random);
+    }
+    if id == EntityType::TURTLE.id {
+        return mob::MobEntity::check_turtle_spawn_rules(world, pos);
+    }
+    if id == EntityType::WOLF.id {
+        return mob::MobEntity::check_tagged_animal_spawn_rules(
+            world,
+            pos,
+            &pumpkin_data::tag::Block::MINECRAFT_WOLVES_SPAWNABLE_ON,
+        );
     }
     if id == EntityType::SLIME.id {
-        return SlimeEntity::check_slime_spawn_rules(world, pos);
+        return SlimeEntity::check_slime_spawn_rules(world, pos, random);
     }
 
-    // TODO
-    true
+    // Never let an entity added to generated data silently bypass natural
+    // spawning rules.  Vanilla's SpawnPlacements registry is authoritative;
+    // until a subtype gets an explicit entry above, use the conservative
+    // placement/category fallback below and reject unrestricted special mobs.
+    match (
+        &entity_type.spawn_restriction.location,
+        entity_type.category,
+    ) {
+        (pumpkin_data::entity::SpawnLocation::InWater, _) => {
+            world
+                .get_fluid(pos)
+                .has_tag(&pumpkin_data::tag::Fluid::MINECRAFT_WATER)
+                && !world.get_block_state(&pos.up()).is_solid_block()
+        }
+        (pumpkin_data::entity::SpawnLocation::InLava, _) => world
+            .get_fluid(pos)
+            .has_tag(&pumpkin_data::tag::Fluid::MINECRAFT_LAVA),
+        (pumpkin_data::entity::SpawnLocation::OnGround, category)
+            if category == &pumpkin_data::entity::MobCategory::MONSTER =>
+        {
+            mob::MobEntity::check_monster_spawn_rules(world, pos, is_thundering, random)
+        }
+        _ => false,
+    }
 }

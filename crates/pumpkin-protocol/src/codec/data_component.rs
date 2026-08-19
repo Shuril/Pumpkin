@@ -5,18 +5,20 @@ use crate::ser::{NetworkReadExt, NetworkWriteExt, ReadingError, WritingError};
 use pumpkin_data::Enchantment;
 use pumpkin_data::data_component::DataComponent;
 use pumpkin_data::data_component_impl::{
-    AxolotlVariantImpl, BundleContentsImpl, CatCollarImpl, CatSoundVariantImpl, CatVariantImpl,
-    ChickenSoundVariantImpl, ChickenVariantImpl, ConsumableImpl, ConsumeAnimation, ConsumeEffect,
-    CowSoundVariantImpl, CowVariantImpl, CustomDataImpl, CustomNameImpl, DamageImpl,
-    DataComponentImpl, EnchantmentsImpl, EquipmentSlot, EquippableImpl, FireworkExplosionImpl,
-    FireworkExplosionShape, FireworksImpl, FoxVariantImpl, FrogVariantImpl, HorseVariantImpl,
-    IDSet, IDSetContent, IdOr, ItemModelImpl, LlamaVariantImpl, MapIdImpl, MaxStackSizeImpl,
-    MooshroomVariantImpl, PaintingVariantImpl, ParrotVariantImpl, PigSoundVariantImpl,
-    PigVariantImpl, PotionContentsImpl, RabbitVariantImpl, SalmonSizeImpl, SheepColorImpl,
-    ShulkerColorImpl, SoundEvent, StatusEffectInstance, StoredEnchantmentsImpl,
+    AxolotlVariantImpl, BaseColorImpl, BundleContentsImpl, CatCollarImpl, CatSoundVariantImpl,
+    CatVariantImpl, ChickenSoundVariantImpl, ChickenVariantImpl, ConsumableImpl, ConsumeAnimation,
+    ConsumeEffect, CowSoundVariantImpl, CowVariantImpl, CustomDataImpl, CustomNameImpl, DamageImpl,
+    DataComponentImpl, DyeImpl, DyedColorImpl, EnchantmentsImpl, EquipmentSlot, EquippableImpl,
+    FireworkExplosionImpl, FireworkExplosionShape, FireworksImpl, FoxVariantImpl, FrogVariantImpl,
+    GliderImpl, HorseVariantImpl, IDSet, IDSetContent, IdOr, IntangibleProjectileImpl,
+    ItemModelImpl, LlamaVariantImpl, MapIdImpl, MaxDamageImpl, MaxStackSizeImpl,
+    MooshroomVariantImpl, NoteBlockSoundImpl, OminousBottleAmplifierImpl, PaintingVariantImpl,
+    ParrotVariantImpl, PigSoundVariantImpl, PigVariantImpl, PotionContentsImpl,
+    PotionDurationScaleImpl, RabbitVariantImpl, SalmonSizeImpl, SheepColorImpl, ShulkerColorImpl,
+    SoundEvent, StatusEffectInstance, StoredEnchantmentsImpl, TooltipStyleImpl,
     TropicalFishBaseColorImpl, TropicalFishPatternColorImpl, TropicalFishPatternImpl,
-    UnbreakableImpl, UseCooldownImpl, VillagerVariantImpl, WolfCollarImpl, WolfSoundVariantImpl,
-    WolfVariantImpl, ZombieNautilusVariantImpl, get,
+    UnbreakableImpl, UseCooldownImpl, UseEffectsImpl, VillagerVariantImpl, WolfCollarImpl,
+    WolfSoundVariantImpl, WolfVariantImpl, ZombieNautilusVariantImpl, get,
 };
 use pumpkin_data::effect::StatusEffect;
 use pumpkin_data::entity::EntityType;
@@ -24,6 +26,67 @@ use pumpkin_data::sound::Sound;
 use pumpkin_nbt::{serializer::NbtWriteHelperJava, tag::NbtTag};
 
 const MAX_STATUS_EFFECTS: usize = 128;
+
+/// Adapts the packet reader to the NBT data-source interface. Component
+/// payloads are self-delimiting NBT, so the adapter can safely satisfy each
+/// exact read without buffering the remainder of the enclosing packet.
+struct NetworkNbtReader<'a, R: NetworkReadExt + ?Sized> {
+    reader: &'a mut R,
+}
+
+impl<'a, R: NetworkReadExt + ?Sized> pumpkin_nbt::deserializer::NbtDataSource<'a>
+    for NetworkNbtReader<'_, R>
+{
+    fn read_u8(&mut self) -> pumpkin_nbt::deserializer::Result<u8> {
+        self.reader.get_u8().map_err(|error| {
+            pumpkin_nbt::Error::Incomplete(std::io::Error::other(error.to_string()))
+        })
+    }
+
+    fn read_bytes(&mut self, buffer: &mut [u8]) -> pumpkin_nbt::deserializer::Result<()> {
+        self.reader.read_bytes_to_buf(buffer).map_err(|error| {
+            pumpkin_nbt::Error::Incomplete(std::io::Error::other(error.to_string()))
+        })
+    }
+
+    fn seek_relative(&mut self, offset: i64) -> pumpkin_nbt::deserializer::Result<()> {
+        if offset < 0 {
+            return Err(pumpkin_nbt::Error::UnsupportedType(
+                "network NBT cannot seek backwards".into(),
+            ));
+        }
+        let mut remaining = offset as usize;
+        let mut scratch = [0u8; 256];
+        while remaining > 0 {
+            let count = remaining.min(scratch.len());
+            self.read_bytes(&mut scratch[..count])?;
+            remaining -= count;
+        }
+        Ok(())
+    }
+
+    fn read_string(
+        &mut self,
+        len: usize,
+    ) -> pumpkin_nbt::deserializer::Result<std::borrow::Cow<'a, str>> {
+        let mut bytes = vec![0u8; len];
+        self.read_bytes(&mut bytes)?;
+        cesu8::from_java_cesu8(&bytes)
+            .map(|decoded| std::borrow::Cow::Owned(decoded.into_owned()))
+            .map_err(|_| pumpkin_nbt::Error::Cesu8DecodingError)
+    }
+
+    fn read_byte_array(
+        &mut self,
+        len: usize,
+    ) -> pumpkin_nbt::deserializer::Result<std::borrow::Cow<'a, [i8]>> {
+        let mut bytes = vec![0u8; len];
+        self.read_bytes(&mut bytes)?;
+        Ok(std::borrow::Cow::Owned(
+            bytes.into_iter().map(|byte| byte as i8).collect(),
+        ))
+    }
+}
 
 #[must_use]
 pub fn data_to_proto_sound(id_or: &IdOr<SoundEvent>) -> crate::IdOr<crate::SoundEvent> {
@@ -169,12 +232,26 @@ fn serialize_status_effects(
 fn deserialize_consume_effect(
     seq: &mut impl NetworkReadExt,
 ) -> Result<ConsumeEffect, ReadingError> {
+    const MAX_EFFECTS: usize = 256;
+
     let effect_type = seq.get_var_int()?.0;
     match effect_type {
         0 => {
+            // ApplyStatusEffectsConsumeEffect.STREAM_CODEC writes the list
+            // first and the probability second.  Reading the float before
+            // the list silently desynchronizes every consumable with effects.
+            let effects = deserialize_status_effects(seq)?;
+            if effects.len() > MAX_EFFECTS {
+                return Err(ReadingError::Message("Too many consume effects".into()));
+            }
             let probability = seq.get_f32()?;
+            if !probability.is_finite() || !(0.0..=1.0).contains(&probability) {
+                return Err(ReadingError::Message(
+                    "Consume effect probability must be finite and between 0 and 1".into(),
+                ));
+            }
             Ok(ConsumeEffect::ApplyEffects((
-                Cow::Owned(deserialize_status_effects(seq)?),
+                Cow::Owned(effects),
                 probability,
             )))
         }
@@ -219,6 +296,11 @@ fn serialize_consume_effect(
     seq.write_var_int(&VarInt(consume_effect.registry_id() as i32))?;
     match consume_effect {
         ConsumeEffect::ApplyEffects((effects, probability)) => {
+            if !probability.is_finite() || !(0.0..=1.0).contains(probability) {
+                return Err(WritingError::Message(
+                    "Consume effect probability must be finite and between 0 and 1".into(),
+                ));
+            }
             serialize_status_effects(&effects.to_vec(), seq)?;
             seq.write_f32(*probability)?;
         }
@@ -248,6 +330,20 @@ impl DataComponentCodec<Self> for MaxStackSizeImpl {
         let size = u8::try_from(seq.get_var_int()?.0)
             .map_err(|_| ReadingError::Message("No MaxStackSize VarInt!".into()))?;
         Ok(Self { size })
+    }
+}
+
+impl DataComponentCodec<Self> for MaxDamageImpl {
+    fn serialize(&self, seq: &mut impl NetworkWriteExt) -> Result<(), WritingError> {
+        seq.write_var_int(&VarInt::from(self.max_damage))
+    }
+
+    fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
+        let max_damage = seq.get_var_int()?.0;
+        if max_damage < 0 {
+            return Err(ReadingError::Message("MaxDamage cannot be negative".into()));
+        }
+        Ok(Self { max_damage })
     }
 }
 
@@ -303,6 +399,111 @@ impl DataComponentCodec<Self> for UnbreakableImpl {
     }
 }
 
+impl DataComponentCodec<Self> for PotionDurationScaleImpl {
+    fn serialize(&self, seq: &mut impl NetworkWriteExt) -> Result<(), WritingError> {
+        seq.write_f32(self.scale)
+    }
+
+    fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
+        let scale = seq.get_f32()?;
+        scale
+            .is_finite()
+            .then_some(Self { scale })
+            .ok_or_else(|| ReadingError::Message("Potion duration scale must be finite".into()))
+    }
+}
+
+impl DataComponentCodec<Self> for DyedColorImpl {
+    fn serialize(&self, seq: &mut impl NetworkWriteExt) -> Result<(), WritingError> {
+        seq.write_i32(self.rgb)
+    }
+
+    fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
+        Ok(Self {
+            rgb: seq.get_i32()?,
+        })
+    }
+}
+
+impl DataComponentCodec<Self> for OminousBottleAmplifierImpl {
+    fn serialize(&self, seq: &mut impl NetworkWriteExt) -> Result<(), WritingError> {
+        seq.write_var_int(&VarInt::from(self.amplifier))
+    }
+
+    fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
+        Ok(Self {
+            amplifier: seq.get_var_int()?.0,
+        })
+    }
+}
+
+macro_rules! codec_owned_string_field {
+    ($struct_name:ident, $field:ident) => {
+        impl DataComponentCodec<Self> for $struct_name {
+            fn serialize(&self, seq: &mut impl NetworkWriteExt) -> Result<(), WritingError> {
+                seq.write_string(&self.$field)
+            }
+
+            fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
+                Ok(Self {
+                    $field: seq.get_str()?.into(),
+                })
+            }
+        }
+    };
+}
+
+codec_owned_string_field!(TooltipStyleImpl, id);
+codec_owned_string_field!(NoteBlockSoundImpl, sound);
+codec_owned_string_field!(BaseColorImpl, color);
+
+macro_rules! codec_unit_component {
+    ($struct_name:ident) => {
+        impl DataComponentCodec<Self> for $struct_name {
+            fn serialize(&self, _seq: &mut impl NetworkWriteExt) -> Result<(), WritingError> {
+                Ok(())
+            }
+
+            fn deserialize(_seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
+                Ok(Self)
+            }
+        }
+    };
+}
+
+codec_unit_component!(DyeImpl);
+codec_unit_component!(IntangibleProjectileImpl);
+codec_unit_component!(GliderImpl);
+
+impl DataComponentCodec<Self> for UseEffectsImpl {
+    fn serialize(&self, seq: &mut impl NetworkWriteExt) -> Result<(), WritingError> {
+        seq.write_bool(self.can_sprint)?;
+        seq.write_bool(self.interact_vibrations)?;
+        if !self.speed_multiplier.is_finite() || !(0.0..=1.0).contains(&self.speed_multiplier) {
+            return Err(WritingError::Message(
+                "UseEffects speed_multiplier must be finite and between 0 and 1".into(),
+            ));
+        }
+        seq.write_f32(self.speed_multiplier)
+    }
+
+    fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
+        let can_sprint = seq.get_bool()?;
+        let interact_vibrations = seq.get_bool()?;
+        let speed_multiplier = seq.get_f32()?;
+        if !speed_multiplier.is_finite() || !(0.0..=1.0).contains(&speed_multiplier) {
+            return Err(ReadingError::Message(
+                "UseEffects speed_multiplier must be finite and between 0 and 1".into(),
+            ));
+        }
+        Ok(Self {
+            can_sprint,
+            interact_vibrations,
+            speed_multiplier,
+        })
+    }
+}
+
 impl DataComponentCodec<Self> for ItemModelImpl {
     fn serialize(&self, seq: &mut impl NetworkWriteExt) -> Result<(), WritingError> {
         seq.write_string(&self.id)
@@ -327,9 +528,30 @@ impl DataComponentCodec<Self> for CustomNameImpl {
     }
 
     fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
-        let name = seq.get_str()?;
+        // ComponentSerialization.STREAM_CODEC is backed by the Java NBT
+        // codec (not a length-prefixed UTF-8 string).  A literal component is
+        // encoded as an NBT String; structured components are compounds.  We
+        // retain the plain text portion because TextComponent is the runtime
+        // representation used by Pumpkin, while still consuming the entire
+        // wire tag so the enclosing component patch stays aligned.
+        let mut reader = NetworkNbtReader { reader: seq };
+        let mut nbt_reader = pumpkin_nbt::deserializer::NbtReadHelperJava::new(&mut reader);
+        let tag = NbtTag::deserialize(&mut nbt_reader).map_err(|error| {
+            ReadingError::Message(format!("Failed to decode CustomName component: {error}"))
+        })?;
+        let name = match tag {
+            NbtTag::String(name) => name.to_string(),
+            NbtTag::Compound(compound) => compound
+                .get_string("text")
+                .map_or_else(String::new, str::to_string),
+            _ => {
+                return Err(ReadingError::Message(
+                    "CustomName component must be a string or compound".into(),
+                ));
+            }
+        };
         Ok(Self {
-            name: pumpkin_util::text::TextComponent::text(String::from(name)),
+            name: pumpkin_util::text::TextComponent::text(name),
         })
     }
 }
@@ -344,10 +566,18 @@ impl DataComponentCodec<Self> for CustomDataImpl {
         Ok(())
     }
 
-    fn deserialize(_seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
-        Err(ReadingError::Message(
-            "CustomData raw component decoding is not supported; use the custom-data item-stack API".into(),
-        ))
+    fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
+        let mut reader = NetworkNbtReader { reader: seq };
+        let mut nbt_reader = pumpkin_nbt::deserializer::NbtReadHelperJava::new(&mut reader);
+        let tag = NbtTag::deserialize(&mut nbt_reader).map_err(|error| {
+            ReadingError::Message(format!("Failed to decode CustomData NBT: {error}"))
+        })?;
+        match tag {
+            NbtTag::Compound(data) => Ok(Self { data }),
+            _ => Err(ReadingError::Message(
+                "CustomData component must contain a compound tag".into(),
+            )),
+        }
     }
 }
 
@@ -374,6 +604,8 @@ impl DataComponentCodec<Self> for ConsumableImpl {
     }
 
     fn deserialize(seq: &mut impl NetworkReadExt) -> Result<Self, ReadingError> {
+        const MAX_CONSUME_EFFECTS: usize = 256;
+
         let consume_seconds = seq.get_f32()?;
         let animation_id = seq.get_var_int()?;
 
@@ -392,7 +624,14 @@ impl DataComponentCodec<Self> for ConsumableImpl {
             "Invalid sound in ConsumableImpl".into(),
         ))?;
         let effects_len = seq.get_var_int()?.0;
-        let mut effects_vec = Vec::with_capacity(effects_len as usize);
+        let effects_len = usize::try_from(effects_len)
+            .map_err(|_| ReadingError::Message("Negative consume effect count".into()))?;
+        if effects_len > MAX_CONSUME_EFFECTS {
+            return Err(ReadingError::Message(
+                "Too many consume effects in Consumable component".into(),
+            ));
+        }
+        let mut effects_vec = Vec::with_capacity(effects_len);
 
         for _ in 0..effects_len {
             effects_vec.push(deserialize_consume_effect(seq)?);
@@ -760,16 +999,31 @@ pub fn deserialize(
 ) -> Result<Box<dyn DataComponentImpl>, ReadingError> {
     match id {
         DataComponent::MaxStackSize => Ok(MaxStackSizeImpl::deserialize(seq)?.to_dyn()),
-        DataComponent::CustomData => Err(ReadingError::Message(
-            "CustomData raw component decoding is not supported; use the custom-data item-stack API".into(),
-        )),
+        DataComponent::MaxDamage => Ok(MaxDamageImpl::deserialize(seq)?.to_dyn()),
+        DataComponent::CustomData => Ok(CustomDataImpl::deserialize(seq)?.to_dyn()),
         DataComponent::Enchantments => Ok(EnchantmentsImpl::deserialize(seq)?.to_dyn()),
         DataComponent::Damage => Ok(DamageImpl::deserialize(seq)?.to_dyn()),
         DataComponent::Unbreakable => Ok(UnbreakableImpl::deserialize(seq)?.to_dyn()),
+        DataComponent::UseEffects => Ok(UseEffectsImpl::deserialize(seq)?.to_dyn()),
+        DataComponent::PotionDurationScale => {
+            Ok(PotionDurationScaleImpl::deserialize(seq)?.to_dyn())
+        }
         DataComponent::PotionContents => Ok(PotionContentsImpl::deserialize(seq)?.to_dyn()),
         DataComponent::FireworkExplosion => Ok(FireworkExplosionImpl::deserialize(seq)?.to_dyn()),
         DataComponent::Fireworks => Ok(FireworksImpl::deserialize(seq)?.to_dyn()),
         DataComponent::ItemModel => Ok(ItemModelImpl::deserialize(seq)?.to_dyn()),
+        DataComponent::TooltipStyle => Ok(TooltipStyleImpl::deserialize(seq)?.to_dyn()),
+        DataComponent::NoteBlockSound => Ok(NoteBlockSoundImpl::deserialize(seq)?.to_dyn()),
+        DataComponent::BaseColor => Ok(BaseColorImpl::deserialize(seq)?.to_dyn()),
+        DataComponent::DyedColor => Ok(DyedColorImpl::deserialize(seq)?.to_dyn()),
+        DataComponent::Dye => Ok(DyeImpl::deserialize(seq)?.to_dyn()),
+        DataComponent::OminousBottleAmplifier => {
+            Ok(OminousBottleAmplifierImpl::deserialize(seq)?.to_dyn())
+        }
+        DataComponent::IntangibleProjectile => {
+            Ok(IntangibleProjectileImpl::deserialize(seq)?.to_dyn())
+        }
+        DataComponent::Glider => Ok(GliderImpl::deserialize(seq)?.to_dyn()),
         DataComponent::CustomName => Ok(CustomNameImpl::deserialize(seq)?.to_dyn()),
         DataComponent::Consumable => Ok(ConsumableImpl::deserialize(seq)?.to_dyn()),
         DataComponent::Equippable => Ok(EquippableImpl::deserialize(seq)?.to_dyn()),
@@ -777,7 +1031,49 @@ pub fn deserialize(
         DataComponent::UseCooldown => Ok(UseCooldownImpl::deserialize(seq)?.to_dyn()),
         DataComponent::MapId => Ok(MapIdImpl::deserialize(seq)?.to_dyn()),
         DataComponent::BundleContents => Ok(BundleContentsImpl::deserialize(seq)?.to_dyn()),
-        _ => Err(ReadingError::Message(format!("component_id_{} (TODO)", id.to_id()))),
+        DataComponent::VillagerVariant => Ok(VillagerVariantImpl::deserialize(seq)?.to_dyn()),
+        DataComponent::WolfVariant => Ok(WolfVariantImpl::deserialize(seq)?.to_dyn()),
+        DataComponent::WolfSoundVariant => Ok(WolfSoundVariantImpl::deserialize(seq)?.to_dyn()),
+        DataComponent::WolfCollar => Ok(WolfCollarImpl::deserialize(seq)?.to_dyn()),
+        DataComponent::FoxVariant => Ok(FoxVariantImpl::deserialize(seq)?.to_dyn()),
+        DataComponent::SalmonSize => Ok(SalmonSizeImpl::deserialize(seq)?.to_dyn()),
+        DataComponent::ParrotVariant => Ok(ParrotVariantImpl::deserialize(seq)?.to_dyn()),
+        DataComponent::TropicalFishPattern => {
+            Ok(TropicalFishPatternImpl::deserialize(seq)?.to_dyn())
+        }
+        DataComponent::TropicalFishBaseColor => {
+            Ok(TropicalFishBaseColorImpl::deserialize(seq)?.to_dyn())
+        }
+        DataComponent::TropicalFishPatternColor => {
+            Ok(TropicalFishPatternColorImpl::deserialize(seq)?.to_dyn())
+        }
+        DataComponent::MooshroomVariant => Ok(MooshroomVariantImpl::deserialize(seq)?.to_dyn()),
+        DataComponent::RabbitVariant => Ok(RabbitVariantImpl::deserialize(seq)?.to_dyn()),
+        DataComponent::PigVariant => Ok(PigVariantImpl::deserialize(seq)?.to_dyn()),
+        DataComponent::PigSoundVariant => Ok(PigSoundVariantImpl::deserialize(seq)?.to_dyn()),
+        DataComponent::CowVariant => Ok(CowVariantImpl::deserialize(seq)?.to_dyn()),
+        DataComponent::CowSoundVariant => Ok(CowSoundVariantImpl::deserialize(seq)?.to_dyn()),
+        DataComponent::ChickenVariant => Ok(ChickenVariantImpl::deserialize(seq)?.to_dyn()),
+        DataComponent::ChickenSoundVariant => {
+            Ok(ChickenSoundVariantImpl::deserialize(seq)?.to_dyn())
+        }
+        DataComponent::ZombieNautilusVariant => {
+            Ok(ZombieNautilusVariantImpl::deserialize(seq)?.to_dyn())
+        }
+        DataComponent::FrogVariant => Ok(FrogVariantImpl::deserialize(seq)?.to_dyn()),
+        DataComponent::HorseVariant => Ok(HorseVariantImpl::deserialize(seq)?.to_dyn()),
+        DataComponent::PaintingVariant => Ok(PaintingVariantImpl::deserialize(seq)?.to_dyn()),
+        DataComponent::LlamaVariant => Ok(LlamaVariantImpl::deserialize(seq)?.to_dyn()),
+        DataComponent::AxolotlVariant => Ok(AxolotlVariantImpl::deserialize(seq)?.to_dyn()),
+        DataComponent::CatVariant => Ok(CatVariantImpl::deserialize(seq)?.to_dyn()),
+        DataComponent::CatSoundVariant => Ok(CatSoundVariantImpl::deserialize(seq)?.to_dyn()),
+        DataComponent::CatCollar => Ok(CatCollarImpl::deserialize(seq)?.to_dyn()),
+        DataComponent::SheepColor => Ok(SheepColorImpl::deserialize(seq)?.to_dyn()),
+        DataComponent::ShulkerColor => Ok(ShulkerColorImpl::deserialize(seq)?.to_dyn()),
+        _ => Err(ReadingError::Message(format!(
+            "component_id_{} (TODO)",
+            id.to_id()
+        ))),
     }
 }
 pub fn serialize(
@@ -787,14 +1083,29 @@ pub fn serialize(
 ) -> Result<(), WritingError> {
     match id {
         DataComponent::MaxStackSize => get::<MaxStackSizeImpl>(value).serialize(seq),
+        DataComponent::MaxDamage => get::<MaxDamageImpl>(value).serialize(seq),
         DataComponent::CustomData => get::<CustomDataImpl>(value).serialize(seq),
         DataComponent::Enchantments => get::<EnchantmentsImpl>(value).serialize(seq),
         DataComponent::Damage => get::<DamageImpl>(value).serialize(seq),
         DataComponent::Unbreakable => get::<UnbreakableImpl>(value).serialize(seq),
+        DataComponent::UseEffects => get::<UseEffectsImpl>(value).serialize(seq),
+        DataComponent::PotionDurationScale => get::<PotionDurationScaleImpl>(value).serialize(seq),
         DataComponent::PotionContents => get::<PotionContentsImpl>(value).serialize(seq),
         DataComponent::FireworkExplosion => get::<FireworkExplosionImpl>(value).serialize(seq),
         DataComponent::Fireworks => get::<FireworksImpl>(value).serialize(seq),
         DataComponent::ItemModel => get::<ItemModelImpl>(value).serialize(seq),
+        DataComponent::TooltipStyle => get::<TooltipStyleImpl>(value).serialize(seq),
+        DataComponent::NoteBlockSound => get::<NoteBlockSoundImpl>(value).serialize(seq),
+        DataComponent::BaseColor => get::<BaseColorImpl>(value).serialize(seq),
+        DataComponent::DyedColor => get::<DyedColorImpl>(value).serialize(seq),
+        DataComponent::Dye => get::<DyeImpl>(value).serialize(seq),
+        DataComponent::OminousBottleAmplifier => {
+            get::<OminousBottleAmplifierImpl>(value).serialize(seq)
+        }
+        DataComponent::IntangibleProjectile => {
+            get::<IntangibleProjectileImpl>(value).serialize(seq)
+        }
+        DataComponent::Glider => get::<GliderImpl>(value).serialize(seq),
         DataComponent::CustomName => get::<CustomNameImpl>(value).serialize(seq),
         DataComponent::Consumable => get::<ConsumableImpl>(value).serialize(seq),
         DataComponent::Equippable => get::<EquippableImpl>(value).serialize(seq),
@@ -802,6 +1113,41 @@ pub fn serialize(
         DataComponent::UseCooldown => get::<UseCooldownImpl>(value).serialize(seq),
         DataComponent::MapId => get::<MapIdImpl>(value).serialize(seq),
         DataComponent::BundleContents => get::<BundleContentsImpl>(value).serialize(seq),
+        DataComponent::VillagerVariant => get::<VillagerVariantImpl>(value).serialize(seq),
+        DataComponent::WolfVariant => get::<WolfVariantImpl>(value).serialize(seq),
+        DataComponent::WolfSoundVariant => get::<WolfSoundVariantImpl>(value).serialize(seq),
+        DataComponent::WolfCollar => get::<WolfCollarImpl>(value).serialize(seq),
+        DataComponent::FoxVariant => get::<FoxVariantImpl>(value).serialize(seq),
+        DataComponent::SalmonSize => get::<SalmonSizeImpl>(value).serialize(seq),
+        DataComponent::ParrotVariant => get::<ParrotVariantImpl>(value).serialize(seq),
+        DataComponent::TropicalFishPattern => get::<TropicalFishPatternImpl>(value).serialize(seq),
+        DataComponent::TropicalFishBaseColor => {
+            get::<TropicalFishBaseColorImpl>(value).serialize(seq)
+        }
+        DataComponent::TropicalFishPatternColor => {
+            get::<TropicalFishPatternColorImpl>(value).serialize(seq)
+        }
+        DataComponent::MooshroomVariant => get::<MooshroomVariantImpl>(value).serialize(seq),
+        DataComponent::RabbitVariant => get::<RabbitVariantImpl>(value).serialize(seq),
+        DataComponent::PigVariant => get::<PigVariantImpl>(value).serialize(seq),
+        DataComponent::PigSoundVariant => get::<PigSoundVariantImpl>(value).serialize(seq),
+        DataComponent::CowVariant => get::<CowVariantImpl>(value).serialize(seq),
+        DataComponent::CowSoundVariant => get::<CowSoundVariantImpl>(value).serialize(seq),
+        DataComponent::ChickenVariant => get::<ChickenVariantImpl>(value).serialize(seq),
+        DataComponent::ChickenSoundVariant => get::<ChickenSoundVariantImpl>(value).serialize(seq),
+        DataComponent::ZombieNautilusVariant => {
+            get::<ZombieNautilusVariantImpl>(value).serialize(seq)
+        }
+        DataComponent::FrogVariant => get::<FrogVariantImpl>(value).serialize(seq),
+        DataComponent::HorseVariant => get::<HorseVariantImpl>(value).serialize(seq),
+        DataComponent::PaintingVariant => get::<PaintingVariantImpl>(value).serialize(seq),
+        DataComponent::LlamaVariant => get::<LlamaVariantImpl>(value).serialize(seq),
+        DataComponent::AxolotlVariant => get::<AxolotlVariantImpl>(value).serialize(seq),
+        DataComponent::CatVariant => get::<CatVariantImpl>(value).serialize(seq),
+        DataComponent::CatSoundVariant => get::<CatSoundVariantImpl>(value).serialize(seq),
+        DataComponent::CatCollar => get::<CatCollarImpl>(value).serialize(seq),
+        DataComponent::SheepColor => get::<SheepColorImpl>(value).serialize(seq),
+        DataComponent::ShulkerColor => get::<ShulkerColorImpl>(value).serialize(seq),
         _ => Err(WritingError::Message(format!(
             "{} not yet implemented",
             id.to_name()
@@ -849,9 +1195,13 @@ fn deserialize_item_stack_template(
 ) -> Result<pumpkin_data::item_stack::ItemStack, ReadingError> {
     const MAX_COMPONENTS: i32 = 256;
 
-    let item_id = seq.get_var_int()?.0 as u16;
+    let item_id = seq.get_var_int()?.0;
+    let item_id = u16::try_from(item_id)
+        .map_err(|_| ReadingError::Message("Invalid item id in ItemStackTemplate".into()))?;
 
-    let count = seq.get_var_int()?.0 as u8;
+    let count = seq.get_var_int()?.0;
+    let count = u8::try_from(count)
+        .map_err(|_| ReadingError::Message("Invalid item count in ItemStackTemplate".into()))?;
 
     let num_to_add = seq.get_var_int()?.0;
     let num_to_remove = seq.get_var_int()?.0;
@@ -874,10 +1224,10 @@ fn deserialize_item_stack_template(
 
     for _ in 0..num_to_add {
         let id_val = seq.get_var_int()?.0;
-        let id = DataComponent::try_from_id(id_val as u8)
+        let id_u8 = u8::try_from(id_val)
+            .map_err(|_| ReadingError::Message(format!("Invalid component ID: {id_val}")))?;
+        let id = DataComponent::try_from_id(id_u8)
             .ok_or_else(|| ReadingError::Message(format!("Unknown component ID: {id_val}")))?;
-
-        let _byte_len = seq.get_var_int()?;
 
         let component_impl = deserialize(id, seq)?;
         patch.push((id, Some(component_impl)));
@@ -885,7 +1235,9 @@ fn deserialize_item_stack_template(
 
     for _ in 0..num_to_remove {
         let id_val = seq.get_var_int()?.0;
-        let id = DataComponent::try_from_id(id_val as u8)
+        let id_u8 = u8::try_from(id_val)
+            .map_err(|_| ReadingError::Message(format!("Invalid component ID: {id_val}")))?;
+        let id = DataComponent::try_from_id(id_u8)
             .ok_or_else(|| ReadingError::Message("Unknown component ID".into()))?;
         patch.push((id, None));
     }
@@ -1006,3 +1358,189 @@ codec_string_variant!(CatSoundVariantImpl);
 codec_string_variant!(CatCollarImpl);
 codec_string_variant!(SheepColorImpl);
 codec_string_variant!(ShulkerColorImpl);
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        DataComponent, MaxDamageImpl, deserialize, deserialize_consume_effect, serialize,
+        serialize_consume_effect,
+    };
+    use crate::codec::var_int::VarInt;
+    use pumpkin_data::data_component_impl::{
+        BundleContentsImpl, ConsumeEffect, CustomDataImpl, CustomNameImpl, DataComponentImpl,
+        SalmonSizeImpl, StatusEffectInstance, UseEffectsImpl,
+    };
+    use pumpkin_data::effect::StatusEffect;
+    use pumpkin_data::item::Item;
+    use pumpkin_data::item_stack::ItemStack;
+    use pumpkin_nbt::compound::NbtCompound;
+    use pumpkin_util::text::TextComponent;
+    use std::borrow::Cow;
+    #[test]
+    fn max_damage_component_round_trips_as_varint() {
+        let original = MaxDamageImpl { max_damage: 2_031 };
+        let mut bytes = Vec::new();
+        serialize(DataComponent::MaxDamage, &original, &mut bytes).expect("encode max damage");
+        let mut cursor = std::io::Cursor::new(bytes);
+        let decoded =
+            deserialize(DataComponent::MaxDamage, &mut cursor).expect("decode max damage");
+        let decoded = decoded
+            .as_any()
+            .downcast_ref::<MaxDamageImpl>()
+            .expect("max damage implementation");
+        assert_eq!(decoded.max_damage, original.max_damage);
+    }
+
+    #[test]
+    fn max_damage_component_rejects_negative_values() {
+        let mut cursor = std::io::Cursor::new(vec![0xff, 0xff, 0xff, 0xff, 0x0f]);
+        assert!(deserialize(DataComponent::MaxDamage, &mut cursor).is_err());
+    }
+
+    #[test]
+    fn use_effects_component_round_trips_all_fields() {
+        let original = UseEffectsImpl {
+            can_sprint: true,
+            interact_vibrations: false,
+            speed_multiplier: 0.75,
+        };
+        let mut bytes = Vec::new();
+        serialize(DataComponent::UseEffects, &original, &mut bytes).expect("encode use effects");
+        let mut cursor = std::io::Cursor::new(bytes);
+        let decoded = deserialize(DataComponent::UseEffects, &mut cursor)
+            .expect("decode use effects")
+            .as_any()
+            .downcast_ref::<UseEffectsImpl>()
+            .expect("use effects implementation")
+            .clone();
+        assert_eq!(decoded, original);
+    }
+
+    #[test]
+    fn use_effects_component_rejects_invalid_speed() {
+        let mut bytes = vec![1, 1];
+        bytes.extend_from_slice(&2.0f32.to_be_bytes());
+        let mut cursor = std::io::Cursor::new(bytes);
+        assert!(deserialize(DataComponent::UseEffects, &mut cursor).is_err());
+    }
+
+    #[test]
+    fn entity_variant_components_round_trip_as_namespaced_strings() {
+        let original = SalmonSizeImpl {
+            value: Cow::Borrowed("large"),
+        };
+        let mut bytes = Vec::new();
+        serialize(DataComponent::SalmonSize, &original, &mut bytes).expect("encode salmon size");
+        let mut cursor = std::io::Cursor::new(bytes);
+        let decoded_dyn =
+            deserialize(DataComponent::SalmonSize, &mut cursor).expect("decode salmon size");
+        let decoded = decoded_dyn
+            .as_any()
+            .downcast_ref::<SalmonSizeImpl>()
+            .expect("salmon size implementation");
+        assert_eq!(decoded, &original);
+    }
+
+    #[test]
+    fn custom_data_component_round_trips_compound_nbt() {
+        let mut data = NbtCompound::new();
+        data.put_int("EntityTag", 42);
+        data.put_string("Name", "Кузнец 🛠".to_string());
+        let original = CustomDataImpl { data };
+        let mut bytes = Vec::new();
+        serialize(DataComponent::CustomData, &original, &mut bytes).expect("encode custom data");
+        let mut cursor = std::io::Cursor::new(bytes);
+        let decoded_dyn =
+            deserialize(DataComponent::CustomData, &mut cursor).expect("decode custom data");
+        let decoded = decoded_dyn
+            .as_any()
+            .downcast_ref::<CustomDataImpl>()
+            .expect("custom data implementation");
+        assert_eq!(decoded, &original);
+    }
+
+    #[test]
+    fn custom_name_component_uses_the_java_nbt_stream_codec() {
+        let original = CustomNameImpl {
+            name: TextComponent::text("Кузнец 🛠"),
+        };
+        let mut bytes = Vec::new();
+        serialize(DataComponent::CustomName, &original, &mut bytes).expect("encode custom name");
+        let mut cursor = std::io::Cursor::new(bytes);
+        let decoded_dyn =
+            deserialize(DataComponent::CustomName, &mut cursor).expect("decode custom name");
+        let decoded = decoded_dyn
+            .as_any()
+            .downcast_ref::<CustomNameImpl>()
+            .expect("custom name implementation");
+        assert_eq!(
+            decoded.name.clone().get_text(),
+            original.name.clone().get_text()
+        );
+    }
+
+    #[test]
+    fn apply_effects_consume_codec_reads_effects_before_probability() {
+        let effect = ConsumeEffect::ApplyEffects((
+            Cow::Owned(vec![StatusEffectInstance {
+                effect_id: Cow::Borrowed(StatusEffect::SPEED.minecraft_name),
+                amplifier: 2,
+                duration: 200,
+                ambient: false,
+                show_particles: true,
+                show_icon: true,
+            }]),
+            0.5,
+        ));
+        let mut bytes = Vec::new();
+        serialize_consume_effect(&effect, &mut bytes).expect("encode apply effects");
+        let mut cursor = std::io::Cursor::new(bytes);
+        let decoded = deserialize_consume_effect(&mut cursor).expect("decode apply effects");
+        assert_eq!(decoded, effect);
+    }
+
+    #[test]
+    fn consumable_rejects_negative_effect_count_without_allocating() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&1.0f32.to_be_bytes()); // consume seconds
+        VarInt(0).encode(&mut bytes).expect("encode animation");
+        VarInt(1)
+            .encode(&mut bytes)
+            .expect("encode generic eat sound");
+        bytes.push(1); // consume particles
+        VarInt(-1)
+            .encode(&mut bytes)
+            .expect("encode malformed effect count");
+        assert!(deserialize(DataComponent::Consumable, &mut std::io::Cursor::new(bytes)).is_err());
+    }
+
+    #[test]
+    fn bundle_contents_use_the_unprefixed_component_stream_codec() {
+        let item = ItemStack::new_with_component(
+            1,
+            &Item::DIAMOND_SWORD,
+            vec![(
+                DataComponent::MaxDamage,
+                Some(MaxDamageImpl { max_damage: 2_031 }.to_dyn()),
+            )],
+        );
+        let original = BundleContentsImpl { items: vec![item] };
+        let mut bytes = Vec::new();
+        serialize(DataComponent::BundleContents, &original, &mut bytes)
+            .expect("encode bundle contents");
+        let mut cursor = std::io::Cursor::new(bytes);
+        let decoded_dyn = deserialize(DataComponent::BundleContents, &mut cursor)
+            .expect("decode bundle contents");
+        let decoded = decoded_dyn
+            .as_any()
+            .downcast_ref::<BundleContentsImpl>()
+            .expect("bundle contents implementation");
+        assert_eq!(decoded.items.len(), 1);
+        assert_eq!(
+            decoded.items[0]
+                .get_data_component::<MaxDamageImpl>()
+                .map(|component| component.max_damage),
+            Some(2_031)
+        );
+    }
+}

@@ -5,6 +5,7 @@ use pumpkin_data::Block;
 use pumpkin_data::BlockDirection;
 use pumpkin_data::item::Item;
 use pumpkin_data::item_stack::ItemStack;
+use pumpkin_util::Hand;
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector3::Vector3;
 use rustc_hash::FxHashMap;
@@ -27,6 +28,16 @@ impl ItemRegistry {
     }
 
     pub async fn on_use(&self, stack: &ItemStack, player: &Player) {
+        // The legacy entry point is used by Bedrock's main-hand interaction
+        // path. Route it through the hand-aware variant so behaviours that
+        // depend on the authoritative stack (mob-bucket custom NBT, firework
+        // payloads, durability) do not lose components when the caller only
+        // supplies the item definition.
+        self.on_use_with_hand(stack, player, Some(Hand::Right))
+            .await;
+    }
+
+    pub async fn on_use_with_hand(&self, stack: &ItemStack, player: &Player, hand: Option<Hand>) {
         let item = stack.item;
         let cooldown = stack.get_use_cooldown();
         let cooldown_group = cooldown
@@ -39,7 +50,11 @@ impl ItemRegistry {
 
         let pumpkin_item = self.get_pumpkin_item(item.id);
         if let Some(pumpkin_item) = pumpkin_item {
-            pumpkin_item.normal_use(item, player).await;
+            if let Some(hand) = hand {
+                pumpkin_item.normal_use_with_hand(item, player, hand).await;
+            } else {
+                pumpkin_item.normal_use(item, player).await;
+            }
         }
 
         if let Some(cooldown) = cooldown {

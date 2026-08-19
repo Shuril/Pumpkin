@@ -76,11 +76,22 @@ impl Goal for CreeperIgniteGoal {
                 .load()
                 .squared_distance_to_vec(&target.get_entity().pos.load());
 
-            if dist_sq > 49.0 {
+            let world = mob.get_entity().world.load();
+            let can_see = world
+                .raycast(
+                    mob.get_entity().get_eye_pos(),
+                    target.get_eye_pos(),
+                    async |block_pos, world_ref| {
+                        let state = world_ref.get_block_state(block_pos);
+                        !state.is_air() && !state.collision_shapes.is_empty()
+                    },
+                )
+                .await
+                .is_none();
+
+            if dist_sq > 49.0 || !can_see {
                 self.creeper.set_fuse_speed(-1);
-            }
-            // TODO: line of sight check (needs world raycast)
-            else {
+            } else {
                 self.creeper.set_fuse_speed(1);
             }
         })

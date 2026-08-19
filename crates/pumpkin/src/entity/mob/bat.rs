@@ -2,11 +2,14 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering::Relaxed};
 
 use pumpkin_data::damage::DamageType;
+use pumpkin_data::meta_data_type::MetaDataType;
 use pumpkin_data::sound::Sound;
 use pumpkin_data::tag::{self, Taggable};
+use pumpkin_data::tracked_data::TrackedData;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector3::Vector3;
+use pumpkin_util::random::{RandomGenerator, RandomImpl};
 use pumpkin_world::chunk::ChunkHeightmapType;
 use rand::RngExt;
 use tokio::sync::Mutex;
@@ -14,6 +17,7 @@ use tokio::sync::Mutex;
 use crate::entity::mob::{Mob, MobEntity};
 use crate::entity::{Entity, EntityBase, EntityBaseFuture, NBTStorage, NbtFuture};
 use crate::world::World;
+use pumpkin_protocol::java::client::play::Metadata;
 
 const ROOSTING_FLAG: u8 = 1;
 const CLOSE_PLAYER_DISTANCE: f64 = 4.0;
@@ -38,24 +42,32 @@ impl BatEntity {
         };
         let mob_arc = Arc::new(bat);
 
-        Self::set_roosting_metadata(true);
+        mob_arc.set_roosting_metadata(true);
 
         mob_arc
     }
 
-    pub fn check_bat_spawn_rules(world: &World, pos: &BlockPos) -> bool {
+    pub fn check_bat_spawn_rules(
+        world: &World,
+        pos: &BlockPos,
+        random: &mut RandomGenerator,
+    ) -> bool {
         if pos.0.y >= world.get_heightmap_height(ChunkHeightmapType::WorldSurface, pos.0.x, pos.0.z)
         {
             return false;
         }
-        if rand::random_bool(1.0) {
+        // Vanilla rejects half of the candidate positions with
+        // `RandomSource.nextBoolean()`.  Passing 1.0 here made the
+        // probability test always succeed and therefore disabled bat
+        // spawning completely.
+        if random.next_bool() {
             return false;
         }
-        if world.get_max_local_raw_brightness(pos) > rand::random_range(0..4) {
+        if world.get_max_local_raw_brightness(pos) > random.next_bounded_i32(4) as u8 {
             return false;
         }
-        if world
-            .get_block(pos)
+        if !world
+            .get_block(&pos.down())
             .has_tag(&tag::Block::MINECRAFT_BATS_SPAWNABLE_ON)
         {
             return false;
@@ -70,21 +82,19 @@ impl BatEntity {
 
     fn set_roosting(&self, roosting: bool) {
         self.roosting.store(roosting, Relaxed);
-        Self::set_roosting_metadata(roosting);
+        self.set_roosting_metadata(roosting);
     }
 
-    const fn set_roosting_metadata(_roosting: bool) {
-        // TODO
-        // let flags: u8 = if roosting { ROOSTING_FLAG } else { 0 };
-        // self.mob_entity
-        //     .living_entity
-        //     .entity
-        //     .send_meta_data(&[Metadata::new(
-        //         TrackedData::ID_FLAGS,
-        //         MetaDataType::BYTE,
-        //         flags,
-        //     )])
-        //     .await;
+    fn set_roosting_metadata(&self, roosting: bool) {
+        let flags: u8 = if roosting { ROOSTING_FLAG } else { 0 };
+        self.mob_entity.living_entity.entity.send_meta_data(
+            &[Metadata::new(
+                TrackedData::ID_FLAGS,
+                MetaDataType::BYTE,
+                flags,
+            )],
+            None,
+        );
     }
 }
 

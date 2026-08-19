@@ -5,6 +5,7 @@ use serde::Serialize;
 #[derive(Clone, Debug, Serialize)]
 pub enum CraftingRecipeTypes {
     CraftingShaped {
+        recipe_id: &'static str,
         category: RecipeCategoryTypes,
         group: Option<&'static str>,
         show_notification: bool,
@@ -13,19 +14,25 @@ pub enum CraftingRecipeTypes {
         result: RecipeResultStruct,
     },
     CraftingShapeless {
+        recipe_id: &'static str,
         category: RecipeCategoryTypes,
         group: Option<&'static str>,
         ingredients: &'static [RecipeIngredientTypes],
         result: RecipeResultStruct,
     },
     CraftingTransmute {
+        recipe_id: &'static str,
         category: RecipeCategoryTypes,
         group: Option<&'static str>,
         input: RecipeIngredientTypes,
         material: RecipeIngredientTypes,
+        material_count_min: u8,
+        material_count_max: u8,
+        add_material_count_to_result: bool,
         result: RecipeResultStruct,
     },
     CraftingDecoratedPot {
+        recipe_id: &'static str,
         category: RecipeCategoryTypes,
     },
     CraftingSpecial,
@@ -133,6 +140,7 @@ pub enum RecipeCategoryTypes {
 }
 pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:acacia_boat",
         category: RecipeCategoryTypes::Misc,
         group: Some("boat"),
         show_notification: true,
@@ -147,6 +155,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:acacia_button",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_button"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:acacia_planks")],
@@ -156,6 +165,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:acacia_chest_boat",
         category: RecipeCategoryTypes::Misc,
         group: Some("chest_boat"),
         ingredients: &[
@@ -168,6 +178,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:acacia_door",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_door"),
         show_notification: true,
@@ -182,6 +193,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:acacia_fence",
         category: RecipeCategoryTypes::Misc,
         group: Some("wooden_fence"),
         show_notification: true,
@@ -199,6 +211,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:acacia_fence_gate",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_fence_gate"),
         show_notification: true,
@@ -216,6 +229,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:acacia_hanging_sign",
         category: RecipeCategoryTypes::Misc,
         group: Some("wooden_hanging_sign"),
         show_notification: true,
@@ -233,6 +247,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:acacia_planks",
         category: RecipeCategoryTypes::Building,
         group: Some("planks"),
         ingredients: &[RecipeIngredientTypes::OneOf(&[
@@ -247,6 +262,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:acacia_pressure_plate",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_pressure_plate"),
         show_notification: true,
@@ -261,6 +277,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:acacia_shelf",
         category: RecipeCategoryTypes::Misc,
         group: Some("shelf"),
         show_notification: true,
@@ -275,6 +292,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:acacia_sign",
         category: RecipeCategoryTypes::Misc,
         group: Some("wooden_sign"),
         show_notification: true,
@@ -292,6 +310,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:acacia_slab",
         category: RecipeCategoryTypes::Building,
         group: Some("wooden_slab"),
         show_notification: true,
@@ -306,6 +325,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:acacia_stairs",
         category: RecipeCategoryTypes::Building,
         group: Some("wooden_stairs"),
         show_notification: true,
@@ -320,6 +340,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:acacia_trapdoor",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_trapdoor"),
         show_notification: true,
@@ -334,6 +355,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:acacia_wood",
         category: RecipeCategoryTypes::Building,
         group: Some("bark"),
         show_notification: true,
@@ -345,6 +367,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:activator_rail",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -363,6 +386,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:amethyst_block",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -377,6 +401,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:andesite",
         category: RecipeCategoryTypes::Building,
         group: None,
         ingredients: &[
@@ -389,6 +414,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:andesite_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -400,6 +426,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:andesite_stairs",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -411,6 +438,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:andesite_wall",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -422,6 +450,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:anvil",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -436,6 +465,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:armor_stand",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -453,6 +483,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:arrow",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -468,6 +499,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:bamboo_block",
         category: RecipeCategoryTypes::Building,
         group: None,
         ingredients: &[
@@ -487,6 +519,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:bamboo_button",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_button"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:bamboo_planks")],
@@ -496,6 +529,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:bamboo_chest_raft",
         category: RecipeCategoryTypes::Misc,
         group: Some("chest_boat"),
         ingredients: &[
@@ -508,6 +542,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:bamboo_door",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_door"),
         show_notification: true,
@@ -522,6 +557,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:bamboo_fence",
         category: RecipeCategoryTypes::Misc,
         group: Some("wooden_fence"),
         show_notification: true,
@@ -539,6 +575,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:bamboo_fence_gate",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_fence_gate"),
         show_notification: true,
@@ -556,6 +593,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:bamboo_hanging_sign",
         category: RecipeCategoryTypes::Misc,
         group: Some("wooden_hanging_sign"),
         show_notification: true,
@@ -573,6 +611,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:bamboo_mosaic",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -584,6 +623,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:bamboo_mosaic_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -598,6 +638,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:bamboo_mosaic_stairs",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -612,6 +653,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:bamboo_planks",
         category: RecipeCategoryTypes::Building,
         group: Some("planks"),
         ingredients: &[RecipeIngredientTypes::OneOf(&[
@@ -624,6 +666,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:bamboo_pressure_plate",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_pressure_plate"),
         show_notification: true,
@@ -638,6 +681,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:bamboo_raft",
         category: RecipeCategoryTypes::Misc,
         group: Some("boat"),
         show_notification: true,
@@ -652,6 +696,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:bamboo_shelf",
         category: RecipeCategoryTypes::Misc,
         group: Some("shelf"),
         show_notification: true,
@@ -666,6 +711,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:bamboo_sign",
         category: RecipeCategoryTypes::Misc,
         group: Some("wooden_sign"),
         show_notification: true,
@@ -683,6 +729,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:bamboo_slab",
         category: RecipeCategoryTypes::Building,
         group: Some("wooden_slab"),
         show_notification: true,
@@ -697,6 +744,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:bamboo_stairs",
         category: RecipeCategoryTypes::Building,
         group: Some("wooden_stairs"),
         show_notification: true,
@@ -711,6 +759,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:bamboo_trapdoor",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_trapdoor"),
         show_notification: true,
@@ -725,6 +774,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:barrel",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -771,6 +821,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:beacon",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -786,6 +837,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:beehive",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -816,6 +868,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:beetroot_soup",
         category: RecipeCategoryTypes::Misc,
         group: None,
         ingredients: &[
@@ -833,6 +886,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:birch_boat",
         category: RecipeCategoryTypes::Misc,
         group: Some("boat"),
         show_notification: true,
@@ -844,6 +898,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:birch_button",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_button"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:birch_planks")],
@@ -853,6 +908,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:birch_chest_boat",
         category: RecipeCategoryTypes::Misc,
         group: Some("chest_boat"),
         ingredients: &[
@@ -865,6 +921,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:birch_door",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_door"),
         show_notification: true,
@@ -876,6 +933,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:birch_fence",
         category: RecipeCategoryTypes::Misc,
         group: Some("wooden_fence"),
         show_notification: true,
@@ -890,6 +948,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:birch_fence_gate",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_fence_gate"),
         show_notification: true,
@@ -904,6 +963,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:birch_hanging_sign",
         category: RecipeCategoryTypes::Misc,
         group: Some("wooden_hanging_sign"),
         show_notification: true,
@@ -921,6 +981,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:birch_planks",
         category: RecipeCategoryTypes::Building,
         group: Some("planks"),
         ingredients: &[RecipeIngredientTypes::OneOf(&[
@@ -935,6 +996,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:birch_pressure_plate",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_pressure_plate"),
         show_notification: true,
@@ -946,6 +1008,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:birch_shelf",
         category: RecipeCategoryTypes::Misc,
         group: Some("shelf"),
         show_notification: true,
@@ -960,6 +1023,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:birch_sign",
         category: RecipeCategoryTypes::Misc,
         group: Some("wooden_sign"),
         show_notification: true,
@@ -974,6 +1038,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:birch_slab",
         category: RecipeCategoryTypes::Building,
         group: Some("wooden_slab"),
         show_notification: true,
@@ -985,6 +1050,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:birch_stairs",
         category: RecipeCategoryTypes::Building,
         group: Some("wooden_stairs"),
         show_notification: true,
@@ -996,6 +1062,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:birch_trapdoor",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_trapdoor"),
         show_notification: true,
@@ -1007,6 +1074,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:birch_wood",
         category: RecipeCategoryTypes::Building,
         group: Some("bark"),
         show_notification: true,
@@ -1018,6 +1086,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:black_banner",
         category: RecipeCategoryTypes::Misc,
         group: Some("banner"),
         show_notification: true,
@@ -1032,6 +1101,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:black_bed",
         category: RecipeCategoryTypes::Misc,
         group: Some("bed"),
         show_notification: true,
@@ -1062,6 +1132,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingTransmute {
+        recipe_id: "minecraft:black_bundle",
         category: RecipeCategoryTypes::Equipment,
         group: Some("bundle_dye"),
         input: RecipeIngredientTypes::OneOf(&[
@@ -1084,12 +1155,16 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
             "minecraft:black_bundle",
         ]),
         material: RecipeIngredientTypes::Simple("minecraft:black_dye"),
+        material_count_min: 1u8,
+        material_count_max: 1u8,
+        add_material_count_to_result: false,
         result: RecipeResultStruct {
             id: "minecraft:black_bundle",
             count: 1u8,
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:black_candle",
         category: RecipeCategoryTypes::Misc,
         group: Some("dyed_candle"),
         ingredients: &[
@@ -1102,6 +1177,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:black_carpet",
         category: RecipeCategoryTypes::Misc,
         group: Some("carpet"),
         show_notification: true,
@@ -1113,6 +1189,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:black_concrete_powder",
         category: RecipeCategoryTypes::Building,
         group: Some("concrete_powder"),
         ingredients: &[
@@ -1132,6 +1209,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:black_dye",
         category: RecipeCategoryTypes::Misc,
         group: Some("black_dye"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:ink_sac")],
@@ -1141,6 +1219,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:black_dye_from_wither_rose",
         category: RecipeCategoryTypes::Misc,
         group: Some("black_dye"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:wither_rose")],
@@ -1150,6 +1229,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:black_harness",
         category: RecipeCategoryTypes::Equipment,
         group: Some("harness"),
         show_notification: true,
@@ -1165,6 +1245,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingTransmute {
+        recipe_id: "minecraft:black_shulker_box",
         category: RecipeCategoryTypes::Misc,
         group: Some("shulker_box_dye"),
         input: RecipeIngredientTypes::OneOf(&[
@@ -1187,12 +1268,16 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
             "minecraft:black_shulker_box",
         ]),
         material: RecipeIngredientTypes::Simple("minecraft:black_dye"),
+        material_count_min: 1u8,
+        material_count_max: 1u8,
+        add_material_count_to_result: false,
         result: RecipeResultStruct {
             id: "minecraft:black_shulker_box",
             count: 1u8,
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:black_stained_glass",
         category: RecipeCategoryTypes::Building,
         group: Some("stained_glass"),
         show_notification: true,
@@ -1207,6 +1292,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:black_stained_glass_pane",
         category: RecipeCategoryTypes::Misc,
         group: Some("stained_glass_pane"),
         show_notification: true,
@@ -1221,6 +1307,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:black_stained_glass_pane_from_glass_pane",
         category: RecipeCategoryTypes::Misc,
         group: Some("stained_glass_pane"),
         show_notification: true,
@@ -1235,6 +1322,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:black_terracotta",
         category: RecipeCategoryTypes::Building,
         group: Some("stained_terracotta"),
         show_notification: true,
@@ -1249,6 +1337,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:blackstone_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -1260,6 +1349,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:blackstone_stairs",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -1271,6 +1361,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:blackstone_wall",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -1282,6 +1373,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:blast_furnace",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -1297,6 +1389,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:blaze_powder",
         category: RecipeCategoryTypes::Misc,
         group: None,
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:blaze_rod")],
@@ -1306,6 +1399,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:blue_banner",
         category: RecipeCategoryTypes::Misc,
         group: Some("banner"),
         show_notification: true,
@@ -1320,6 +1414,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:blue_bed",
         category: RecipeCategoryTypes::Misc,
         group: Some("bed"),
         show_notification: true,
@@ -1350,6 +1445,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingTransmute {
+        recipe_id: "minecraft:blue_bundle",
         category: RecipeCategoryTypes::Equipment,
         group: Some("bundle_dye"),
         input: RecipeIngredientTypes::OneOf(&[
@@ -1372,12 +1468,16 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
             "minecraft:black_bundle",
         ]),
         material: RecipeIngredientTypes::Simple("minecraft:blue_dye"),
+        material_count_min: 1u8,
+        material_count_max: 1u8,
+        add_material_count_to_result: false,
         result: RecipeResultStruct {
             id: "minecraft:blue_bundle",
             count: 1u8,
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:blue_candle",
         category: RecipeCategoryTypes::Misc,
         group: Some("dyed_candle"),
         ingredients: &[
@@ -1390,6 +1490,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:blue_carpet",
         category: RecipeCategoryTypes::Misc,
         group: Some("carpet"),
         show_notification: true,
@@ -1401,6 +1502,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:blue_concrete_powder",
         category: RecipeCategoryTypes::Building,
         group: Some("concrete_powder"),
         ingredients: &[
@@ -1420,6 +1522,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:blue_dye",
         category: RecipeCategoryTypes::Misc,
         group: Some("blue_dye"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:lapis_lazuli")],
@@ -1429,6 +1532,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:blue_dye_from_cornflower",
         category: RecipeCategoryTypes::Misc,
         group: Some("blue_dye"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:cornflower")],
@@ -1438,6 +1542,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:blue_harness",
         category: RecipeCategoryTypes::Equipment,
         group: Some("harness"),
         show_notification: true,
@@ -1453,6 +1558,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:blue_ice",
         category: RecipeCategoryTypes::Building,
         group: None,
         ingredients: &[
@@ -1472,6 +1578,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingTransmute {
+        recipe_id: "minecraft:blue_shulker_box",
         category: RecipeCategoryTypes::Misc,
         group: Some("shulker_box_dye"),
         input: RecipeIngredientTypes::OneOf(&[
@@ -1494,12 +1601,16 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
             "minecraft:black_shulker_box",
         ]),
         material: RecipeIngredientTypes::Simple("minecraft:blue_dye"),
+        material_count_min: 1u8,
+        material_count_max: 1u8,
+        add_material_count_to_result: false,
         result: RecipeResultStruct {
             id: "minecraft:blue_shulker_box",
             count: 1u8,
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:blue_stained_glass",
         category: RecipeCategoryTypes::Building,
         group: Some("stained_glass"),
         show_notification: true,
@@ -1514,6 +1625,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:blue_stained_glass_pane",
         category: RecipeCategoryTypes::Misc,
         group: Some("stained_glass_pane"),
         show_notification: true,
@@ -1528,6 +1640,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:blue_stained_glass_pane_from_glass_pane",
         category: RecipeCategoryTypes::Misc,
         group: Some("stained_glass_pane"),
         show_notification: true,
@@ -1542,6 +1655,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:blue_terracotta",
         category: RecipeCategoryTypes::Building,
         group: Some("stained_terracotta"),
         show_notification: true,
@@ -1556,6 +1670,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:bolt_armor_trim_smithing_template",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -1580,6 +1695,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:bone_block",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -1591,6 +1707,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:bone_meal",
         category: RecipeCategoryTypes::Misc,
         group: Some("bonemeal"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:bone")],
@@ -1600,6 +1717,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:bone_meal_from_bone_block",
         category: RecipeCategoryTypes::Misc,
         group: Some("bonemeal"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:bone_block")],
@@ -1609,6 +1727,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:book",
         category: RecipeCategoryTypes::Misc,
         group: None,
         ingredients: &[
@@ -1623,6 +1742,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:bookshelf",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -1653,6 +1773,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:bordure_indented_banner_pattern",
         category: RecipeCategoryTypes::Misc,
         group: None,
         ingredients: &[
@@ -1665,6 +1786,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:bow",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -1679,6 +1801,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:bowl",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -1706,6 +1829,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:bread",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -1717,6 +1841,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:brewing_stand",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -1738,6 +1863,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:brick_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -1749,6 +1875,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:brick_stairs",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -1760,6 +1887,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:brick_wall",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -1771,6 +1899,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:bricks",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -1782,6 +1911,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:brown_banner",
         category: RecipeCategoryTypes::Misc,
         group: Some("banner"),
         show_notification: true,
@@ -1796,6 +1926,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:brown_bed",
         category: RecipeCategoryTypes::Misc,
         group: Some("bed"),
         show_notification: true,
@@ -1826,6 +1957,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingTransmute {
+        recipe_id: "minecraft:brown_bundle",
         category: RecipeCategoryTypes::Equipment,
         group: Some("bundle_dye"),
         input: RecipeIngredientTypes::OneOf(&[
@@ -1848,12 +1980,16 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
             "minecraft:black_bundle",
         ]),
         material: RecipeIngredientTypes::Simple("minecraft:brown_dye"),
+        material_count_min: 1u8,
+        material_count_max: 1u8,
+        add_material_count_to_result: false,
         result: RecipeResultStruct {
             id: "minecraft:brown_bundle",
             count: 1u8,
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:brown_candle",
         category: RecipeCategoryTypes::Misc,
         group: Some("dyed_candle"),
         ingredients: &[
@@ -1866,6 +2002,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:brown_carpet",
         category: RecipeCategoryTypes::Misc,
         group: Some("carpet"),
         show_notification: true,
@@ -1877,6 +2014,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:brown_concrete_powder",
         category: RecipeCategoryTypes::Building,
         group: Some("concrete_powder"),
         ingredients: &[
@@ -1896,6 +2034,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:brown_dye",
         category: RecipeCategoryTypes::Misc,
         group: Some("brown_dye"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:cocoa_beans")],
@@ -1905,6 +2044,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:brown_harness",
         category: RecipeCategoryTypes::Equipment,
         group: Some("harness"),
         show_notification: true,
@@ -1920,6 +2060,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingTransmute {
+        recipe_id: "minecraft:brown_shulker_box",
         category: RecipeCategoryTypes::Misc,
         group: Some("shulker_box_dye"),
         input: RecipeIngredientTypes::OneOf(&[
@@ -1942,12 +2083,16 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
             "minecraft:black_shulker_box",
         ]),
         material: RecipeIngredientTypes::Simple("minecraft:brown_dye"),
+        material_count_min: 1u8,
+        material_count_max: 1u8,
+        add_material_count_to_result: false,
         result: RecipeResultStruct {
             id: "minecraft:brown_shulker_box",
             count: 1u8,
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:brown_stained_glass",
         category: RecipeCategoryTypes::Building,
         group: Some("stained_glass"),
         show_notification: true,
@@ -1962,6 +2107,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:brown_stained_glass_pane",
         category: RecipeCategoryTypes::Misc,
         group: Some("stained_glass_pane"),
         show_notification: true,
@@ -1976,6 +2122,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:brown_stained_glass_pane_from_glass_pane",
         category: RecipeCategoryTypes::Misc,
         group: Some("stained_glass_pane"),
         show_notification: true,
@@ -1990,6 +2137,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:brown_terracotta",
         category: RecipeCategoryTypes::Building,
         group: Some("stained_terracotta"),
         show_notification: true,
@@ -2004,6 +2152,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:brush",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -2019,6 +2168,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:bucket",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -2030,6 +2180,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:bundle",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -2044,6 +2195,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:cake",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -2067,6 +2219,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:calibrated_sculk_sensor",
         category: RecipeCategoryTypes::Restone,
         group: None,
         show_notification: true,
@@ -2084,6 +2237,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:campfire",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -2150,6 +2304,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:candle",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -2164,6 +2319,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:carrot_on_a_stick",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -2178,6 +2334,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:cartography_table",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -2208,6 +2365,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:cauldron",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -2219,6 +2377,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:cherry_boat",
         category: RecipeCategoryTypes::Misc,
         group: Some("boat"),
         show_notification: true,
@@ -2233,6 +2392,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:cherry_button",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_button"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:cherry_planks")],
@@ -2242,6 +2402,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:cherry_chest_boat",
         category: RecipeCategoryTypes::Misc,
         group: Some("chest_boat"),
         ingredients: &[
@@ -2254,6 +2415,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:cherry_door",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_door"),
         show_notification: true,
@@ -2268,6 +2430,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:cherry_fence",
         category: RecipeCategoryTypes::Misc,
         group: Some("wooden_fence"),
         show_notification: true,
@@ -2285,6 +2448,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:cherry_fence_gate",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_fence_gate"),
         show_notification: true,
@@ -2302,6 +2466,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:cherry_hanging_sign",
         category: RecipeCategoryTypes::Misc,
         group: Some("wooden_hanging_sign"),
         show_notification: true,
@@ -2319,6 +2484,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:cherry_planks",
         category: RecipeCategoryTypes::Building,
         group: Some("planks"),
         ingredients: &[RecipeIngredientTypes::OneOf(&[
@@ -2333,6 +2499,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:cherry_pressure_plate",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_pressure_plate"),
         show_notification: true,
@@ -2347,6 +2514,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:cherry_shelf",
         category: RecipeCategoryTypes::Misc,
         group: Some("shelf"),
         show_notification: true,
@@ -2361,6 +2529,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:cherry_sign",
         category: RecipeCategoryTypes::Misc,
         group: Some("wooden_sign"),
         show_notification: true,
@@ -2378,6 +2547,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:cherry_slab",
         category: RecipeCategoryTypes::Building,
         group: Some("wooden_slab"),
         show_notification: true,
@@ -2392,6 +2562,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:cherry_stairs",
         category: RecipeCategoryTypes::Building,
         group: Some("wooden_stairs"),
         show_notification: true,
@@ -2406,6 +2577,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:cherry_trapdoor",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_trapdoor"),
         show_notification: true,
@@ -2420,6 +2592,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:cherry_wood",
         category: RecipeCategoryTypes::Building,
         group: Some("bark"),
         show_notification: true,
@@ -2431,6 +2604,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:chest",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -2458,6 +2632,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:chest_minecart",
         category: RecipeCategoryTypes::Misc,
         group: None,
         ingredients: &[
@@ -2470,6 +2645,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:chiseled_bookshelf",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -2516,6 +2692,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:chiseled_cinnabar",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -2530,6 +2707,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:chiseled_copper",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -2544,6 +2722,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:chiseled_deepslate",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -2558,6 +2737,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:chiseled_nether_bricks",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -2572,6 +2752,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:chiseled_polished_blackstone",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -2586,6 +2767,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:chiseled_quartz_block",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -2597,6 +2779,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:chiseled_red_sandstone",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -2611,6 +2794,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:chiseled_resin_bricks",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -2625,6 +2809,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:chiseled_sandstone",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -2639,6 +2824,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:chiseled_stone_bricks",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -2653,6 +2839,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:chiseled_sulfur",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -2664,6 +2851,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:chiseled_tuff",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -2675,6 +2863,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:chiseled_tuff_bricks",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -2689,6 +2878,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:cinnabar_brick_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -2703,6 +2893,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:cinnabar_brick_stairs",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -2717,6 +2908,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:cinnabar_brick_wall",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -2731,6 +2923,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:cinnabar_bricks",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -2745,6 +2938,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:cinnabar_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -2756,6 +2950,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:cinnabar_stairs",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -2767,6 +2962,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:cinnabar_wall",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -2778,6 +2974,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:clay",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -2789,6 +2986,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:clock",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -2803,6 +3001,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:coal",
         category: RecipeCategoryTypes::Misc,
         group: None,
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:coal_block")],
@@ -2812,6 +3011,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:coal_block",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -2823,6 +3023,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:coarse_dirt",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -2837,6 +3038,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:coast_armor_trim_smithing_template",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -2855,6 +3057,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:cobbled_deepslate_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -2869,6 +3072,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:cobbled_deepslate_stairs",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -2883,6 +3087,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:cobbled_deepslate_wall",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -2897,6 +3102,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:cobblestone_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -2908,6 +3114,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:cobblestone_stairs",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -2919,6 +3126,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:cobblestone_wall",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -2930,6 +3138,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:comparator",
         category: RecipeCategoryTypes::Restone,
         group: None,
         show_notification: true,
@@ -2948,6 +3157,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:compass",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -2962,6 +3172,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:composter",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -2989,6 +3200,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:conduit",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -3009,6 +3221,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:cookie",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -3023,6 +3236,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:copper_axe",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -3037,6 +3251,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:copper_bars",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -3048,6 +3263,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:copper_block",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -3059,6 +3275,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:copper_boots",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -3070,6 +3287,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:copper_bulb",
         category: RecipeCategoryTypes::Restone,
         group: Some("copper_bulb"),
         show_notification: true,
@@ -3085,6 +3303,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:copper_chain",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -3102,6 +3321,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:copper_chest",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -3116,6 +3336,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:copper_chestplate",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -3127,6 +3348,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:copper_door",
         category: RecipeCategoryTypes::Restone,
         group: None,
         show_notification: true,
@@ -3138,6 +3360,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:copper_grate",
         category: RecipeCategoryTypes::Building,
         group: Some("copper_grate"),
         show_notification: true,
@@ -3149,6 +3372,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:copper_helmet",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -3160,6 +3384,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:copper_hoe",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -3174,6 +3399,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:copper_ingot",
         category: RecipeCategoryTypes::Misc,
         group: Some("copper_ingot"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:copper_block")],
@@ -3183,6 +3409,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:copper_ingot_from_nuggets",
         category: RecipeCategoryTypes::Misc,
         group: Some("copper_ingot"),
         show_notification: true,
@@ -3197,6 +3424,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:copper_ingot_from_waxed_copper_block",
         category: RecipeCategoryTypes::Misc,
         group: Some("copper_ingot"),
         ingredients: &[RecipeIngredientTypes::Simple(
@@ -3208,6 +3436,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:copper_lantern",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -3225,6 +3454,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:copper_leggings",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -3236,6 +3466,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:copper_nugget",
         category: RecipeCategoryTypes::Misc,
         group: None,
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:copper_ingot")],
@@ -3245,6 +3476,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:copper_pickaxe",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -3259,6 +3491,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:copper_shovel",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -3273,6 +3506,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:copper_spear",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -3287,6 +3521,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:copper_sword",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -3301,6 +3536,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:copper_torch",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -3322,6 +3558,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:copper_trapdoor",
         category: RecipeCategoryTypes::Restone,
         group: None,
         show_notification: true,
@@ -3333,6 +3570,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:crafter",
         category: RecipeCategoryTypes::Restone,
         group: None,
         show_notification: true,
@@ -3352,6 +3590,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:crafting_table",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: false,
@@ -3379,6 +3618,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:creaking_heart",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -3393,6 +3633,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:creeper_banner_pattern",
         category: RecipeCategoryTypes::Misc,
         group: None,
         ingredients: &[
@@ -3405,6 +3646,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:crimson_button",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_button"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:crimson_planks")],
@@ -3414,6 +3656,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:crimson_door",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_door"),
         show_notification: true,
@@ -3428,6 +3671,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:crimson_fence",
         category: RecipeCategoryTypes::Misc,
         group: Some("wooden_fence"),
         show_notification: true,
@@ -3445,6 +3689,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:crimson_fence_gate",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_fence_gate"),
         show_notification: true,
@@ -3462,6 +3707,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:crimson_hanging_sign",
         category: RecipeCategoryTypes::Misc,
         group: Some("wooden_hanging_sign"),
         show_notification: true,
@@ -3479,6 +3725,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:crimson_hyphae",
         category: RecipeCategoryTypes::Building,
         group: Some("bark"),
         show_notification: true,
@@ -3490,6 +3737,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:crimson_planks",
         category: RecipeCategoryTypes::Building,
         group: Some("planks"),
         ingredients: &[RecipeIngredientTypes::OneOf(&[
@@ -3504,6 +3752,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:crimson_pressure_plate",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_pressure_plate"),
         show_notification: true,
@@ -3518,6 +3767,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:crimson_shelf",
         category: RecipeCategoryTypes::Misc,
         group: Some("shelf"),
         show_notification: true,
@@ -3532,6 +3782,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:crimson_sign",
         category: RecipeCategoryTypes::Misc,
         group: Some("wooden_sign"),
         show_notification: true,
@@ -3549,6 +3800,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:crimson_slab",
         category: RecipeCategoryTypes::Building,
         group: Some("wooden_slab"),
         show_notification: true,
@@ -3563,6 +3815,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:crimson_stairs",
         category: RecipeCategoryTypes::Building,
         group: Some("wooden_stairs"),
         show_notification: true,
@@ -3577,6 +3830,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:crimson_trapdoor",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_trapdoor"),
         show_notification: true,
@@ -3591,6 +3845,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:crossbow",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -3610,6 +3865,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:cut_copper",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -3621,6 +3877,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:cut_copper_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -3632,6 +3889,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:cut_copper_stairs",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -3643,6 +3901,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:cut_red_sandstone",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -3657,6 +3916,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:cut_red_sandstone_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -3671,6 +3931,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:cut_sandstone",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -3682,6 +3943,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:cut_sandstone_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -3696,6 +3958,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:cyan_banner",
         category: RecipeCategoryTypes::Misc,
         group: Some("banner"),
         show_notification: true,
@@ -3710,6 +3973,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:cyan_bed",
         category: RecipeCategoryTypes::Misc,
         group: Some("bed"),
         show_notification: true,
@@ -3740,6 +4004,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingTransmute {
+        recipe_id: "minecraft:cyan_bundle",
         category: RecipeCategoryTypes::Equipment,
         group: Some("bundle_dye"),
         input: RecipeIngredientTypes::OneOf(&[
@@ -3762,12 +4027,16 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
             "minecraft:black_bundle",
         ]),
         material: RecipeIngredientTypes::Simple("minecraft:cyan_dye"),
+        material_count_min: 1u8,
+        material_count_max: 1u8,
+        add_material_count_to_result: false,
         result: RecipeResultStruct {
             id: "minecraft:cyan_bundle",
             count: 1u8,
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:cyan_candle",
         category: RecipeCategoryTypes::Misc,
         group: Some("dyed_candle"),
         ingredients: &[
@@ -3780,6 +4049,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:cyan_carpet",
         category: RecipeCategoryTypes::Misc,
         group: Some("carpet"),
         show_notification: true,
@@ -3791,6 +4061,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:cyan_concrete_powder",
         category: RecipeCategoryTypes::Building,
         group: Some("concrete_powder"),
         ingredients: &[
@@ -3810,6 +4081,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:cyan_dye",
         category: RecipeCategoryTypes::Misc,
         group: Some("cyan_dye"),
         ingredients: &[
@@ -3822,6 +4094,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:cyan_dye_from_pitcher_plant",
         category: RecipeCategoryTypes::Misc,
         group: Some("cyan_dye"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:pitcher_plant")],
@@ -3831,6 +4104,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:cyan_harness",
         category: RecipeCategoryTypes::Equipment,
         group: Some("harness"),
         show_notification: true,
@@ -3846,6 +4120,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingTransmute {
+        recipe_id: "minecraft:cyan_shulker_box",
         category: RecipeCategoryTypes::Misc,
         group: Some("shulker_box_dye"),
         input: RecipeIngredientTypes::OneOf(&[
@@ -3868,12 +4143,16 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
             "minecraft:black_shulker_box",
         ]),
         material: RecipeIngredientTypes::Simple("minecraft:cyan_dye"),
+        material_count_min: 1u8,
+        material_count_max: 1u8,
+        add_material_count_to_result: false,
         result: RecipeResultStruct {
             id: "minecraft:cyan_shulker_box",
             count: 1u8,
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:cyan_stained_glass",
         category: RecipeCategoryTypes::Building,
         group: Some("stained_glass"),
         show_notification: true,
@@ -3888,6 +4167,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:cyan_stained_glass_pane",
         category: RecipeCategoryTypes::Misc,
         group: Some("stained_glass_pane"),
         show_notification: true,
@@ -3902,6 +4182,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:cyan_stained_glass_pane_from_glass_pane",
         category: RecipeCategoryTypes::Misc,
         group: Some("stained_glass_pane"),
         show_notification: true,
@@ -3916,6 +4197,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:cyan_terracotta",
         category: RecipeCategoryTypes::Building,
         group: Some("stained_terracotta"),
         show_notification: true,
@@ -3930,6 +4212,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:dark_oak_boat",
         category: RecipeCategoryTypes::Misc,
         group: Some("boat"),
         show_notification: true,
@@ -3944,6 +4227,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dark_oak_button",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_button"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:dark_oak_planks")],
@@ -3953,6 +4237,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dark_oak_chest_boat",
         category: RecipeCategoryTypes::Misc,
         group: Some("chest_boat"),
         ingredients: &[
@@ -3965,6 +4250,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:dark_oak_door",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_door"),
         show_notification: true,
@@ -3979,6 +4265,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:dark_oak_fence",
         category: RecipeCategoryTypes::Misc,
         group: Some("wooden_fence"),
         show_notification: true,
@@ -3996,6 +4283,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:dark_oak_fence_gate",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_fence_gate"),
         show_notification: true,
@@ -4013,6 +4301,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:dark_oak_hanging_sign",
         category: RecipeCategoryTypes::Misc,
         group: Some("wooden_hanging_sign"),
         show_notification: true,
@@ -4030,6 +4319,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dark_oak_planks",
         category: RecipeCategoryTypes::Building,
         group: Some("planks"),
         ingredients: &[RecipeIngredientTypes::OneOf(&[
@@ -4044,6 +4334,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:dark_oak_pressure_plate",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_pressure_plate"),
         show_notification: true,
@@ -4058,6 +4349,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:dark_oak_shelf",
         category: RecipeCategoryTypes::Misc,
         group: Some("shelf"),
         show_notification: true,
@@ -4072,6 +4364,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:dark_oak_sign",
         category: RecipeCategoryTypes::Misc,
         group: Some("wooden_sign"),
         show_notification: true,
@@ -4089,6 +4382,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:dark_oak_slab",
         category: RecipeCategoryTypes::Building,
         group: Some("wooden_slab"),
         show_notification: true,
@@ -4103,6 +4397,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:dark_oak_stairs",
         category: RecipeCategoryTypes::Building,
         group: Some("wooden_stairs"),
         show_notification: true,
@@ -4117,6 +4412,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:dark_oak_trapdoor",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_trapdoor"),
         show_notification: true,
@@ -4131,6 +4427,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:dark_oak_wood",
         category: RecipeCategoryTypes::Building,
         group: Some("bark"),
         show_notification: true,
@@ -4142,6 +4439,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:dark_prismarine",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -4159,6 +4457,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:dark_prismarine_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -4173,6 +4472,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:dark_prismarine_stairs",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -4187,6 +4487,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:daylight_detector",
         category: RecipeCategoryTypes::Restone,
         group: None,
         show_notification: true,
@@ -4218,9 +4519,11 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingDecoratedPot {
+        recipe_id: "minecraft:decorated_pot",
         category: RecipeCategoryTypes::Misc,
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:decorated_pot_simple",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -4232,6 +4535,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:deepslate_brick_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -4246,6 +4550,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:deepslate_brick_stairs",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -4260,6 +4565,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:deepslate_brick_wall",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -4274,6 +4580,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:deepslate_bricks",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -4288,6 +4595,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:deepslate_tile_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -4302,6 +4610,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:deepslate_tile_stairs",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -4316,6 +4625,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:deepslate_tile_wall",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -4330,6 +4640,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:deepslate_tiles",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -4344,6 +4655,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:detector_rail",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -4362,6 +4674,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:diamond",
         category: RecipeCategoryTypes::Misc,
         group: None,
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:diamond_block")],
@@ -4371,6 +4684,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:diamond_axe",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -4385,6 +4699,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:diamond_block",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -4396,6 +4711,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:diamond_boots",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -4407,6 +4723,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:diamond_chestplate",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -4418,6 +4735,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:diamond_helmet",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -4429,6 +4747,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:diamond_hoe",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -4443,6 +4762,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:diamond_leggings",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -4454,6 +4774,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:diamond_pickaxe",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -4468,6 +4789,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:diamond_shovel",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -4482,6 +4804,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:diamond_spear",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -4496,6 +4819,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:diamond_sword",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -4510,6 +4834,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:diorite",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -4524,6 +4849,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:diorite_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -4535,6 +4861,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:diorite_stairs",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -4546,6 +4873,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:diorite_wall",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -4557,6 +4885,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:dispenser",
         category: RecipeCategoryTypes::Restone,
         group: None,
         show_notification: true,
@@ -4572,6 +4901,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:dried_ghast",
         category: RecipeCategoryTypes::Building,
         group: Some("dry_ghast"),
         show_notification: true,
@@ -4586,6 +4916,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dried_kelp",
         category: RecipeCategoryTypes::Misc,
         group: None,
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:dried_kelp_block")],
@@ -4595,6 +4926,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:dried_kelp_block",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -4606,6 +4938,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:dripstone_block",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -4620,6 +4953,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:dropper",
         category: RecipeCategoryTypes::Restone,
         group: None,
         show_notification: true,
@@ -4634,6 +4968,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:dune_armor_trim_smithing_template",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -4652,6 +4987,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_black_bed",
         category: RecipeCategoryTypes::Misc,
         group: Some("bed_dye"),
         ingredients: &[
@@ -4680,6 +5016,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_black_carpet",
         category: RecipeCategoryTypes::Misc,
         group: Some("carpet_dye"),
         ingredients: &[
@@ -4708,6 +5045,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_black_harness",
         category: RecipeCategoryTypes::Equipment,
         group: Some("harness_dye"),
         ingredients: &[
@@ -4736,6 +5074,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_black_wool",
         category: RecipeCategoryTypes::Building,
         group: Some("wool"),
         ingredients: &[
@@ -4764,6 +5103,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_blue_bed",
         category: RecipeCategoryTypes::Misc,
         group: Some("bed_dye"),
         ingredients: &[
@@ -4792,6 +5132,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_blue_carpet",
         category: RecipeCategoryTypes::Misc,
         group: Some("carpet_dye"),
         ingredients: &[
@@ -4820,6 +5161,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_blue_harness",
         category: RecipeCategoryTypes::Equipment,
         group: Some("harness_dye"),
         ingredients: &[
@@ -4848,6 +5190,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_blue_wool",
         category: RecipeCategoryTypes::Building,
         group: Some("wool"),
         ingredients: &[
@@ -4876,6 +5219,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_brown_bed",
         category: RecipeCategoryTypes::Misc,
         group: Some("bed_dye"),
         ingredients: &[
@@ -4904,6 +5248,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_brown_carpet",
         category: RecipeCategoryTypes::Misc,
         group: Some("carpet_dye"),
         ingredients: &[
@@ -4932,6 +5277,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_brown_harness",
         category: RecipeCategoryTypes::Equipment,
         group: Some("harness_dye"),
         ingredients: &[
@@ -4960,6 +5306,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_brown_wool",
         category: RecipeCategoryTypes::Building,
         group: Some("wool"),
         ingredients: &[
@@ -4988,6 +5335,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_cyan_bed",
         category: RecipeCategoryTypes::Misc,
         group: Some("bed_dye"),
         ingredients: &[
@@ -5016,6 +5364,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_cyan_carpet",
         category: RecipeCategoryTypes::Misc,
         group: Some("carpet_dye"),
         ingredients: &[
@@ -5044,6 +5393,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_cyan_harness",
         category: RecipeCategoryTypes::Equipment,
         group: Some("harness_dye"),
         ingredients: &[
@@ -5072,6 +5422,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_cyan_wool",
         category: RecipeCategoryTypes::Building,
         group: Some("wool"),
         ingredients: &[
@@ -5100,6 +5451,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_gray_bed",
         category: RecipeCategoryTypes::Misc,
         group: Some("bed_dye"),
         ingredients: &[
@@ -5128,6 +5480,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_gray_carpet",
         category: RecipeCategoryTypes::Misc,
         group: Some("carpet_dye"),
         ingredients: &[
@@ -5156,6 +5509,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_gray_harness",
         category: RecipeCategoryTypes::Equipment,
         group: Some("harness_dye"),
         ingredients: &[
@@ -5184,6 +5538,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_gray_wool",
         category: RecipeCategoryTypes::Building,
         group: Some("wool"),
         ingredients: &[
@@ -5212,6 +5567,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_green_bed",
         category: RecipeCategoryTypes::Misc,
         group: Some("bed_dye"),
         ingredients: &[
@@ -5240,6 +5596,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_green_carpet",
         category: RecipeCategoryTypes::Misc,
         group: Some("carpet_dye"),
         ingredients: &[
@@ -5268,6 +5625,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_green_harness",
         category: RecipeCategoryTypes::Equipment,
         group: Some("harness_dye"),
         ingredients: &[
@@ -5296,6 +5654,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_green_wool",
         category: RecipeCategoryTypes::Building,
         group: Some("wool"),
         ingredients: &[
@@ -5324,6 +5683,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_light_blue_bed",
         category: RecipeCategoryTypes::Misc,
         group: Some("bed_dye"),
         ingredients: &[
@@ -5352,6 +5712,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_light_blue_carpet",
         category: RecipeCategoryTypes::Misc,
         group: Some("carpet_dye"),
         ingredients: &[
@@ -5380,6 +5741,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_light_blue_harness",
         category: RecipeCategoryTypes::Equipment,
         group: Some("harness_dye"),
         ingredients: &[
@@ -5408,6 +5770,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_light_blue_wool",
         category: RecipeCategoryTypes::Building,
         group: Some("wool"),
         ingredients: &[
@@ -5436,6 +5799,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_light_gray_bed",
         category: RecipeCategoryTypes::Misc,
         group: Some("bed_dye"),
         ingredients: &[
@@ -5464,6 +5828,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_light_gray_carpet",
         category: RecipeCategoryTypes::Misc,
         group: Some("carpet_dye"),
         ingredients: &[
@@ -5492,6 +5857,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_light_gray_harness",
         category: RecipeCategoryTypes::Equipment,
         group: Some("harness_dye"),
         ingredients: &[
@@ -5520,6 +5886,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_light_gray_wool",
         category: RecipeCategoryTypes::Building,
         group: Some("wool"),
         ingredients: &[
@@ -5548,6 +5915,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_lime_bed",
         category: RecipeCategoryTypes::Misc,
         group: Some("bed_dye"),
         ingredients: &[
@@ -5576,6 +5944,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_lime_carpet",
         category: RecipeCategoryTypes::Misc,
         group: Some("carpet_dye"),
         ingredients: &[
@@ -5604,6 +5973,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_lime_harness",
         category: RecipeCategoryTypes::Equipment,
         group: Some("harness_dye"),
         ingredients: &[
@@ -5632,6 +6002,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_lime_wool",
         category: RecipeCategoryTypes::Building,
         group: Some("wool"),
         ingredients: &[
@@ -5660,6 +6031,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_magenta_bed",
         category: RecipeCategoryTypes::Misc,
         group: Some("bed_dye"),
         ingredients: &[
@@ -5688,6 +6060,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_magenta_carpet",
         category: RecipeCategoryTypes::Misc,
         group: Some("carpet_dye"),
         ingredients: &[
@@ -5716,6 +6089,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_magenta_harness",
         category: RecipeCategoryTypes::Equipment,
         group: Some("harness_dye"),
         ingredients: &[
@@ -5744,6 +6118,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_magenta_wool",
         category: RecipeCategoryTypes::Building,
         group: Some("wool"),
         ingredients: &[
@@ -5772,6 +6147,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_orange_bed",
         category: RecipeCategoryTypes::Misc,
         group: Some("bed_dye"),
         ingredients: &[
@@ -5800,6 +6176,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_orange_carpet",
         category: RecipeCategoryTypes::Misc,
         group: Some("carpet_dye"),
         ingredients: &[
@@ -5828,6 +6205,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_orange_harness",
         category: RecipeCategoryTypes::Equipment,
         group: Some("harness_dye"),
         ingredients: &[
@@ -5856,6 +6234,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_orange_wool",
         category: RecipeCategoryTypes::Building,
         group: Some("wool"),
         ingredients: &[
@@ -5884,6 +6263,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_pink_bed",
         category: RecipeCategoryTypes::Misc,
         group: Some("bed_dye"),
         ingredients: &[
@@ -5912,6 +6292,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_pink_carpet",
         category: RecipeCategoryTypes::Misc,
         group: Some("carpet_dye"),
         ingredients: &[
@@ -5940,6 +6321,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_pink_harness",
         category: RecipeCategoryTypes::Equipment,
         group: Some("harness_dye"),
         ingredients: &[
@@ -5968,6 +6350,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_pink_wool",
         category: RecipeCategoryTypes::Building,
         group: Some("wool"),
         ingredients: &[
@@ -5996,6 +6379,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_purple_bed",
         category: RecipeCategoryTypes::Misc,
         group: Some("bed_dye"),
         ingredients: &[
@@ -6024,6 +6408,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_purple_carpet",
         category: RecipeCategoryTypes::Misc,
         group: Some("carpet_dye"),
         ingredients: &[
@@ -6052,6 +6437,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_purple_harness",
         category: RecipeCategoryTypes::Equipment,
         group: Some("harness_dye"),
         ingredients: &[
@@ -6080,6 +6466,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_purple_wool",
         category: RecipeCategoryTypes::Building,
         group: Some("wool"),
         ingredients: &[
@@ -6108,6 +6495,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_red_bed",
         category: RecipeCategoryTypes::Misc,
         group: Some("bed_dye"),
         ingredients: &[
@@ -6136,6 +6524,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_red_carpet",
         category: RecipeCategoryTypes::Misc,
         group: Some("carpet_dye"),
         ingredients: &[
@@ -6164,6 +6553,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_red_harness",
         category: RecipeCategoryTypes::Equipment,
         group: Some("harness_dye"),
         ingredients: &[
@@ -6192,6 +6582,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_red_wool",
         category: RecipeCategoryTypes::Building,
         group: Some("wool"),
         ingredients: &[
@@ -6220,6 +6611,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_white_bed",
         category: RecipeCategoryTypes::Misc,
         group: Some("bed_dye"),
         ingredients: &[
@@ -6248,6 +6640,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_white_carpet",
         category: RecipeCategoryTypes::Misc,
         group: Some("carpet_dye"),
         ingredients: &[
@@ -6276,6 +6669,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_white_harness",
         category: RecipeCategoryTypes::Equipment,
         group: Some("harness_dye"),
         ingredients: &[
@@ -6304,6 +6698,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_white_wool",
         category: RecipeCategoryTypes::Building,
         group: Some("wool"),
         ingredients: &[
@@ -6332,6 +6727,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_yellow_bed",
         category: RecipeCategoryTypes::Misc,
         group: Some("bed_dye"),
         ingredients: &[
@@ -6360,6 +6756,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_yellow_carpet",
         category: RecipeCategoryTypes::Misc,
         group: Some("carpet_dye"),
         ingredients: &[
@@ -6388,6 +6785,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_yellow_harness",
         category: RecipeCategoryTypes::Equipment,
         group: Some("harness_dye"),
         ingredients: &[
@@ -6416,6 +6814,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:dye_yellow_wool",
         category: RecipeCategoryTypes::Building,
         group: Some("wool"),
         ingredients: &[
@@ -6444,6 +6843,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:emerald",
         category: RecipeCategoryTypes::Misc,
         group: None,
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:emerald_block")],
@@ -6453,6 +6853,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:emerald_block",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -6464,6 +6865,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:enchanting_table",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -6479,6 +6881,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:end_crystal",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -6494,6 +6897,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:end_rod",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -6511,6 +6915,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:end_stone_brick_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -6525,6 +6930,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:end_stone_brick_stairs",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -6539,6 +6945,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:end_stone_brick_wall",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -6553,6 +6960,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:end_stone_bricks",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -6564,6 +6972,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:ender_chest",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -6578,6 +6987,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:ender_eye",
         category: RecipeCategoryTypes::Misc,
         group: None,
         ingredients: &[
@@ -6590,6 +7000,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:exposed_chiseled_copper",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -6604,6 +7015,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:exposed_copper_bulb",
         category: RecipeCategoryTypes::Restone,
         group: Some("exposed_copper_bulb"),
         show_notification: true,
@@ -6622,6 +7034,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:exposed_copper_grate",
         category: RecipeCategoryTypes::Building,
         group: Some("exposed_copper_grate"),
         show_notification: true,
@@ -6636,6 +7049,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:exposed_cut_copper",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -6650,6 +7064,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:exposed_cut_copper_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -6664,6 +7079,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:exposed_cut_copper_stairs",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -6678,6 +7094,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:eye_armor_trim_smithing_template",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -6696,6 +7113,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:fermented_spider_eye",
         category: RecipeCategoryTypes::Misc,
         group: None,
         ingredients: &[
@@ -6709,6 +7127,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:field_masoned_banner_pattern",
         category: RecipeCategoryTypes::Misc,
         group: None,
         ingredients: &[
@@ -6721,6 +7140,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:fire_charge",
         category: RecipeCategoryTypes::Misc,
         group: None,
         ingredients: &[
@@ -6734,6 +7154,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:firework_rocket_simple",
         category: RecipeCategoryTypes::Misc,
         group: None,
         ingredients: &[
@@ -6746,6 +7167,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:fishing_rod",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -6760,6 +7182,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:fletching_table",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -6790,6 +7213,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:flint_and_steel",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         ingredients: &[
@@ -6802,6 +7226,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:flow_armor_trim_smithing_template",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -6820,6 +7245,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:flower_banner_pattern",
         category: RecipeCategoryTypes::Misc,
         group: None,
         ingredients: &[
@@ -6832,6 +7258,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:flower_pot",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -6843,6 +7270,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:furnace",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -6861,6 +7289,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:furnace_minecart",
         category: RecipeCategoryTypes::Misc,
         group: None,
         ingredients: &[
@@ -6873,6 +7302,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:glass_bottle",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -6884,6 +7314,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:glass_pane",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -6895,6 +7326,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:glistering_melon_slice",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -6909,6 +7341,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:glow_item_frame",
         category: RecipeCategoryTypes::Misc,
         group: None,
         ingredients: &[
@@ -6921,6 +7354,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:glowstone",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -6935,6 +7369,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:gold_block",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -6946,6 +7381,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:gold_ingot_from_gold_block",
         category: RecipeCategoryTypes::Misc,
         group: Some("gold_ingot"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:gold_block")],
@@ -6955,6 +7391,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:gold_ingot_from_nuggets",
         category: RecipeCategoryTypes::Misc,
         group: Some("gold_ingot"),
         show_notification: true,
@@ -6966,6 +7403,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:gold_nugget",
         category: RecipeCategoryTypes::Misc,
         group: None,
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:gold_ingot")],
@@ -6975,6 +7413,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:golden_apple",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -6989,6 +7428,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:golden_axe",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -7003,6 +7443,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:golden_boots",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -7014,6 +7455,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:golden_carrot",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -7028,6 +7470,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:golden_chestplate",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -7039,6 +7482,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:golden_dandelion",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -7053,6 +7497,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:golden_helmet",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -7064,6 +7509,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:golden_hoe",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -7078,6 +7524,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:golden_leggings",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -7089,6 +7536,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:golden_pickaxe",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -7103,6 +7551,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:golden_shovel",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -7117,6 +7566,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:golden_spear",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -7131,6 +7581,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:golden_sword",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -7145,6 +7596,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:granite",
         category: RecipeCategoryTypes::Building,
         group: None,
         ingredients: &[
@@ -7157,6 +7609,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:granite_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -7168,6 +7621,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:granite_stairs",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -7179,6 +7633,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:granite_wall",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -7190,6 +7645,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:gray_banner",
         category: RecipeCategoryTypes::Misc,
         group: Some("banner"),
         show_notification: true,
@@ -7204,6 +7660,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:gray_bed",
         category: RecipeCategoryTypes::Misc,
         group: Some("bed"),
         show_notification: true,
@@ -7234,6 +7691,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingTransmute {
+        recipe_id: "minecraft:gray_bundle",
         category: RecipeCategoryTypes::Equipment,
         group: Some("bundle_dye"),
         input: RecipeIngredientTypes::OneOf(&[
@@ -7256,12 +7714,16 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
             "minecraft:black_bundle",
         ]),
         material: RecipeIngredientTypes::Simple("minecraft:gray_dye"),
+        material_count_min: 1u8,
+        material_count_max: 1u8,
+        add_material_count_to_result: false,
         result: RecipeResultStruct {
             id: "minecraft:gray_bundle",
             count: 1u8,
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:gray_candle",
         category: RecipeCategoryTypes::Misc,
         group: Some("dyed_candle"),
         ingredients: &[
@@ -7274,6 +7736,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:gray_carpet",
         category: RecipeCategoryTypes::Misc,
         group: Some("carpet"),
         show_notification: true,
@@ -7285,6 +7748,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:gray_concrete_powder",
         category: RecipeCategoryTypes::Building,
         group: Some("concrete_powder"),
         ingredients: &[
@@ -7304,6 +7768,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:gray_dye",
         category: RecipeCategoryTypes::Misc,
         group: Some("gray_dye"),
         ingredients: &[
@@ -7316,6 +7781,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:gray_dye_from_closed_eyeblossom",
         category: RecipeCategoryTypes::Misc,
         group: Some("gray_dye"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:closed_eyeblossom")],
@@ -7325,6 +7791,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:gray_harness",
         category: RecipeCategoryTypes::Equipment,
         group: Some("harness"),
         show_notification: true,
@@ -7340,6 +7807,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingTransmute {
+        recipe_id: "minecraft:gray_shulker_box",
         category: RecipeCategoryTypes::Misc,
         group: Some("shulker_box_dye"),
         input: RecipeIngredientTypes::OneOf(&[
@@ -7362,12 +7830,16 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
             "minecraft:black_shulker_box",
         ]),
         material: RecipeIngredientTypes::Simple("minecraft:gray_dye"),
+        material_count_min: 1u8,
+        material_count_max: 1u8,
+        add_material_count_to_result: false,
         result: RecipeResultStruct {
             id: "minecraft:gray_shulker_box",
             count: 1u8,
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:gray_stained_glass",
         category: RecipeCategoryTypes::Building,
         group: Some("stained_glass"),
         show_notification: true,
@@ -7382,6 +7854,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:gray_stained_glass_pane",
         category: RecipeCategoryTypes::Misc,
         group: Some("stained_glass_pane"),
         show_notification: true,
@@ -7396,6 +7869,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:gray_stained_glass_pane_from_glass_pane",
         category: RecipeCategoryTypes::Misc,
         group: Some("stained_glass_pane"),
         show_notification: true,
@@ -7410,6 +7884,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:gray_terracotta",
         category: RecipeCategoryTypes::Building,
         group: Some("stained_terracotta"),
         show_notification: true,
@@ -7424,6 +7899,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:green_banner",
         category: RecipeCategoryTypes::Misc,
         group: Some("banner"),
         show_notification: true,
@@ -7438,6 +7914,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:green_bed",
         category: RecipeCategoryTypes::Misc,
         group: Some("bed"),
         show_notification: true,
@@ -7468,6 +7945,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingTransmute {
+        recipe_id: "minecraft:green_bundle",
         category: RecipeCategoryTypes::Equipment,
         group: Some("bundle_dye"),
         input: RecipeIngredientTypes::OneOf(&[
@@ -7490,12 +7968,16 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
             "minecraft:black_bundle",
         ]),
         material: RecipeIngredientTypes::Simple("minecraft:green_dye"),
+        material_count_min: 1u8,
+        material_count_max: 1u8,
+        add_material_count_to_result: false,
         result: RecipeResultStruct {
             id: "minecraft:green_bundle",
             count: 1u8,
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:green_candle",
         category: RecipeCategoryTypes::Misc,
         group: Some("dyed_candle"),
         ingredients: &[
@@ -7508,6 +7990,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:green_carpet",
         category: RecipeCategoryTypes::Misc,
         group: Some("carpet"),
         show_notification: true,
@@ -7519,6 +8002,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:green_concrete_powder",
         category: RecipeCategoryTypes::Building,
         group: Some("concrete_powder"),
         ingredients: &[
@@ -7538,6 +8022,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:green_harness",
         category: RecipeCategoryTypes::Equipment,
         group: Some("harness"),
         show_notification: true,
@@ -7553,6 +8038,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingTransmute {
+        recipe_id: "minecraft:green_shulker_box",
         category: RecipeCategoryTypes::Misc,
         group: Some("shulker_box_dye"),
         input: RecipeIngredientTypes::OneOf(&[
@@ -7575,12 +8061,16 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
             "minecraft:black_shulker_box",
         ]),
         material: RecipeIngredientTypes::Simple("minecraft:green_dye"),
+        material_count_min: 1u8,
+        material_count_max: 1u8,
+        add_material_count_to_result: false,
         result: RecipeResultStruct {
             id: "minecraft:green_shulker_box",
             count: 1u8,
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:green_stained_glass",
         category: RecipeCategoryTypes::Building,
         group: Some("stained_glass"),
         show_notification: true,
@@ -7595,6 +8085,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:green_stained_glass_pane",
         category: RecipeCategoryTypes::Misc,
         group: Some("stained_glass_pane"),
         show_notification: true,
@@ -7609,6 +8100,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:green_stained_glass_pane_from_glass_pane",
         category: RecipeCategoryTypes::Misc,
         group: Some("stained_glass_pane"),
         show_notification: true,
@@ -7623,6 +8115,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:green_terracotta",
         category: RecipeCategoryTypes::Building,
         group: Some("stained_terracotta"),
         show_notification: true,
@@ -7637,6 +8130,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:grindstone",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -7668,6 +8162,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:hay_block",
         category: RecipeCategoryTypes::Building,
         group: None,
         ingredients: &[
@@ -7687,6 +8182,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:heavy_weighted_pressure_plate",
         category: RecipeCategoryTypes::Restone,
         group: None,
         show_notification: true,
@@ -7698,6 +8194,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:honey_block",
         category: RecipeCategoryTypes::Restone,
         group: None,
         show_notification: true,
@@ -7709,6 +8206,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:honey_bottle",
         category: RecipeCategoryTypes::Misc,
         group: None,
         ingredients: &[
@@ -7724,6 +8222,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:honeycomb_block",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -7735,6 +8234,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:hopper",
         category: RecipeCategoryTypes::Restone,
         group: None,
         show_notification: true,
@@ -7749,6 +8249,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:hopper_minecart",
         category: RecipeCategoryTypes::Misc,
         group: None,
         ingredients: &[
@@ -7761,6 +8262,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:host_armor_trim_smithing_template",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -7779,6 +8281,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:iron_axe",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -7793,6 +8296,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:iron_bars",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -7804,6 +8308,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:iron_block",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -7815,6 +8320,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:iron_boots",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -7826,6 +8332,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:iron_chain",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -7840,6 +8347,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:iron_chestplate",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -7851,6 +8359,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:iron_door",
         category: RecipeCategoryTypes::Restone,
         group: None,
         show_notification: true,
@@ -7862,6 +8371,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:iron_helmet",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -7873,6 +8383,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:iron_hoe",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -7887,6 +8398,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:iron_ingot_from_iron_block",
         category: RecipeCategoryTypes::Misc,
         group: Some("iron_ingot"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:iron_block")],
@@ -7896,6 +8408,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:iron_ingot_from_nuggets",
         category: RecipeCategoryTypes::Misc,
         group: Some("iron_ingot"),
         show_notification: true,
@@ -7907,6 +8420,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:iron_leggings",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -7918,6 +8432,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:iron_nugget",
         category: RecipeCategoryTypes::Misc,
         group: None,
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:iron_ingot")],
@@ -7927,6 +8442,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:iron_pickaxe",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -7941,6 +8457,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:iron_shovel",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -7955,6 +8472,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:iron_spear",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -7969,6 +8487,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:iron_sword",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -7983,6 +8502,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:iron_trapdoor",
         category: RecipeCategoryTypes::Restone,
         group: None,
         show_notification: true,
@@ -7994,6 +8514,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:item_frame",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -8008,6 +8529,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:jack_o_lantern",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -8025,6 +8547,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:jukebox",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -8055,6 +8578,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:jungle_boat",
         category: RecipeCategoryTypes::Misc,
         group: Some("boat"),
         show_notification: true,
@@ -8069,6 +8593,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:jungle_button",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_button"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:jungle_planks")],
@@ -8078,6 +8603,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:jungle_chest_boat",
         category: RecipeCategoryTypes::Misc,
         group: Some("chest_boat"),
         ingredients: &[
@@ -8090,6 +8616,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:jungle_door",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_door"),
         show_notification: true,
@@ -8104,6 +8631,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:jungle_fence",
         category: RecipeCategoryTypes::Misc,
         group: Some("wooden_fence"),
         show_notification: true,
@@ -8121,6 +8649,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:jungle_fence_gate",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_fence_gate"),
         show_notification: true,
@@ -8138,6 +8667,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:jungle_hanging_sign",
         category: RecipeCategoryTypes::Misc,
         group: Some("wooden_hanging_sign"),
         show_notification: true,
@@ -8155,6 +8685,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:jungle_planks",
         category: RecipeCategoryTypes::Building,
         group: Some("planks"),
         ingredients: &[RecipeIngredientTypes::OneOf(&[
@@ -8169,6 +8700,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:jungle_pressure_plate",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_pressure_plate"),
         show_notification: true,
@@ -8183,6 +8715,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:jungle_shelf",
         category: RecipeCategoryTypes::Misc,
         group: Some("shelf"),
         show_notification: true,
@@ -8197,6 +8730,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:jungle_sign",
         category: RecipeCategoryTypes::Misc,
         group: Some("wooden_sign"),
         show_notification: true,
@@ -8214,6 +8748,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:jungle_slab",
         category: RecipeCategoryTypes::Building,
         group: Some("wooden_slab"),
         show_notification: true,
@@ -8228,6 +8763,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:jungle_stairs",
         category: RecipeCategoryTypes::Building,
         group: Some("wooden_stairs"),
         show_notification: true,
@@ -8242,6 +8778,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:jungle_trapdoor",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_trapdoor"),
         show_notification: true,
@@ -8256,6 +8793,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:jungle_wood",
         category: RecipeCategoryTypes::Building,
         group: Some("bark"),
         show_notification: true,
@@ -8267,6 +8805,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:ladder",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -8278,6 +8817,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:lantern",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -8292,6 +8832,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:lapis_block",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -8303,6 +8844,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:lapis_lazuli",
         category: RecipeCategoryTypes::Misc,
         group: None,
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:lapis_block")],
@@ -8312,6 +8854,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:lead",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -8323,6 +8866,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:leather",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -8334,6 +8878,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:leather_boots",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -8345,6 +8890,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:leather_chestplate",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -8356,6 +8902,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:leather_helmet",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -8367,6 +8914,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:leather_horse_armor",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -8378,6 +8926,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:leather_leggings",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -8389,6 +8938,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:lectern",
         category: RecipeCategoryTypes::Restone,
         group: None,
         show_notification: true,
@@ -8419,6 +8969,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:lever",
         category: RecipeCategoryTypes::Restone,
         group: None,
         show_notification: true,
@@ -8433,6 +8984,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:light_blue_banner",
         category: RecipeCategoryTypes::Misc,
         group: Some("banner"),
         show_notification: true,
@@ -8450,6 +9002,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:light_blue_bed",
         category: RecipeCategoryTypes::Misc,
         group: Some("bed"),
         show_notification: true,
@@ -8483,6 +9036,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingTransmute {
+        recipe_id: "minecraft:light_blue_bundle",
         category: RecipeCategoryTypes::Equipment,
         group: Some("bundle_dye"),
         input: RecipeIngredientTypes::OneOf(&[
@@ -8505,12 +9059,16 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
             "minecraft:black_bundle",
         ]),
         material: RecipeIngredientTypes::Simple("minecraft:light_blue_dye"),
+        material_count_min: 1u8,
+        material_count_max: 1u8,
+        add_material_count_to_result: false,
         result: RecipeResultStruct {
             id: "minecraft:light_blue_bundle",
             count: 1u8,
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:light_blue_candle",
         category: RecipeCategoryTypes::Misc,
         group: Some("dyed_candle"),
         ingredients: &[
@@ -8523,6 +9081,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:light_blue_carpet",
         category: RecipeCategoryTypes::Misc,
         group: Some("carpet"),
         show_notification: true,
@@ -8537,6 +9096,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:light_blue_concrete_powder",
         category: RecipeCategoryTypes::Building,
         group: Some("concrete_powder"),
         ingredients: &[
@@ -8556,6 +9116,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:light_blue_dye_from_blue_orchid",
         category: RecipeCategoryTypes::Misc,
         group: Some("light_blue_dye"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:blue_orchid")],
@@ -8565,6 +9126,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:light_blue_dye_from_blue_white_dye",
         category: RecipeCategoryTypes::Misc,
         group: Some("light_blue_dye"),
         ingredients: &[
@@ -8577,6 +9139,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:light_blue_harness",
         category: RecipeCategoryTypes::Equipment,
         group: Some("harness"),
         show_notification: true,
@@ -8595,6 +9158,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingTransmute {
+        recipe_id: "minecraft:light_blue_shulker_box",
         category: RecipeCategoryTypes::Misc,
         group: Some("shulker_box_dye"),
         input: RecipeIngredientTypes::OneOf(&[
@@ -8617,12 +9181,16 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
             "minecraft:black_shulker_box",
         ]),
         material: RecipeIngredientTypes::Simple("minecraft:light_blue_dye"),
+        material_count_min: 1u8,
+        material_count_max: 1u8,
+        add_material_count_to_result: false,
         result: RecipeResultStruct {
             id: "minecraft:light_blue_shulker_box",
             count: 1u8,
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:light_blue_stained_glass",
         category: RecipeCategoryTypes::Building,
         group: Some("stained_glass"),
         show_notification: true,
@@ -8640,6 +9208,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:light_blue_stained_glass_pane",
         category: RecipeCategoryTypes::Misc,
         group: Some("stained_glass_pane"),
         show_notification: true,
@@ -8654,6 +9223,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:light_blue_stained_glass_pane_from_glass_pane",
         category: RecipeCategoryTypes::Misc,
         group: Some("stained_glass_pane"),
         show_notification: true,
@@ -8671,6 +9241,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:light_blue_terracotta",
         category: RecipeCategoryTypes::Building,
         group: Some("stained_terracotta"),
         show_notification: true,
@@ -8688,6 +9259,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:light_gray_banner",
         category: RecipeCategoryTypes::Misc,
         group: Some("banner"),
         show_notification: true,
@@ -8705,6 +9277,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:light_gray_bed",
         category: RecipeCategoryTypes::Misc,
         group: Some("bed"),
         show_notification: true,
@@ -8738,6 +9311,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingTransmute {
+        recipe_id: "minecraft:light_gray_bundle",
         category: RecipeCategoryTypes::Equipment,
         group: Some("bundle_dye"),
         input: RecipeIngredientTypes::OneOf(&[
@@ -8760,12 +9334,16 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
             "minecraft:black_bundle",
         ]),
         material: RecipeIngredientTypes::Simple("minecraft:light_gray_dye"),
+        material_count_min: 1u8,
+        material_count_max: 1u8,
+        add_material_count_to_result: false,
         result: RecipeResultStruct {
             id: "minecraft:light_gray_bundle",
             count: 1u8,
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:light_gray_candle",
         category: RecipeCategoryTypes::Misc,
         group: Some("dyed_candle"),
         ingredients: &[
@@ -8778,6 +9356,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:light_gray_carpet",
         category: RecipeCategoryTypes::Misc,
         group: Some("carpet"),
         show_notification: true,
@@ -8792,6 +9371,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:light_gray_concrete_powder",
         category: RecipeCategoryTypes::Building,
         group: Some("concrete_powder"),
         ingredients: &[
@@ -8811,6 +9391,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:light_gray_dye_from_azure_bluet",
         category: RecipeCategoryTypes::Misc,
         group: Some("light_gray_dye"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:azure_bluet")],
@@ -8820,6 +9401,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:light_gray_dye_from_black_white_dye",
         category: RecipeCategoryTypes::Misc,
         group: Some("light_gray_dye"),
         ingredients: &[
@@ -8833,6 +9415,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:light_gray_dye_from_gray_white_dye",
         category: RecipeCategoryTypes::Misc,
         group: Some("light_gray_dye"),
         ingredients: &[
@@ -8845,6 +9428,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:light_gray_dye_from_oxeye_daisy",
         category: RecipeCategoryTypes::Misc,
         group: Some("light_gray_dye"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:oxeye_daisy")],
@@ -8854,6 +9438,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:light_gray_dye_from_white_tulip",
         category: RecipeCategoryTypes::Misc,
         group: Some("light_gray_dye"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:white_tulip")],
@@ -8863,6 +9448,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:light_gray_harness",
         category: RecipeCategoryTypes::Equipment,
         group: Some("harness"),
         show_notification: true,
@@ -8881,6 +9467,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingTransmute {
+        recipe_id: "minecraft:light_gray_shulker_box",
         category: RecipeCategoryTypes::Misc,
         group: Some("shulker_box_dye"),
         input: RecipeIngredientTypes::OneOf(&[
@@ -8903,12 +9490,16 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
             "minecraft:black_shulker_box",
         ]),
         material: RecipeIngredientTypes::Simple("minecraft:light_gray_dye"),
+        material_count_min: 1u8,
+        material_count_max: 1u8,
+        add_material_count_to_result: false,
         result: RecipeResultStruct {
             id: "minecraft:light_gray_shulker_box",
             count: 1u8,
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:light_gray_stained_glass",
         category: RecipeCategoryTypes::Building,
         group: Some("stained_glass"),
         show_notification: true,
@@ -8926,6 +9517,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:light_gray_stained_glass_pane",
         category: RecipeCategoryTypes::Misc,
         group: Some("stained_glass_pane"),
         show_notification: true,
@@ -8940,6 +9532,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:light_gray_stained_glass_pane_from_glass_pane",
         category: RecipeCategoryTypes::Misc,
         group: Some("stained_glass_pane"),
         show_notification: true,
@@ -8957,6 +9550,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:light_gray_terracotta",
         category: RecipeCategoryTypes::Building,
         group: Some("stained_terracotta"),
         show_notification: true,
@@ -8974,6 +9568,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:light_weighted_pressure_plate",
         category: RecipeCategoryTypes::Restone,
         group: None,
         show_notification: true,
@@ -8985,6 +9580,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:lightning_rod",
         category: RecipeCategoryTypes::Restone,
         group: None,
         show_notification: true,
@@ -8996,6 +9592,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:lime_banner",
         category: RecipeCategoryTypes::Misc,
         group: Some("banner"),
         show_notification: true,
@@ -9010,6 +9607,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:lime_bed",
         category: RecipeCategoryTypes::Misc,
         group: Some("bed"),
         show_notification: true,
@@ -9040,6 +9638,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingTransmute {
+        recipe_id: "minecraft:lime_bundle",
         category: RecipeCategoryTypes::Equipment,
         group: Some("bundle_dye"),
         input: RecipeIngredientTypes::OneOf(&[
@@ -9062,12 +9661,16 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
             "minecraft:black_bundle",
         ]),
         material: RecipeIngredientTypes::Simple("minecraft:lime_dye"),
+        material_count_min: 1u8,
+        material_count_max: 1u8,
+        add_material_count_to_result: false,
         result: RecipeResultStruct {
             id: "minecraft:lime_bundle",
             count: 1u8,
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:lime_candle",
         category: RecipeCategoryTypes::Misc,
         group: Some("dyed_candle"),
         ingredients: &[
@@ -9080,6 +9683,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:lime_carpet",
         category: RecipeCategoryTypes::Misc,
         group: Some("carpet"),
         show_notification: true,
@@ -9091,6 +9695,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:lime_concrete_powder",
         category: RecipeCategoryTypes::Building,
         group: Some("concrete_powder"),
         ingredients: &[
@@ -9110,6 +9715,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:lime_dye",
         category: RecipeCategoryTypes::Misc,
         group: None,
         ingredients: &[
@@ -9122,6 +9728,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:lime_harness",
         category: RecipeCategoryTypes::Equipment,
         group: Some("harness"),
         show_notification: true,
@@ -9137,6 +9744,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingTransmute {
+        recipe_id: "minecraft:lime_shulker_box",
         category: RecipeCategoryTypes::Misc,
         group: Some("shulker_box_dye"),
         input: RecipeIngredientTypes::OneOf(&[
@@ -9159,12 +9767,16 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
             "minecraft:black_shulker_box",
         ]),
         material: RecipeIngredientTypes::Simple("minecraft:lime_dye"),
+        material_count_min: 1u8,
+        material_count_max: 1u8,
+        add_material_count_to_result: false,
         result: RecipeResultStruct {
             id: "minecraft:lime_shulker_box",
             count: 1u8,
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:lime_stained_glass",
         category: RecipeCategoryTypes::Building,
         group: Some("stained_glass"),
         show_notification: true,
@@ -9179,6 +9791,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:lime_stained_glass_pane",
         category: RecipeCategoryTypes::Misc,
         group: Some("stained_glass_pane"),
         show_notification: true,
@@ -9193,6 +9806,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:lime_stained_glass_pane_from_glass_pane",
         category: RecipeCategoryTypes::Misc,
         group: Some("stained_glass_pane"),
         show_notification: true,
@@ -9207,6 +9821,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:lime_terracotta",
         category: RecipeCategoryTypes::Building,
         group: Some("stained_terracotta"),
         show_notification: true,
@@ -9221,6 +9836,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:lodestone",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -9238,6 +9854,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:loom",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -9268,6 +9885,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:mace",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -9282,6 +9900,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:magenta_banner",
         category: RecipeCategoryTypes::Misc,
         group: Some("banner"),
         show_notification: true,
@@ -9296,6 +9915,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:magenta_bed",
         category: RecipeCategoryTypes::Misc,
         group: Some("bed"),
         show_notification: true,
@@ -9326,6 +9946,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingTransmute {
+        recipe_id: "minecraft:magenta_bundle",
         category: RecipeCategoryTypes::Equipment,
         group: Some("bundle_dye"),
         input: RecipeIngredientTypes::OneOf(&[
@@ -9348,12 +9969,16 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
             "minecraft:black_bundle",
         ]),
         material: RecipeIngredientTypes::Simple("minecraft:magenta_dye"),
+        material_count_min: 1u8,
+        material_count_max: 1u8,
+        add_material_count_to_result: false,
         result: RecipeResultStruct {
             id: "minecraft:magenta_bundle",
             count: 1u8,
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:magenta_candle",
         category: RecipeCategoryTypes::Misc,
         group: Some("dyed_candle"),
         ingredients: &[
@@ -9366,6 +9991,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:magenta_carpet",
         category: RecipeCategoryTypes::Misc,
         group: Some("carpet"),
         show_notification: true,
@@ -9377,6 +10003,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:magenta_concrete_powder",
         category: RecipeCategoryTypes::Building,
         group: Some("concrete_powder"),
         ingredients: &[
@@ -9396,6 +10023,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:magenta_dye_from_allium",
         category: RecipeCategoryTypes::Misc,
         group: Some("magenta_dye"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:allium")],
@@ -9405,6 +10033,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:magenta_dye_from_blue_red_pink",
         category: RecipeCategoryTypes::Misc,
         group: Some("magenta_dye"),
         ingredients: &[
@@ -9418,6 +10047,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:magenta_dye_from_blue_red_white_dye",
         category: RecipeCategoryTypes::Misc,
         group: Some("magenta_dye"),
         ingredients: &[
@@ -9432,6 +10062,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:magenta_dye_from_lilac",
         category: RecipeCategoryTypes::Misc,
         group: Some("magenta_dye"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:lilac")],
@@ -9441,6 +10072,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:magenta_dye_from_purple_and_pink",
         category: RecipeCategoryTypes::Misc,
         group: Some("magenta_dye"),
         ingredients: &[
@@ -9453,6 +10085,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:magenta_harness",
         category: RecipeCategoryTypes::Equipment,
         group: Some("harness"),
         show_notification: true,
@@ -9468,6 +10101,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingTransmute {
+        recipe_id: "minecraft:magenta_shulker_box",
         category: RecipeCategoryTypes::Misc,
         group: Some("shulker_box_dye"),
         input: RecipeIngredientTypes::OneOf(&[
@@ -9490,12 +10124,16 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
             "minecraft:black_shulker_box",
         ]),
         material: RecipeIngredientTypes::Simple("minecraft:magenta_dye"),
+        material_count_min: 1u8,
+        material_count_max: 1u8,
+        add_material_count_to_result: false,
         result: RecipeResultStruct {
             id: "minecraft:magenta_shulker_box",
             count: 1u8,
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:magenta_stained_glass",
         category: RecipeCategoryTypes::Building,
         group: Some("stained_glass"),
         show_notification: true,
@@ -9510,6 +10148,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:magenta_stained_glass_pane",
         category: RecipeCategoryTypes::Misc,
         group: Some("stained_glass_pane"),
         show_notification: true,
@@ -9524,6 +10163,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:magenta_stained_glass_pane_from_glass_pane",
         category: RecipeCategoryTypes::Misc,
         group: Some("stained_glass_pane"),
         show_notification: true,
@@ -9538,6 +10178,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:magenta_terracotta",
         category: RecipeCategoryTypes::Building,
         group: Some("stained_terracotta"),
         show_notification: true,
@@ -9552,6 +10193,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:magma_block",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -9563,6 +10205,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:magma_cream",
         category: RecipeCategoryTypes::Misc,
         group: None,
         ingredients: &[
@@ -9575,6 +10218,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:mangrove_boat",
         category: RecipeCategoryTypes::Misc,
         group: Some("boat"),
         show_notification: true,
@@ -9589,6 +10233,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:mangrove_button",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_button"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:mangrove_planks")],
@@ -9598,6 +10243,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:mangrove_chest_boat",
         category: RecipeCategoryTypes::Misc,
         group: Some("chest_boat"),
         ingredients: &[
@@ -9610,6 +10256,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:mangrove_door",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_door"),
         show_notification: true,
@@ -9624,6 +10271,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:mangrove_fence",
         category: RecipeCategoryTypes::Misc,
         group: Some("wooden_fence"),
         show_notification: true,
@@ -9641,6 +10289,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:mangrove_fence_gate",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_fence_gate"),
         show_notification: true,
@@ -9658,6 +10307,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:mangrove_hanging_sign",
         category: RecipeCategoryTypes::Misc,
         group: Some("wooden_hanging_sign"),
         show_notification: true,
@@ -9675,6 +10325,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:mangrove_planks",
         category: RecipeCategoryTypes::Building,
         group: Some("planks"),
         ingredients: &[RecipeIngredientTypes::OneOf(&[
@@ -9689,6 +10340,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:mangrove_pressure_plate",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_pressure_plate"),
         show_notification: true,
@@ -9703,6 +10355,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:mangrove_shelf",
         category: RecipeCategoryTypes::Misc,
         group: Some("shelf"),
         show_notification: true,
@@ -9717,6 +10370,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:mangrove_sign",
         category: RecipeCategoryTypes::Misc,
         group: Some("wooden_sign"),
         show_notification: true,
@@ -9734,6 +10388,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:mangrove_slab",
         category: RecipeCategoryTypes::Building,
         group: Some("wooden_slab"),
         show_notification: true,
@@ -9748,6 +10403,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:mangrove_stairs",
         category: RecipeCategoryTypes::Building,
         group: Some("wooden_stairs"),
         show_notification: true,
@@ -9762,6 +10418,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:mangrove_trapdoor",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_trapdoor"),
         show_notification: true,
@@ -9776,6 +10433,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:mangrove_wood",
         category: RecipeCategoryTypes::Building,
         group: Some("bark"),
         show_notification: true,
@@ -9787,6 +10445,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:map",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -9801,16 +10460,21 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingTransmute {
+        recipe_id: "minecraft:map_cloning",
         category: RecipeCategoryTypes::Misc,
         group: Some("map_cloning"),
         input: RecipeIngredientTypes::Simple("minecraft:filled_map"),
         material: RecipeIngredientTypes::Simple("minecraft:map"),
+        material_count_min: 1u8,
+        material_count_max: 8u8,
+        add_material_count_to_result: true,
         result: RecipeResultStruct {
             id: "minecraft:filled_map",
             count: 1u8,
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:melon",
         category: RecipeCategoryTypes::Building,
         group: None,
         ingredients: &[
@@ -9830,6 +10494,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:melon_seeds",
         category: RecipeCategoryTypes::Misc,
         group: None,
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:melon_slice")],
@@ -9839,6 +10504,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:minecart",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -9850,6 +10516,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:mojang_banner_pattern",
         category: RecipeCategoryTypes::Misc,
         group: None,
         ingredients: &[
@@ -9862,6 +10529,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:moss_carpet",
         category: RecipeCategoryTypes::Misc,
         group: Some("carpet"),
         show_notification: true,
@@ -9873,6 +10541,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:mossy_cobblestone_from_moss_block",
         category: RecipeCategoryTypes::Building,
         group: Some("mossy_cobblestone"),
         ingredients: &[
@@ -9885,6 +10554,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:mossy_cobblestone_from_vine",
         category: RecipeCategoryTypes::Building,
         group: Some("mossy_cobblestone"),
         ingredients: &[
@@ -9897,6 +10567,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:mossy_cobblestone_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -9911,6 +10582,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:mossy_cobblestone_stairs",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -9925,6 +10597,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:mossy_cobblestone_wall",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -9939,6 +10612,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:mossy_stone_brick_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -9953,6 +10627,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:mossy_stone_brick_stairs",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -9967,6 +10642,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:mossy_stone_brick_wall",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -9981,6 +10657,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:mossy_stone_bricks_from_moss_block",
         category: RecipeCategoryTypes::Building,
         group: Some("mossy_stone_bricks"),
         ingredients: &[
@@ -9993,6 +10670,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:mossy_stone_bricks_from_vine",
         category: RecipeCategoryTypes::Building,
         group: Some("mossy_stone_bricks"),
         ingredients: &[
@@ -10005,6 +10683,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:mud_brick_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -10016,6 +10695,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:mud_brick_stairs",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -10027,6 +10707,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:mud_brick_wall",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -10038,6 +10719,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:mud_bricks",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -10049,6 +10731,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:muddy_mangrove_roots",
         category: RecipeCategoryTypes::Building,
         group: None,
         ingredients: &[
@@ -10061,6 +10744,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:mushroom_stew",
         category: RecipeCategoryTypes::Misc,
         group: None,
         ingredients: &[
@@ -10074,6 +10758,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:music_disc_5",
         category: RecipeCategoryTypes::Misc,
         group: None,
         ingredients: &[
@@ -10093,6 +10778,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:name_tag",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -10114,6 +10800,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:nether_brick_fence",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -10131,6 +10818,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:nether_brick_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -10145,6 +10833,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:nether_brick_stairs",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -10159,6 +10848,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:nether_brick_wall",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -10173,6 +10863,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:nether_bricks",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -10184,6 +10875,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:nether_wart_block",
         category: RecipeCategoryTypes::Building,
         group: None,
         ingredients: &[
@@ -10203,6 +10895,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:netherite_block",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -10217,6 +10910,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:netherite_ingot",
         category: RecipeCategoryTypes::Misc,
         group: Some("netherite_ingot"),
         ingredients: &[
@@ -10235,6 +10929,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:netherite_ingot_from_netherite_block",
         category: RecipeCategoryTypes::Misc,
         group: Some("netherite_ingot"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:netherite_block")],
@@ -10244,6 +10939,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:netherite_upgrade_smithing_template",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -10262,6 +10958,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:note_block",
         category: RecipeCategoryTypes::Restone,
         group: None,
         show_notification: true,
@@ -10292,6 +10989,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:oak_boat",
         category: RecipeCategoryTypes::Misc,
         group: Some("boat"),
         show_notification: true,
@@ -10303,6 +11001,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:oak_button",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_button"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:oak_planks")],
@@ -10312,6 +11011,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:oak_chest_boat",
         category: RecipeCategoryTypes::Misc,
         group: Some("chest_boat"),
         ingredients: &[
@@ -10324,6 +11024,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:oak_door",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_door"),
         show_notification: true,
@@ -10335,6 +11036,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:oak_fence",
         category: RecipeCategoryTypes::Misc,
         group: Some("wooden_fence"),
         show_notification: true,
@@ -10349,6 +11051,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:oak_fence_gate",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_fence_gate"),
         show_notification: true,
@@ -10363,6 +11066,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:oak_hanging_sign",
         category: RecipeCategoryTypes::Misc,
         group: Some("wooden_hanging_sign"),
         show_notification: true,
@@ -10380,6 +11084,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:oak_planks",
         category: RecipeCategoryTypes::Building,
         group: Some("planks"),
         ingredients: &[RecipeIngredientTypes::OneOf(&[
@@ -10394,6 +11099,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:oak_pressure_plate",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_pressure_plate"),
         show_notification: true,
@@ -10405,6 +11111,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:oak_shelf",
         category: RecipeCategoryTypes::Misc,
         group: Some("shelf"),
         show_notification: true,
@@ -10419,6 +11126,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:oak_sign",
         category: RecipeCategoryTypes::Misc,
         group: Some("wooden_sign"),
         show_notification: true,
@@ -10433,6 +11141,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:oak_slab",
         category: RecipeCategoryTypes::Building,
         group: Some("wooden_slab"),
         show_notification: true,
@@ -10444,6 +11153,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:oak_stairs",
         category: RecipeCategoryTypes::Building,
         group: Some("wooden_stairs"),
         show_notification: true,
@@ -10455,6 +11165,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:oak_trapdoor",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_trapdoor"),
         show_notification: true,
@@ -10466,6 +11177,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:oak_wood",
         category: RecipeCategoryTypes::Building,
         group: Some("bark"),
         show_notification: true,
@@ -10477,6 +11189,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:observer",
         category: RecipeCategoryTypes::Restone,
         group: None,
         show_notification: true,
@@ -10492,6 +11205,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:orange_banner",
         category: RecipeCategoryTypes::Misc,
         group: Some("banner"),
         show_notification: true,
@@ -10506,6 +11220,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:orange_bed",
         category: RecipeCategoryTypes::Misc,
         group: Some("bed"),
         show_notification: true,
@@ -10536,6 +11251,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingTransmute {
+        recipe_id: "minecraft:orange_bundle",
         category: RecipeCategoryTypes::Equipment,
         group: Some("bundle_dye"),
         input: RecipeIngredientTypes::OneOf(&[
@@ -10558,12 +11274,16 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
             "minecraft:black_bundle",
         ]),
         material: RecipeIngredientTypes::Simple("minecraft:orange_dye"),
+        material_count_min: 1u8,
+        material_count_max: 1u8,
+        add_material_count_to_result: false,
         result: RecipeResultStruct {
             id: "minecraft:orange_bundle",
             count: 1u8,
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:orange_candle",
         category: RecipeCategoryTypes::Misc,
         group: Some("dyed_candle"),
         ingredients: &[
@@ -10576,6 +11296,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:orange_carpet",
         category: RecipeCategoryTypes::Misc,
         group: Some("carpet"),
         show_notification: true,
@@ -10587,6 +11308,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:orange_concrete_powder",
         category: RecipeCategoryTypes::Building,
         group: Some("concrete_powder"),
         ingredients: &[
@@ -10606,6 +11328,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:orange_dye_from_open_eyeblossom",
         category: RecipeCategoryTypes::Misc,
         group: Some("orange_dye"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:open_eyeblossom")],
@@ -10615,6 +11338,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:orange_dye_from_orange_tulip",
         category: RecipeCategoryTypes::Misc,
         group: Some("orange_dye"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:orange_tulip")],
@@ -10624,6 +11348,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:orange_dye_from_red_yellow",
         category: RecipeCategoryTypes::Misc,
         group: Some("orange_dye"),
         ingredients: &[
@@ -10636,6 +11361,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:orange_dye_from_torchflower",
         category: RecipeCategoryTypes::Misc,
         group: Some("orange_dye"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:torchflower")],
@@ -10645,6 +11371,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:orange_harness",
         category: RecipeCategoryTypes::Equipment,
         group: Some("harness"),
         show_notification: true,
@@ -10660,6 +11387,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingTransmute {
+        recipe_id: "minecraft:orange_shulker_box",
         category: RecipeCategoryTypes::Misc,
         group: Some("shulker_box_dye"),
         input: RecipeIngredientTypes::OneOf(&[
@@ -10682,12 +11410,16 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
             "minecraft:black_shulker_box",
         ]),
         material: RecipeIngredientTypes::Simple("minecraft:orange_dye"),
+        material_count_min: 1u8,
+        material_count_max: 1u8,
+        add_material_count_to_result: false,
         result: RecipeResultStruct {
             id: "minecraft:orange_shulker_box",
             count: 1u8,
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:orange_stained_glass",
         category: RecipeCategoryTypes::Building,
         group: Some("stained_glass"),
         show_notification: true,
@@ -10702,6 +11434,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:orange_stained_glass_pane",
         category: RecipeCategoryTypes::Misc,
         group: Some("stained_glass_pane"),
         show_notification: true,
@@ -10716,6 +11449,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:orange_stained_glass_pane_from_glass_pane",
         category: RecipeCategoryTypes::Misc,
         group: Some("stained_glass_pane"),
         show_notification: true,
@@ -10730,6 +11464,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:orange_terracotta",
         category: RecipeCategoryTypes::Building,
         group: Some("stained_terracotta"),
         show_notification: true,
@@ -10744,6 +11479,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:oxidized_chiseled_copper",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -10758,6 +11494,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:oxidized_copper_bulb",
         category: RecipeCategoryTypes::Restone,
         group: Some("oxidized_copper_bulb"),
         show_notification: true,
@@ -10776,6 +11513,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:oxidized_copper_grate",
         category: RecipeCategoryTypes::Building,
         group: Some("oxidized_copper_grate"),
         show_notification: true,
@@ -10790,6 +11528,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:oxidized_cut_copper",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -10804,6 +11543,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:oxidized_cut_copper_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -10818,6 +11558,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:oxidized_cut_copper_stairs",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -10832,6 +11573,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:packed_ice",
         category: RecipeCategoryTypes::Building,
         group: None,
         ingredients: &[
@@ -10851,6 +11593,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:packed_mud",
         category: RecipeCategoryTypes::Building,
         group: None,
         ingredients: &[
@@ -10863,6 +11606,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:painting",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -10897,6 +11641,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:pale_moss_carpet",
         category: RecipeCategoryTypes::Misc,
         group: Some("carpet"),
         show_notification: true,
@@ -10911,6 +11656,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:pale_oak_boat",
         category: RecipeCategoryTypes::Misc,
         group: Some("boat"),
         show_notification: true,
@@ -10925,6 +11671,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:pale_oak_button",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_button"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:pale_oak_planks")],
@@ -10934,6 +11681,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:pale_oak_chest_boat",
         category: RecipeCategoryTypes::Misc,
         group: Some("chest_boat"),
         ingredients: &[
@@ -10946,6 +11694,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:pale_oak_door",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_door"),
         show_notification: true,
@@ -10960,6 +11709,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:pale_oak_fence",
         category: RecipeCategoryTypes::Misc,
         group: Some("wooden_fence"),
         show_notification: true,
@@ -10977,6 +11727,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:pale_oak_fence_gate",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_fence_gate"),
         show_notification: true,
@@ -10994,6 +11745,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:pale_oak_hanging_sign",
         category: RecipeCategoryTypes::Misc,
         group: Some("wooden_hanging_sign"),
         show_notification: true,
@@ -11011,6 +11763,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:pale_oak_planks",
         category: RecipeCategoryTypes::Building,
         group: Some("planks"),
         ingredients: &[RecipeIngredientTypes::OneOf(&[
@@ -11025,6 +11778,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:pale_oak_pressure_plate",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_pressure_plate"),
         show_notification: true,
@@ -11039,6 +11793,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:pale_oak_shelf",
         category: RecipeCategoryTypes::Misc,
         group: Some("shelf"),
         show_notification: true,
@@ -11053,6 +11808,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:pale_oak_sign",
         category: RecipeCategoryTypes::Misc,
         group: Some("wooden_sign"),
         show_notification: true,
@@ -11070,6 +11826,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:pale_oak_slab",
         category: RecipeCategoryTypes::Building,
         group: Some("wooden_slab"),
         show_notification: true,
@@ -11084,6 +11841,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:pale_oak_stairs",
         category: RecipeCategoryTypes::Building,
         group: Some("wooden_stairs"),
         show_notification: true,
@@ -11098,6 +11856,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:pale_oak_trapdoor",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_trapdoor"),
         show_notification: true,
@@ -11112,6 +11871,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:pale_oak_wood",
         category: RecipeCategoryTypes::Building,
         group: Some("bark"),
         show_notification: true,
@@ -11123,6 +11883,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:paper",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -11134,6 +11895,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:pink_banner",
         category: RecipeCategoryTypes::Misc,
         group: Some("banner"),
         show_notification: true,
@@ -11148,6 +11910,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:pink_bed",
         category: RecipeCategoryTypes::Misc,
         group: Some("bed"),
         show_notification: true,
@@ -11178,6 +11941,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingTransmute {
+        recipe_id: "minecraft:pink_bundle",
         category: RecipeCategoryTypes::Equipment,
         group: Some("bundle_dye"),
         input: RecipeIngredientTypes::OneOf(&[
@@ -11200,12 +11964,16 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
             "minecraft:black_bundle",
         ]),
         material: RecipeIngredientTypes::Simple("minecraft:pink_dye"),
+        material_count_min: 1u8,
+        material_count_max: 1u8,
+        add_material_count_to_result: false,
         result: RecipeResultStruct {
             id: "minecraft:pink_bundle",
             count: 1u8,
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:pink_candle",
         category: RecipeCategoryTypes::Misc,
         group: Some("dyed_candle"),
         ingredients: &[
@@ -11218,6 +11986,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:pink_carpet",
         category: RecipeCategoryTypes::Misc,
         group: Some("carpet"),
         show_notification: true,
@@ -11229,6 +11998,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:pink_concrete_powder",
         category: RecipeCategoryTypes::Building,
         group: Some("concrete_powder"),
         ingredients: &[
@@ -11248,6 +12018,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:pink_dye_from_cactus_flower",
         category: RecipeCategoryTypes::Misc,
         group: Some("pink_dye"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:cactus_flower")],
@@ -11257,6 +12028,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:pink_dye_from_peony",
         category: RecipeCategoryTypes::Misc,
         group: Some("pink_dye"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:peony")],
@@ -11266,6 +12038,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:pink_dye_from_pink_petals",
         category: RecipeCategoryTypes::Misc,
         group: Some("pink_dye"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:pink_petals")],
@@ -11275,6 +12048,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:pink_dye_from_pink_tulip",
         category: RecipeCategoryTypes::Misc,
         group: Some("pink_dye"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:pink_tulip")],
@@ -11284,6 +12058,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:pink_dye_from_red_white_dye",
         category: RecipeCategoryTypes::Misc,
         group: Some("pink_dye"),
         ingredients: &[
@@ -11296,6 +12071,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:pink_harness",
         category: RecipeCategoryTypes::Equipment,
         group: Some("harness"),
         show_notification: true,
@@ -11311,6 +12087,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingTransmute {
+        recipe_id: "minecraft:pink_shulker_box",
         category: RecipeCategoryTypes::Misc,
         group: Some("shulker_box_dye"),
         input: RecipeIngredientTypes::OneOf(&[
@@ -11333,12 +12110,16 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
             "minecraft:black_shulker_box",
         ]),
         material: RecipeIngredientTypes::Simple("minecraft:pink_dye"),
+        material_count_min: 1u8,
+        material_count_max: 1u8,
+        add_material_count_to_result: false,
         result: RecipeResultStruct {
             id: "minecraft:pink_shulker_box",
             count: 1u8,
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:pink_stained_glass",
         category: RecipeCategoryTypes::Building,
         group: Some("stained_glass"),
         show_notification: true,
@@ -11353,6 +12134,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:pink_stained_glass_pane",
         category: RecipeCategoryTypes::Misc,
         group: Some("stained_glass_pane"),
         show_notification: true,
@@ -11367,6 +12149,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:pink_stained_glass_pane_from_glass_pane",
         category: RecipeCategoryTypes::Misc,
         group: Some("stained_glass_pane"),
         show_notification: true,
@@ -11381,6 +12164,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:pink_terracotta",
         category: RecipeCategoryTypes::Building,
         group: Some("stained_terracotta"),
         show_notification: true,
@@ -11395,6 +12179,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:piston",
         category: RecipeCategoryTypes::Restone,
         group: None,
         show_notification: true,
@@ -11427,6 +12212,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:polished_andesite",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -11438,6 +12224,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:polished_andesite_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -11452,6 +12239,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:polished_andesite_stairs",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -11466,6 +12254,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:polished_basalt",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -11477,6 +12266,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:polished_blackstone",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -11488,6 +12278,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:polished_blackstone_brick_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -11502,6 +12293,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:polished_blackstone_brick_stairs",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -11516,6 +12308,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:polished_blackstone_brick_wall",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -11530,6 +12323,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:polished_blackstone_bricks",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -11544,6 +12338,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:polished_blackstone_button",
         category: RecipeCategoryTypes::Restone,
         group: None,
         ingredients: &[RecipeIngredientTypes::Simple(
@@ -11555,6 +12350,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:polished_blackstone_pressure_plate",
         category: RecipeCategoryTypes::Restone,
         group: None,
         show_notification: true,
@@ -11569,6 +12365,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:polished_blackstone_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -11583,6 +12380,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:polished_blackstone_stairs",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -11597,6 +12395,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:polished_blackstone_wall",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -11611,6 +12410,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:polished_cinnabar",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -11622,6 +12422,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:polished_cinnabar_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -11636,6 +12437,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:polished_cinnabar_stairs",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -11650,6 +12452,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:polished_cinnabar_wall",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -11664,6 +12467,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:polished_deepslate",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -11678,6 +12482,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:polished_deepslate_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -11692,6 +12497,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:polished_deepslate_stairs",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -11706,6 +12512,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:polished_deepslate_wall",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -11720,6 +12527,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:polished_diorite",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -11731,6 +12539,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:polished_diorite_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -11745,6 +12554,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:polished_diorite_stairs",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -11759,6 +12569,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:polished_granite",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -11770,6 +12581,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:polished_granite_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -11784,6 +12596,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:polished_granite_stairs",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -11798,6 +12611,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:polished_sulfur",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -11809,6 +12623,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:polished_sulfur_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -11823,6 +12638,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:polished_sulfur_stairs",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -11837,6 +12653,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:polished_sulfur_wall",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -11851,6 +12668,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:polished_tuff",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -11862,6 +12680,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:polished_tuff_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -11876,6 +12695,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:polished_tuff_stairs",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -11890,6 +12710,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:polished_tuff_wall",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -11904,6 +12725,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:potent_sulfur",
         category: RecipeCategoryTypes::Building,
         group: None,
         ingredients: &[
@@ -11923,6 +12745,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:powered_rail",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -11938,6 +12761,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:prismarine",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -11952,6 +12776,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:prismarine_brick_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -11966,6 +12791,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:prismarine_brick_stairs",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -11980,6 +12806,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:prismarine_bricks",
         category: RecipeCategoryTypes::Building,
         group: None,
         ingredients: &[
@@ -11999,6 +12826,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:prismarine_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -12010,6 +12838,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:prismarine_stairs",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -12021,6 +12850,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:prismarine_wall",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -12032,6 +12862,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:pumpkin_pie",
         category: RecipeCategoryTypes::Misc,
         group: None,
         ingredients: &[
@@ -12049,6 +12880,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:pumpkin_seeds",
         category: RecipeCategoryTypes::Misc,
         group: None,
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:pumpkin")],
@@ -12058,6 +12890,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:purple_banner",
         category: RecipeCategoryTypes::Misc,
         group: Some("banner"),
         show_notification: true,
@@ -12072,6 +12905,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:purple_bed",
         category: RecipeCategoryTypes::Misc,
         group: Some("bed"),
         show_notification: true,
@@ -12102,6 +12936,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingTransmute {
+        recipe_id: "minecraft:purple_bundle",
         category: RecipeCategoryTypes::Equipment,
         group: Some("bundle_dye"),
         input: RecipeIngredientTypes::OneOf(&[
@@ -12124,12 +12959,16 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
             "minecraft:black_bundle",
         ]),
         material: RecipeIngredientTypes::Simple("minecraft:purple_dye"),
+        material_count_min: 1u8,
+        material_count_max: 1u8,
+        add_material_count_to_result: false,
         result: RecipeResultStruct {
             id: "minecraft:purple_bundle",
             count: 1u8,
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:purple_candle",
         category: RecipeCategoryTypes::Misc,
         group: Some("dyed_candle"),
         ingredients: &[
@@ -12142,6 +12981,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:purple_carpet",
         category: RecipeCategoryTypes::Misc,
         group: Some("carpet"),
         show_notification: true,
@@ -12153,6 +12993,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:purple_concrete_powder",
         category: RecipeCategoryTypes::Building,
         group: Some("concrete_powder"),
         ingredients: &[
@@ -12172,6 +13013,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:purple_dye",
         category: RecipeCategoryTypes::Misc,
         group: None,
         ingredients: &[
@@ -12184,6 +13026,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:purple_harness",
         category: RecipeCategoryTypes::Equipment,
         group: Some("harness"),
         show_notification: true,
@@ -12199,6 +13042,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingTransmute {
+        recipe_id: "minecraft:purple_shulker_box",
         category: RecipeCategoryTypes::Misc,
         group: Some("shulker_box_dye"),
         input: RecipeIngredientTypes::OneOf(&[
@@ -12221,12 +13065,16 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
             "minecraft:black_shulker_box",
         ]),
         material: RecipeIngredientTypes::Simple("minecraft:purple_dye"),
+        material_count_min: 1u8,
+        material_count_max: 1u8,
+        add_material_count_to_result: false,
         result: RecipeResultStruct {
             id: "minecraft:purple_shulker_box",
             count: 1u8,
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:purple_stained_glass",
         category: RecipeCategoryTypes::Building,
         group: Some("stained_glass"),
         show_notification: true,
@@ -12241,6 +13089,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:purple_stained_glass_pane",
         category: RecipeCategoryTypes::Misc,
         group: Some("stained_glass_pane"),
         show_notification: true,
@@ -12255,6 +13104,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:purple_stained_glass_pane_from_glass_pane",
         category: RecipeCategoryTypes::Misc,
         group: Some("stained_glass_pane"),
         show_notification: true,
@@ -12269,6 +13119,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:purple_terracotta",
         category: RecipeCategoryTypes::Building,
         group: Some("stained_terracotta"),
         show_notification: true,
@@ -12283,6 +13134,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:purpur_block",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -12297,6 +13149,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:purpur_pillar",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -12308,6 +13161,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:purpur_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -12322,6 +13176,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:purpur_stairs",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -12336,6 +13191,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:quartz_block",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -12347,6 +13203,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:quartz_bricks",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -12358,6 +13215,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:quartz_pillar",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -12369,6 +13227,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:quartz_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -12387,6 +13246,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:quartz_stairs",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -12405,6 +13265,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:rabbit_stew_from_brown_mushroom",
         category: RecipeCategoryTypes::Misc,
         group: Some("rabbit_stew"),
         ingredients: &[
@@ -12420,6 +13281,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:rabbit_stew_from_red_mushroom",
         category: RecipeCategoryTypes::Misc,
         group: Some("rabbit_stew"),
         ingredients: &[
@@ -12435,6 +13297,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:rail",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -12449,6 +13312,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:raiser_armor_trim_smithing_template",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -12467,6 +13331,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:raw_copper",
         category: RecipeCategoryTypes::Misc,
         group: None,
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:raw_copper_block")],
@@ -12476,6 +13341,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:raw_copper_block",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -12487,6 +13353,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:raw_gold",
         category: RecipeCategoryTypes::Misc,
         group: None,
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:raw_gold_block")],
@@ -12496,6 +13363,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:raw_gold_block",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -12507,6 +13375,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:raw_iron",
         category: RecipeCategoryTypes::Misc,
         group: None,
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:raw_iron_block")],
@@ -12516,6 +13385,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:raw_iron_block",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -12527,6 +13397,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:recovery_compass",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -12541,6 +13412,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:red_banner",
         category: RecipeCategoryTypes::Misc,
         group: Some("banner"),
         show_notification: true,
@@ -12555,6 +13427,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:red_bed",
         category: RecipeCategoryTypes::Misc,
         group: Some("bed"),
         show_notification: true,
@@ -12585,6 +13458,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingTransmute {
+        recipe_id: "minecraft:red_bundle",
         category: RecipeCategoryTypes::Equipment,
         group: Some("bundle_dye"),
         input: RecipeIngredientTypes::OneOf(&[
@@ -12607,12 +13481,16 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
             "minecraft:black_bundle",
         ]),
         material: RecipeIngredientTypes::Simple("minecraft:red_dye"),
+        material_count_min: 1u8,
+        material_count_max: 1u8,
+        add_material_count_to_result: false,
         result: RecipeResultStruct {
             id: "minecraft:red_bundle",
             count: 1u8,
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:red_candle",
         category: RecipeCategoryTypes::Misc,
         group: Some("dyed_candle"),
         ingredients: &[
@@ -12625,6 +13503,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:red_carpet",
         category: RecipeCategoryTypes::Misc,
         group: Some("carpet"),
         show_notification: true,
@@ -12636,6 +13515,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:red_concrete_powder",
         category: RecipeCategoryTypes::Building,
         group: Some("concrete_powder"),
         ingredients: &[
@@ -12655,6 +13535,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:red_dye_from_beetroot",
         category: RecipeCategoryTypes::Misc,
         group: Some("red_dye"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:beetroot")],
@@ -12664,6 +13545,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:red_dye_from_poppy",
         category: RecipeCategoryTypes::Misc,
         group: Some("red_dye"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:poppy")],
@@ -12673,6 +13555,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:red_dye_from_rose_bush",
         category: RecipeCategoryTypes::Misc,
         group: Some("red_dye"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:rose_bush")],
@@ -12682,6 +13565,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:red_dye_from_tulip",
         category: RecipeCategoryTypes::Misc,
         group: Some("red_dye"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:red_tulip")],
@@ -12691,6 +13575,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:red_harness",
         category: RecipeCategoryTypes::Equipment,
         group: Some("harness"),
         show_notification: true,
@@ -12706,6 +13591,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:red_nether_brick_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -12720,6 +13606,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:red_nether_brick_stairs",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -12734,6 +13621,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:red_nether_brick_wall",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -12748,6 +13636,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:red_nether_bricks",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -12762,6 +13651,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:red_sandstone",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -12773,6 +13663,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:red_sandstone_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -12790,6 +13681,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:red_sandstone_stairs",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -12808,6 +13700,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:red_sandstone_wall",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -12822,6 +13715,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingTransmute {
+        recipe_id: "minecraft:red_shulker_box",
         category: RecipeCategoryTypes::Misc,
         group: Some("shulker_box_dye"),
         input: RecipeIngredientTypes::OneOf(&[
@@ -12844,12 +13738,16 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
             "minecraft:black_shulker_box",
         ]),
         material: RecipeIngredientTypes::Simple("minecraft:red_dye"),
+        material_count_min: 1u8,
+        material_count_max: 1u8,
+        add_material_count_to_result: false,
         result: RecipeResultStruct {
             id: "minecraft:red_shulker_box",
             count: 1u8,
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:red_stained_glass",
         category: RecipeCategoryTypes::Building,
         group: Some("stained_glass"),
         show_notification: true,
@@ -12864,6 +13762,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:red_stained_glass_pane",
         category: RecipeCategoryTypes::Misc,
         group: Some("stained_glass_pane"),
         show_notification: true,
@@ -12878,6 +13777,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:red_stained_glass_pane_from_glass_pane",
         category: RecipeCategoryTypes::Misc,
         group: Some("stained_glass_pane"),
         show_notification: true,
@@ -12892,6 +13792,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:red_terracotta",
         category: RecipeCategoryTypes::Building,
         group: Some("stained_terracotta"),
         show_notification: true,
@@ -12906,6 +13807,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:redstone",
         category: RecipeCategoryTypes::Restone,
         group: None,
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:redstone_block")],
@@ -12915,6 +13817,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:redstone_block",
         category: RecipeCategoryTypes::Restone,
         group: None,
         show_notification: true,
@@ -12926,6 +13829,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:redstone_lamp",
         category: RecipeCategoryTypes::Restone,
         group: None,
         show_notification: true,
@@ -12940,6 +13844,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:redstone_torch",
         category: RecipeCategoryTypes::Restone,
         group: None,
         show_notification: true,
@@ -12954,6 +13859,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:repeater",
         category: RecipeCategoryTypes::Restone,
         group: None,
         show_notification: true,
@@ -12972,6 +13878,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:resin_block",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -12983,6 +13890,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:resin_brick_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -12994,6 +13902,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:resin_brick_stairs",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -13005,6 +13914,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:resin_brick_wall",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -13016,6 +13926,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:resin_bricks",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -13027,6 +13938,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:resin_clump",
         category: RecipeCategoryTypes::Misc,
         group: None,
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:resin_block")],
@@ -13036,6 +13948,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:respawn_anchor",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -13053,6 +13966,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:rib_armor_trim_smithing_template",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -13071,6 +13985,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:saddle",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -13085,6 +14000,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:sandstone",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -13096,6 +14012,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:sandstone_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -13110,6 +14027,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:sandstone_stairs",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -13128,6 +14046,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:sandstone_wall",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -13139,6 +14058,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:scaffolding",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -13153,6 +14073,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:sea_lantern",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -13173,6 +14094,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:sentry_armor_trim_smithing_template",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -13191,6 +14113,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:shaper_armor_trim_smithing_template",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -13209,6 +14132,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:shears",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -13220,6 +14144,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:shield",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -13250,6 +14175,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:shulker_box",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -13267,6 +14193,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:silence_armor_trim_smithing_template",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -13288,6 +14215,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:skull_banner_pattern",
         category: RecipeCategoryTypes::Misc,
         group: None,
         ingredients: &[
@@ -13300,6 +14228,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:slime_ball",
         category: RecipeCategoryTypes::Misc,
         group: None,
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:slime_block")],
@@ -13309,6 +14238,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:slime_block",
         category: RecipeCategoryTypes::Restone,
         group: None,
         show_notification: true,
@@ -13320,6 +14250,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:smithing_table",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -13350,6 +14281,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:smoker",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -13412,6 +14344,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:smooth_quartz_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -13426,6 +14359,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:smooth_quartz_stairs",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -13440,6 +14374,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:smooth_red_sandstone_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -13454,6 +14389,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:smooth_red_sandstone_stairs",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -13468,6 +14404,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:smooth_sandstone_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -13482,6 +14419,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:smooth_sandstone_stairs",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -13496,6 +14434,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:smooth_stone_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -13507,6 +14446,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:snout_armor_trim_smithing_template",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -13525,6 +14465,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:snow",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -13536,6 +14477,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:snow_block",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -13547,6 +14489,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:soul_campfire",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -13613,6 +14556,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:soul_lantern",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -13627,6 +14571,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:soul_torch",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -13648,6 +14593,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:spectral_arrow",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -13665,6 +14611,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:spire_armor_trim_smithing_template",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -13683,6 +14630,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:spruce_boat",
         category: RecipeCategoryTypes::Misc,
         group: Some("boat"),
         show_notification: true,
@@ -13697,6 +14645,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:spruce_button",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_button"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:spruce_planks")],
@@ -13706,6 +14655,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:spruce_chest_boat",
         category: RecipeCategoryTypes::Misc,
         group: Some("chest_boat"),
         ingredients: &[
@@ -13718,6 +14668,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:spruce_door",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_door"),
         show_notification: true,
@@ -13732,6 +14683,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:spruce_fence",
         category: RecipeCategoryTypes::Misc,
         group: Some("wooden_fence"),
         show_notification: true,
@@ -13749,6 +14701,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:spruce_fence_gate",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_fence_gate"),
         show_notification: true,
@@ -13766,6 +14719,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:spruce_hanging_sign",
         category: RecipeCategoryTypes::Misc,
         group: Some("wooden_hanging_sign"),
         show_notification: true,
@@ -13783,6 +14737,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:spruce_planks",
         category: RecipeCategoryTypes::Building,
         group: Some("planks"),
         ingredients: &[RecipeIngredientTypes::OneOf(&[
@@ -13797,6 +14752,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:spruce_pressure_plate",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_pressure_plate"),
         show_notification: true,
@@ -13811,6 +14767,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:spruce_shelf",
         category: RecipeCategoryTypes::Misc,
         group: Some("shelf"),
         show_notification: true,
@@ -13825,6 +14782,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:spruce_sign",
         category: RecipeCategoryTypes::Misc,
         group: Some("wooden_sign"),
         show_notification: true,
@@ -13842,6 +14800,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:spruce_slab",
         category: RecipeCategoryTypes::Building,
         group: Some("wooden_slab"),
         show_notification: true,
@@ -13856,6 +14815,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:spruce_stairs",
         category: RecipeCategoryTypes::Building,
         group: Some("wooden_stairs"),
         show_notification: true,
@@ -13870,6 +14830,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:spruce_trapdoor",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_trapdoor"),
         show_notification: true,
@@ -13884,6 +14845,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:spruce_wood",
         category: RecipeCategoryTypes::Building,
         group: Some("bark"),
         show_notification: true,
@@ -13895,6 +14857,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:spyglass",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -13912,6 +14875,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:stick",
         category: RecipeCategoryTypes::Misc,
         group: Some("sticks"),
         show_notification: true,
@@ -13939,6 +14903,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:stick_from_bamboo_item",
         category: RecipeCategoryTypes::Misc,
         group: Some("sticks"),
         show_notification: true,
@@ -13950,6 +14915,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:sticky_piston",
         category: RecipeCategoryTypes::Restone,
         group: None,
         show_notification: true,
@@ -13964,6 +14930,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:stone_axe",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -13985,6 +14952,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:stone_brick_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -13996,6 +14964,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:stone_brick_stairs",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -14007,6 +14976,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:stone_brick_wall",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -14018,6 +14988,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:stone_bricks",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -14029,6 +15000,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:stone_button",
         category: RecipeCategoryTypes::Restone,
         group: None,
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:stone")],
@@ -14038,6 +15010,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:stone_hoe",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -14059,6 +15032,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:stone_pickaxe",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -14080,6 +15054,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:stone_pressure_plate",
         category: RecipeCategoryTypes::Restone,
         group: None,
         show_notification: true,
@@ -14091,6 +15066,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:stone_shovel",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -14112,6 +15088,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:stone_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -14123,6 +15100,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:stone_spear",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -14144,6 +15122,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:stone_stairs",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -14155,6 +15134,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:stone_sword",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -14176,6 +15156,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:stonecutter",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -14190,6 +15171,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:stripped_acacia_wood",
         category: RecipeCategoryTypes::Building,
         group: Some("bark"),
         show_notification: true,
@@ -14204,6 +15186,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:stripped_birch_wood",
         category: RecipeCategoryTypes::Building,
         group: Some("bark"),
         show_notification: true,
@@ -14218,6 +15201,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:stripped_cherry_wood",
         category: RecipeCategoryTypes::Building,
         group: Some("bark"),
         show_notification: true,
@@ -14232,6 +15216,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:stripped_crimson_hyphae",
         category: RecipeCategoryTypes::Building,
         group: Some("bark"),
         show_notification: true,
@@ -14246,6 +15231,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:stripped_dark_oak_wood",
         category: RecipeCategoryTypes::Building,
         group: Some("bark"),
         show_notification: true,
@@ -14260,6 +15246,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:stripped_jungle_wood",
         category: RecipeCategoryTypes::Building,
         group: Some("bark"),
         show_notification: true,
@@ -14274,6 +15261,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:stripped_mangrove_wood",
         category: RecipeCategoryTypes::Building,
         group: Some("bark"),
         show_notification: true,
@@ -14288,6 +15276,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:stripped_oak_wood",
         category: RecipeCategoryTypes::Building,
         group: Some("bark"),
         show_notification: true,
@@ -14302,6 +15291,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:stripped_pale_oak_wood",
         category: RecipeCategoryTypes::Building,
         group: Some("bark"),
         show_notification: true,
@@ -14316,6 +15306,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:stripped_spruce_wood",
         category: RecipeCategoryTypes::Building,
         group: Some("bark"),
         show_notification: true,
@@ -14330,6 +15321,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:stripped_warped_hyphae",
         category: RecipeCategoryTypes::Building,
         group: Some("bark"),
         show_notification: true,
@@ -14344,6 +15336,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:sugar_from_honey_bottle",
         category: RecipeCategoryTypes::Misc,
         group: Some("sugar"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:honey_bottle")],
@@ -14353,6 +15346,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:sugar_from_sugar_cane",
         category: RecipeCategoryTypes::Misc,
         group: Some("sugar"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:sugar_cane")],
@@ -14362,6 +15356,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:sulfur_brick_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -14376,6 +15371,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:sulfur_brick_stairs",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -14390,6 +15386,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:sulfur_brick_wall",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -14404,6 +15401,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:sulfur_bricks",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -14418,6 +15416,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:sulfur_from_sulfur_spikes",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -14429,6 +15428,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:sulfur_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -14440,6 +15440,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:sulfur_stairs",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -14451,6 +15452,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:sulfur_wall",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -14462,6 +15464,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:suspicious_stew_from_allium",
         category: RecipeCategoryTypes::Misc,
         group: Some("suspicious_stew"),
         ingredients: &[
@@ -14476,6 +15479,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:suspicious_stew_from_azure_bluet",
         category: RecipeCategoryTypes::Misc,
         group: Some("suspicious_stew"),
         ingredients: &[
@@ -14490,6 +15494,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:suspicious_stew_from_blue_orchid",
         category: RecipeCategoryTypes::Misc,
         group: Some("suspicious_stew"),
         ingredients: &[
@@ -14504,6 +15509,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:suspicious_stew_from_closed_eyeblossom",
         category: RecipeCategoryTypes::Misc,
         group: Some("suspicious_stew"),
         ingredients: &[
@@ -14518,6 +15524,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:suspicious_stew_from_cornflower",
         category: RecipeCategoryTypes::Misc,
         group: Some("suspicious_stew"),
         ingredients: &[
@@ -14532,6 +15539,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:suspicious_stew_from_dandelion",
         category: RecipeCategoryTypes::Misc,
         group: Some("suspicious_stew"),
         ingredients: &[
@@ -14546,6 +15554,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:suspicious_stew_from_golden_dandelion",
         category: RecipeCategoryTypes::Misc,
         group: Some("suspicious_stew"),
         ingredients: &[
@@ -14560,6 +15569,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:suspicious_stew_from_lily_of_the_valley",
         category: RecipeCategoryTypes::Misc,
         group: Some("suspicious_stew"),
         ingredients: &[
@@ -14574,6 +15584,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:suspicious_stew_from_open_eyeblossom",
         category: RecipeCategoryTypes::Misc,
         group: Some("suspicious_stew"),
         ingredients: &[
@@ -14588,6 +15599,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:suspicious_stew_from_orange_tulip",
         category: RecipeCategoryTypes::Misc,
         group: Some("suspicious_stew"),
         ingredients: &[
@@ -14602,6 +15614,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:suspicious_stew_from_oxeye_daisy",
         category: RecipeCategoryTypes::Misc,
         group: Some("suspicious_stew"),
         ingredients: &[
@@ -14616,6 +15629,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:suspicious_stew_from_pink_tulip",
         category: RecipeCategoryTypes::Misc,
         group: Some("suspicious_stew"),
         ingredients: &[
@@ -14630,6 +15644,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:suspicious_stew_from_poppy",
         category: RecipeCategoryTypes::Misc,
         group: Some("suspicious_stew"),
         ingredients: &[
@@ -14644,6 +15659,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:suspicious_stew_from_red_tulip",
         category: RecipeCategoryTypes::Misc,
         group: Some("suspicious_stew"),
         ingredients: &[
@@ -14658,6 +15674,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:suspicious_stew_from_torchflower",
         category: RecipeCategoryTypes::Misc,
         group: Some("suspicious_stew"),
         ingredients: &[
@@ -14672,6 +15689,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:suspicious_stew_from_white_tulip",
         category: RecipeCategoryTypes::Misc,
         group: Some("suspicious_stew"),
         ingredients: &[
@@ -14686,6 +15704,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:suspicious_stew_from_wither_rose",
         category: RecipeCategoryTypes::Misc,
         group: Some("suspicious_stew"),
         ingredients: &[
@@ -14700,6 +15719,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:target",
         category: RecipeCategoryTypes::Restone,
         group: None,
         show_notification: true,
@@ -14714,6 +15734,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:tide_armor_trim_smithing_template",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -14732,6 +15753,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:tinted_glass",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -14749,6 +15771,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:tnt",
         category: RecipeCategoryTypes::Restone,
         group: None,
         show_notification: true,
@@ -14766,6 +15789,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:tnt_minecart",
         category: RecipeCategoryTypes::Misc,
         group: None,
         ingredients: &[
@@ -14778,6 +15802,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:torch",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -14795,6 +15820,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:trapped_chest",
         category: RecipeCategoryTypes::Restone,
         group: None,
         ingredients: &[
@@ -14807,6 +15833,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:tripwire_hook",
         category: RecipeCategoryTypes::Restone,
         group: None,
         show_notification: true,
@@ -14838,6 +15865,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:tuff_brick_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -14849,6 +15877,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:tuff_brick_stairs",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -14860,6 +15889,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:tuff_brick_wall",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -14871,6 +15901,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:tuff_bricks",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -14885,6 +15916,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:tuff_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -14896,6 +15928,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:tuff_stairs",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -14907,6 +15940,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:tuff_wall",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -14918,6 +15952,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:turtle_helmet",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -14929,6 +15964,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:vex_armor_trim_smithing_template",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -14947,6 +15983,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:ward_armor_trim_smithing_template",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -14968,6 +16005,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:warped_button",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_button"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:warped_planks")],
@@ -14977,6 +16015,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:warped_door",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_door"),
         show_notification: true,
@@ -14991,6 +16030,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:warped_fence",
         category: RecipeCategoryTypes::Misc,
         group: Some("wooden_fence"),
         show_notification: true,
@@ -15008,6 +16048,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:warped_fence_gate",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_fence_gate"),
         show_notification: true,
@@ -15025,6 +16066,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:warped_fungus_on_a_stick",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -15042,6 +16084,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:warped_hanging_sign",
         category: RecipeCategoryTypes::Misc,
         group: Some("wooden_hanging_sign"),
         show_notification: true,
@@ -15059,6 +16102,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:warped_hyphae",
         category: RecipeCategoryTypes::Building,
         group: Some("bark"),
         show_notification: true,
@@ -15070,6 +16114,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:warped_planks",
         category: RecipeCategoryTypes::Building,
         group: Some("planks"),
         ingredients: &[RecipeIngredientTypes::OneOf(&[
@@ -15084,6 +16129,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:warped_pressure_plate",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_pressure_plate"),
         show_notification: true,
@@ -15098,6 +16144,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:warped_shelf",
         category: RecipeCategoryTypes::Misc,
         group: Some("shelf"),
         show_notification: true,
@@ -15112,6 +16159,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:warped_sign",
         category: RecipeCategoryTypes::Misc,
         group: Some("wooden_sign"),
         show_notification: true,
@@ -15129,6 +16177,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:warped_slab",
         category: RecipeCategoryTypes::Building,
         group: Some("wooden_slab"),
         show_notification: true,
@@ -15143,6 +16192,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:warped_stairs",
         category: RecipeCategoryTypes::Building,
         group: Some("wooden_stairs"),
         show_notification: true,
@@ -15157,6 +16207,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:warped_trapdoor",
         category: RecipeCategoryTypes::Restone,
         group: Some("wooden_trapdoor"),
         show_notification: true,
@@ -15171,6 +16222,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:waxed_chiseled_copper",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_chiseled_copper"),
         show_notification: true,
@@ -15185,6 +16237,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_chiseled_copper_from_honeycomb",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_chiseled_copper"),
         ingredients: &[
@@ -15197,6 +16250,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_copper_bars_from_honeycomb",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_copper_bar"),
         ingredients: &[
@@ -15209,6 +16263,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_copper_block_from_honeycomb",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_copper_block"),
         ingredients: &[
@@ -15221,6 +16276,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:waxed_copper_bulb",
         category: RecipeCategoryTypes::Restone,
         group: Some("waxed_copper_bulb"),
         show_notification: true,
@@ -15239,6 +16295,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_copper_bulb_from_honeycomb",
         category: RecipeCategoryTypes::Restone,
         group: Some("waxed_copper_bulb"),
         ingredients: &[
@@ -15251,6 +16308,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_copper_chain_from_honeycomb",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_copper_chain"),
         ingredients: &[
@@ -15263,6 +16321,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_copper_chest_from_honeycomb",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_copper_chest"),
         ingredients: &[
@@ -15275,6 +16334,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_copper_door_from_honeycomb",
         category: RecipeCategoryTypes::Restone,
         group: Some("waxed_copper_door"),
         ingredients: &[
@@ -15287,6 +16347,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_copper_golem_statue_from_honeycomb",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_copper_golem_statue"),
         ingredients: &[
@@ -15299,6 +16360,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:waxed_copper_grate",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_copper_grate"),
         show_notification: true,
@@ -15313,6 +16375,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_copper_grate_from_honeycomb",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_copper_grate"),
         ingredients: &[
@@ -15325,6 +16388,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_copper_lantern_from_honeycomb",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_copper_lantern"),
         ingredients: &[
@@ -15337,6 +16401,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_copper_trapdoor_from_honeycomb",
         category: RecipeCategoryTypes::Restone,
         group: Some("waxed_copper_trapdoor"),
         ingredients: &[
@@ -15349,6 +16414,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:waxed_cut_copper",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_cut_copper"),
         show_notification: true,
@@ -15363,6 +16429,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_cut_copper_from_honeycomb",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_cut_copper"),
         ingredients: &[
@@ -15375,6 +16442,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:waxed_cut_copper_slab",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_cut_copper_slab"),
         show_notification: true,
@@ -15389,6 +16457,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_cut_copper_slab_from_honeycomb",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_cut_copper_slab"),
         ingredients: &[
@@ -15401,6 +16470,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:waxed_cut_copper_stairs",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_cut_copper_stairs"),
         show_notification: true,
@@ -15415,6 +16485,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_cut_copper_stairs_from_honeycomb",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_cut_copper_stairs"),
         ingredients: &[
@@ -15427,6 +16498,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:waxed_exposed_chiseled_copper",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_exposed_chiseled_copper"),
         show_notification: true,
@@ -15441,6 +16513,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_exposed_chiseled_copper_from_honeycomb",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_exposed_chiseled_copper"),
         ingredients: &[
@@ -15453,6 +16526,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_exposed_copper_bars_from_honeycomb",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_copper_bar"),
         ingredients: &[
@@ -15465,6 +16539,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:waxed_exposed_copper_bulb",
         category: RecipeCategoryTypes::Restone,
         group: Some("waxed_exposed_copper_bulb"),
         show_notification: true,
@@ -15483,6 +16558,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_exposed_copper_bulb_from_honeycomb",
         category: RecipeCategoryTypes::Restone,
         group: Some("waxed_exposed_copper_bulb"),
         ingredients: &[
@@ -15495,6 +16571,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_exposed_copper_chain_from_honeycomb",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_copper_chain"),
         ingredients: &[
@@ -15507,6 +16584,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_exposed_copper_chest_from_honeycomb",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_copper_chest"),
         ingredients: &[
@@ -15519,6 +16597,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_exposed_copper_door_from_honeycomb",
         category: RecipeCategoryTypes::Restone,
         group: Some("waxed_copper_door"),
         ingredients: &[
@@ -15531,6 +16610,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_exposed_copper_from_honeycomb",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_copper_block"),
         ingredients: &[
@@ -15543,6 +16623,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_exposed_copper_golem_statue_from_honeycomb",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_copper_golem_statue"),
         ingredients: &[
@@ -15555,6 +16636,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:waxed_exposed_copper_grate",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_exposed_copper_grate"),
         show_notification: true,
@@ -15569,6 +16651,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_exposed_copper_grate_from_honeycomb",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_exposed_copper_grate"),
         ingredients: &[
@@ -15581,6 +16664,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_exposed_copper_lantern_from_honeycomb",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_copper_lantern"),
         ingredients: &[
@@ -15593,6 +16677,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_exposed_copper_trapdoor_from_honeycomb",
         category: RecipeCategoryTypes::Restone,
         group: Some("waxed_copper_trapdoor"),
         ingredients: &[
@@ -15605,6 +16690,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:waxed_exposed_cut_copper",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_exposed_cut_copper"),
         show_notification: true,
@@ -15619,6 +16705,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_exposed_cut_copper_from_honeycomb",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_exposed_cut_copper"),
         ingredients: &[
@@ -15631,6 +16718,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:waxed_exposed_cut_copper_slab",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_exposed_cut_copper_slab"),
         show_notification: true,
@@ -15645,6 +16733,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_exposed_cut_copper_slab_from_honeycomb",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_exposed_cut_copper_slab"),
         ingredients: &[
@@ -15657,6 +16746,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:waxed_exposed_cut_copper_stairs",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_exposed_cut_copper_stairs"),
         show_notification: true,
@@ -15671,6 +16761,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_exposed_cut_copper_stairs_from_honeycomb",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_exposed_cut_copper_stairs"),
         ingredients: &[
@@ -15683,6 +16774,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_exposed_lightning_rod_from_honeycomb",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_lightning_rod"),
         ingredients: &[
@@ -15695,6 +16787,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_lightning_rod_from_honeycomb",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_lightning_rod"),
         ingredients: &[
@@ -15707,6 +16800,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:waxed_oxidized_chiseled_copper",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_oxidized_chiseled_copper"),
         show_notification: true,
@@ -15721,6 +16815,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_oxidized_chiseled_copper_from_honeycomb",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_oxidized_chiseled_copper"),
         ingredients: &[
@@ -15733,6 +16828,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_oxidized_copper_bars_from_honeycomb",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_copper_bar"),
         ingredients: &[
@@ -15745,6 +16841,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:waxed_oxidized_copper_bulb",
         category: RecipeCategoryTypes::Restone,
         group: Some("waxed_oxidized_copper_bulb"),
         show_notification: true,
@@ -15763,6 +16860,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_oxidized_copper_bulb_from_honeycomb",
         category: RecipeCategoryTypes::Restone,
         group: Some("waxed_oxidized_copper_bulb"),
         ingredients: &[
@@ -15775,6 +16873,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_oxidized_copper_chain_from_honeycomb",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_copper_chain"),
         ingredients: &[
@@ -15787,6 +16886,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_oxidized_copper_chest_from_honeycomb",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_copper_chest"),
         ingredients: &[
@@ -15799,6 +16899,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_oxidized_copper_door_from_honeycomb",
         category: RecipeCategoryTypes::Restone,
         group: Some("waxed_copper_door"),
         ingredients: &[
@@ -15811,6 +16912,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_oxidized_copper_from_honeycomb",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_copper_block"),
         ingredients: &[
@@ -15823,6 +16925,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_oxidized_copper_golem_statue_from_honeycomb",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_copper_golem_statue"),
         ingredients: &[
@@ -15835,6 +16938,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:waxed_oxidized_copper_grate",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_oxidized_copper_grate"),
         show_notification: true,
@@ -15849,6 +16953,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_oxidized_copper_grate_from_honeycomb",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_oxidized_copper_grate"),
         ingredients: &[
@@ -15861,6 +16966,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_oxidized_copper_lantern_from_honeycomb",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_copper_lantern"),
         ingredients: &[
@@ -15873,6 +16979,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_oxidized_copper_trapdoor_from_honeycomb",
         category: RecipeCategoryTypes::Restone,
         group: Some("waxed_copper_trapdoor"),
         ingredients: &[
@@ -15885,6 +16992,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:waxed_oxidized_cut_copper",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_oxidized_cut_copper"),
         show_notification: true,
@@ -15899,6 +17007,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_oxidized_cut_copper_from_honeycomb",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_oxidized_cut_copper"),
         ingredients: &[
@@ -15911,6 +17020,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:waxed_oxidized_cut_copper_slab",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_oxidized_cut_copper_slab"),
         show_notification: true,
@@ -15925,6 +17035,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_oxidized_cut_copper_slab_from_honeycomb",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_oxidized_cut_copper_slab"),
         ingredients: &[
@@ -15937,6 +17048,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:waxed_oxidized_cut_copper_stairs",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_oxidized_cut_copper_stairs"),
         show_notification: true,
@@ -15951,6 +17063,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_oxidized_cut_copper_stairs_from_honeycomb",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_oxidized_cut_copper_stairs"),
         ingredients: &[
@@ -15963,6 +17076,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_oxidized_lightning_rod_from_honeycomb",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_lightning_rod"),
         ingredients: &[
@@ -15975,6 +17089,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:waxed_weathered_chiseled_copper",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_weathered_chiseled_copper"),
         show_notification: true,
@@ -15989,6 +17104,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_weathered_chiseled_copper_from_honeycomb",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_weathered_chiseled_copper"),
         ingredients: &[
@@ -16001,6 +17117,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_weathered_copper_bars_from_honeycomb",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_copper_bar"),
         ingredients: &[
@@ -16013,6 +17130,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:waxed_weathered_copper_bulb",
         category: RecipeCategoryTypes::Restone,
         group: Some("waxed_weathered_copper_bulb"),
         show_notification: true,
@@ -16031,6 +17149,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_weathered_copper_bulb_from_honeycomb",
         category: RecipeCategoryTypes::Restone,
         group: Some("waxed_weathered_copper_bulb"),
         ingredients: &[
@@ -16043,6 +17162,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_weathered_copper_chain_from_honeycomb",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_copper_chain"),
         ingredients: &[
@@ -16055,6 +17175,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_weathered_copper_chest_from_honeycomb",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_copper_chest"),
         ingredients: &[
@@ -16067,6 +17188,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_weathered_copper_door_from_honeycomb",
         category: RecipeCategoryTypes::Restone,
         group: Some("waxed_copper_door"),
         ingredients: &[
@@ -16079,6 +17201,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_weathered_copper_from_honeycomb",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_copper_block"),
         ingredients: &[
@@ -16091,6 +17214,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_weathered_copper_golem_statue_from_honeycomb",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_copper_golem_statue"),
         ingredients: &[
@@ -16103,6 +17227,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:waxed_weathered_copper_grate",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_weathered_copper_grate"),
         show_notification: true,
@@ -16117,6 +17242,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_weathered_copper_grate_from_honeycomb",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_weathered_copper_grate"),
         ingredients: &[
@@ -16129,6 +17255,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_weathered_copper_lantern_from_honeycomb",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_copper_lantern"),
         ingredients: &[
@@ -16141,6 +17268,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_weathered_copper_trapdoor_from_honeycomb",
         category: RecipeCategoryTypes::Restone,
         group: Some("waxed_copper_trapdoor"),
         ingredients: &[
@@ -16153,6 +17281,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:waxed_weathered_cut_copper",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_weathered_cut_copper"),
         show_notification: true,
@@ -16167,6 +17296,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_weathered_cut_copper_from_honeycomb",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_weathered_cut_copper"),
         ingredients: &[
@@ -16179,6 +17309,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:waxed_weathered_cut_copper_slab",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_weathered_cut_copper_slab"),
         show_notification: true,
@@ -16193,6 +17324,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_weathered_cut_copper_slab_from_honeycomb",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_weathered_cut_copper_slab"),
         ingredients: &[
@@ -16205,6 +17337,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:waxed_weathered_cut_copper_stairs",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_weathered_cut_copper_stairs"),
         show_notification: true,
@@ -16219,6 +17352,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_weathered_cut_copper_stairs_from_honeycomb",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_weathered_cut_copper_stairs"),
         ingredients: &[
@@ -16231,6 +17365,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:waxed_weathered_lightning_rod_from_honeycomb",
         category: RecipeCategoryTypes::Building,
         group: Some("waxed_lightning_rod"),
         ingredients: &[
@@ -16243,6 +17378,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:wayfinder_armor_trim_smithing_template",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -16261,6 +17397,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:weathered_chiseled_copper",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -16275,6 +17412,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:weathered_copper_bulb",
         category: RecipeCategoryTypes::Restone,
         group: Some("weathered_copper_bulb"),
         show_notification: true,
@@ -16293,6 +17431,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:weathered_copper_grate",
         category: RecipeCategoryTypes::Building,
         group: Some("weathered_copper_grate"),
         show_notification: true,
@@ -16307,6 +17446,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:weathered_cut_copper",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -16321,6 +17461,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:weathered_cut_copper_slab",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -16335,6 +17476,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:weathered_cut_copper_stairs",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -16349,6 +17491,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:wheat",
         category: RecipeCategoryTypes::Misc,
         group: None,
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:hay_block")],
@@ -16358,6 +17501,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:white_banner",
         category: RecipeCategoryTypes::Misc,
         group: Some("banner"),
         show_notification: true,
@@ -16372,6 +17516,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:white_bed",
         category: RecipeCategoryTypes::Misc,
         group: Some("bed"),
         show_notification: true,
@@ -16402,6 +17547,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingTransmute {
+        recipe_id: "minecraft:white_bundle",
         category: RecipeCategoryTypes::Equipment,
         group: Some("bundle_dye"),
         input: RecipeIngredientTypes::OneOf(&[
@@ -16424,12 +17570,16 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
             "minecraft:black_bundle",
         ]),
         material: RecipeIngredientTypes::Simple("minecraft:white_dye"),
+        material_count_min: 1u8,
+        material_count_max: 1u8,
+        add_material_count_to_result: false,
         result: RecipeResultStruct {
             id: "minecraft:white_bundle",
             count: 1u8,
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:white_candle",
         category: RecipeCategoryTypes::Misc,
         group: Some("dyed_candle"),
         ingredients: &[
@@ -16442,6 +17592,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:white_carpet",
         category: RecipeCategoryTypes::Misc,
         group: Some("carpet"),
         show_notification: true,
@@ -16453,6 +17604,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:white_concrete_powder",
         category: RecipeCategoryTypes::Building,
         group: Some("concrete_powder"),
         ingredients: &[
@@ -16472,6 +17624,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:white_dye",
         category: RecipeCategoryTypes::Misc,
         group: Some("white_dye"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:bone_meal")],
@@ -16481,6 +17634,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:white_dye_from_lily_of_the_valley",
         category: RecipeCategoryTypes::Misc,
         group: Some("white_dye"),
         ingredients: &[RecipeIngredientTypes::Simple(
@@ -16492,6 +17646,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:white_harness",
         category: RecipeCategoryTypes::Equipment,
         group: Some("harness"),
         show_notification: true,
@@ -16507,6 +17662,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingTransmute {
+        recipe_id: "minecraft:white_shulker_box",
         category: RecipeCategoryTypes::Misc,
         group: Some("shulker_box_dye"),
         input: RecipeIngredientTypes::OneOf(&[
@@ -16529,12 +17685,16 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
             "minecraft:black_shulker_box",
         ]),
         material: RecipeIngredientTypes::Simple("minecraft:white_dye"),
+        material_count_min: 1u8,
+        material_count_max: 1u8,
+        add_material_count_to_result: false,
         result: RecipeResultStruct {
             id: "minecraft:white_shulker_box",
             count: 1u8,
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:white_stained_glass",
         category: RecipeCategoryTypes::Building,
         group: Some("stained_glass"),
         show_notification: true,
@@ -16549,6 +17709,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:white_stained_glass_pane",
         category: RecipeCategoryTypes::Misc,
         group: Some("stained_glass_pane"),
         show_notification: true,
@@ -16563,6 +17724,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:white_stained_glass_pane_from_glass_pane",
         category: RecipeCategoryTypes::Misc,
         group: Some("stained_glass_pane"),
         show_notification: true,
@@ -16577,6 +17739,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:white_terracotta",
         category: RecipeCategoryTypes::Building,
         group: Some("stained_terracotta"),
         show_notification: true,
@@ -16591,6 +17754,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:white_wool_from_string",
         category: RecipeCategoryTypes::Building,
         group: None,
         show_notification: true,
@@ -16602,6 +17766,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:wild_armor_trim_smithing_template",
         category: RecipeCategoryTypes::Misc,
         group: None,
         show_notification: true,
@@ -16623,6 +17788,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:wind_charge",
         category: RecipeCategoryTypes::Misc,
         group: None,
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:breeze_rod")],
@@ -16632,6 +17798,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:wolf_armor",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -16646,6 +17813,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:wooden_axe",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -16676,6 +17844,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:wooden_hoe",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -16706,6 +17875,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:wooden_pickaxe",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -16736,6 +17906,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:wooden_shovel",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -16766,6 +17937,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:wooden_spear",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -16796,6 +17968,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:wooden_sword",
         category: RecipeCategoryTypes::Equipment,
         group: None,
         show_notification: true,
@@ -16826,6 +17999,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:writable_book",
         category: RecipeCategoryTypes::Misc,
         group: None,
         ingredients: &[
@@ -16839,6 +18013,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:yellow_banner",
         category: RecipeCategoryTypes::Misc,
         group: Some("banner"),
         show_notification: true,
@@ -16853,6 +18028,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:yellow_bed",
         category: RecipeCategoryTypes::Misc,
         group: Some("bed"),
         show_notification: true,
@@ -16883,6 +18059,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingTransmute {
+        recipe_id: "minecraft:yellow_bundle",
         category: RecipeCategoryTypes::Equipment,
         group: Some("bundle_dye"),
         input: RecipeIngredientTypes::OneOf(&[
@@ -16905,12 +18082,16 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
             "minecraft:black_bundle",
         ]),
         material: RecipeIngredientTypes::Simple("minecraft:yellow_dye"),
+        material_count_min: 1u8,
+        material_count_max: 1u8,
+        add_material_count_to_result: false,
         result: RecipeResultStruct {
             id: "minecraft:yellow_bundle",
             count: 1u8,
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:yellow_candle",
         category: RecipeCategoryTypes::Misc,
         group: Some("dyed_candle"),
         ingredients: &[
@@ -16923,6 +18104,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:yellow_carpet",
         category: RecipeCategoryTypes::Misc,
         group: Some("carpet"),
         show_notification: true,
@@ -16934,6 +18116,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:yellow_concrete_powder",
         category: RecipeCategoryTypes::Building,
         group: Some("concrete_powder"),
         ingredients: &[
@@ -16953,6 +18136,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:yellow_dye_from_dandelion",
         category: RecipeCategoryTypes::Misc,
         group: Some("yellow_dye"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:dandelion")],
@@ -16962,6 +18146,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:yellow_dye_from_golden_dandelion",
         category: RecipeCategoryTypes::Misc,
         group: Some("yellow_dye"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:golden_dandelion")],
@@ -16971,6 +18156,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:yellow_dye_from_sunflower",
         category: RecipeCategoryTypes::Misc,
         group: Some("yellow_dye"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:sunflower")],
@@ -16980,6 +18166,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShapeless {
+        recipe_id: "minecraft:yellow_dye_from_wildflowers",
         category: RecipeCategoryTypes::Misc,
         group: Some("yellow_dye"),
         ingredients: &[RecipeIngredientTypes::Simple("minecraft:wildflowers")],
@@ -16989,6 +18176,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:yellow_harness",
         category: RecipeCategoryTypes::Equipment,
         group: Some("harness"),
         show_notification: true,
@@ -17004,6 +18192,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingTransmute {
+        recipe_id: "minecraft:yellow_shulker_box",
         category: RecipeCategoryTypes::Misc,
         group: Some("shulker_box_dye"),
         input: RecipeIngredientTypes::OneOf(&[
@@ -17026,12 +18215,16 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
             "minecraft:black_shulker_box",
         ]),
         material: RecipeIngredientTypes::Simple("minecraft:yellow_dye"),
+        material_count_min: 1u8,
+        material_count_max: 1u8,
+        add_material_count_to_result: false,
         result: RecipeResultStruct {
             id: "minecraft:yellow_shulker_box",
             count: 1u8,
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:yellow_stained_glass",
         category: RecipeCategoryTypes::Building,
         group: Some("stained_glass"),
         show_notification: true,
@@ -17046,6 +18239,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:yellow_stained_glass_pane",
         category: RecipeCategoryTypes::Misc,
         group: Some("stained_glass_pane"),
         show_notification: true,
@@ -17060,6 +18254,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:yellow_stained_glass_pane_from_glass_pane",
         category: RecipeCategoryTypes::Misc,
         group: Some("stained_glass_pane"),
         show_notification: true,
@@ -17074,6 +18269,7 @@ pub static RECIPES_CRAFTING: &[CraftingRecipeTypes] = &[
         },
     },
     CraftingRecipeTypes::CraftingShaped {
+        recipe_id: "minecraft:yellow_terracotta",
         category: RecipeCategoryTypes::Building,
         group: Some("stained_terracotta"),
         show_notification: true,

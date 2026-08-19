@@ -104,11 +104,22 @@ fn decode_custom_name(component_data: &[u8]) -> Result<Box<dyn DataComponentImpl
 fn read_length_prefixed_component(
     read: &mut impl NetworkReadExt,
 ) -> Result<(DataComponent, Box<dyn DataComponentImpl>), ReadingError> {
+    // The component stream is nested inside an ItemStack packet.  Do not let
+    // an untrusted length prefix turn into an unbounded allocation: the Java
+    // server's packet decoder already limits the enclosing packet, and a
+    // single component cannot legitimately consume more than that budget.
+    const MAX_COMPONENT_BYTES: usize = 1 << 20;
+
     let id = read_component_id(read)?;
     let byte_len = read.get_var_int()?.0;
     let byte_len: usize = byte_len
         .try_into()
         .map_err(|_| ReadingError::Message("Negative component data length".into()))?;
+    if byte_len > MAX_COMPONENT_BYTES {
+        return Err(ReadingError::Message(format!(
+            "Component data length {byte_len} exceeds maximum of {MAX_COMPONENT_BYTES}"
+        )));
+    }
 
     let component_impl = if byte_len <= 256 {
         let mut stack_buf = [0u8; 256];
@@ -145,6 +156,10 @@ impl ItemStackSerializer<'_> {
         if item_count.0 == 0 {
             return Ok(ItemStackSerializer(Cow::Borrowed(ItemStack::EMPTY)));
         }
+        let item_count_u8 = item_count
+            .0
+            .try_into()
+            .map_err(|_| ReadingError::Message("Invalid item count!".into()))?;
 
         let item_id = read.get_var_int()?;
         let num_to_add = read.get_var_int()?.0;
@@ -168,10 +183,10 @@ impl ItemStackSerializer<'_> {
 
         for _ in 0..num_to_add {
             let id_val = read.get_var_int()?.0;
-            let id = DataComponent::try_from_id(id_val as u8)
+            let id_u8 = u8::try_from(id_val)
+                .map_err(|_| ReadingError::Message(format!("Invalid component ID: {id_val}")))?;
+            let id = DataComponent::try_from_id(id_u8)
                 .ok_or_else(|| ReadingError::Message(format!("Unknown component ID: {id_val}")))?;
-
-            let _byte_len = read.get_var_int()?;
 
             let component_impl = deserialize(id, read)?;
             patch.push((id, Some(component_impl)));
@@ -179,7 +194,9 @@ impl ItemStackSerializer<'_> {
 
         for _ in 0..num_to_remove {
             let id_val = read.get_var_int()?.0;
-            let id = DataComponent::try_from_id(id_val as u8)
+            let id_u8 = u8::try_from(id_val)
+                .map_err(|_| ReadingError::Message(format!("Invalid component ID: {id_val}")))?;
+            let id = DataComponent::try_from_id(id_u8)
                 .ok_or_else(|| ReadingError::Message("Unknown component ID".into()))?;
             patch.push((id, None));
         }
@@ -191,7 +208,7 @@ impl ItemStackSerializer<'_> {
 
         Ok(ItemStackSerializer(Cow::Owned(
             ItemStack::new_with_component(
-                item_count.0 as u8,
+                item_count_u8,
                 Item::from_id(item_id_u16).unwrap_or(&Item::AIR),
                 patch,
             ),
@@ -436,6 +453,86 @@ impl OptionalItemStackHash {
         } else {
             other.is_empty()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ItemStackSerializer;
+    use crate::codec::var_int::VarInt;
+    use pumpkin_data::data_component::DataComponent;
+    use pumpkin_data::data_component_impl::{DataComponentImpl, MaxDamageImpl};
+    use pumpkin_data::item::Item;
+    use pumpkin_data::item_stack::ItemStack;
+
+    #[test]
+    fn item_stack_rejects_component_ids_that_do_not_fit_u8() {
+        let mut bytes = Vec::new();
+        for value in [1, 1, 1, 0, 300] {
+            VarInt(value)
+                .encode(&mut bytes)
+                .expect("encode test varint");
+        }
+        assert!(ItemStackSerializer::read(&mut std::io::Cursor::new(bytes)).is_err());
+    }
+
+    #[test]
+    fn item_stack_rejects_counts_that_do_not_fit_u8() {
+        let mut bytes = Vec::new();
+        for value in [256] {
+            VarInt(value)
+                .encode(&mut bytes)
+                .expect("encode test varint");
+        }
+        assert!(ItemStackSerializer::read(&mut std::io::Cursor::new(bytes)).is_err());
+    }
+
+    #[test]
+    fn regular_item_stack_uses_the_unprefixed_component_stream_codec() {
+        let original = ItemStack::new_with_component(
+            1,
+            &Item::DIAMOND_SWORD,
+            vec![(
+                DataComponent::MaxDamage,
+                Some(MaxDamageImpl { max_damage: 2_031 }.to_dyn()),
+            )],
+        );
+        let mut bytes = Vec::new();
+        ItemStackSerializer::from(original)
+            .write(&mut bytes)
+            .expect("encode item stack");
+        let decoded = ItemStackSerializer::read(&mut std::io::Cursor::new(bytes))
+            .expect("decode item stack")
+            .to_stack();
+        assert_eq!(
+            decoded
+                .get_data_component::<MaxDamageImpl>()
+                .map(|component| component.max_damage),
+            Some(2_031)
+        );
+    }
+
+    #[test]
+    fn length_prefixed_component_rejects_unbounded_payloads() {
+        let mut bytes = Vec::new();
+        // count=1, item id=1, one added component, no removed components,
+        // component id=max_damage, payload length just over the hard cap.
+        for value in [
+            1,
+            1,
+            1,
+            0,
+            DataComponent::MaxDamage.to_id() as i32,
+            (1 << 20) + 1,
+        ] {
+            VarInt(value)
+                .encode(&mut bytes)
+                .expect("encode test varint");
+        }
+        assert!(
+            ItemStackSerializer::read_length_prefixed_optional(&mut std::io::Cursor::new(bytes))
+                .is_err()
+        );
     }
 }
 

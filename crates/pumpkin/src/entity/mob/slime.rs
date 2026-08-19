@@ -5,11 +5,13 @@ use crossbeam::atomic::AtomicCell;
 use pumpkin_data::attributes::Attributes;
 use pumpkin_data::entity::EntityType;
 use pumpkin_data::sound::{Sound, SoundCategory};
+use pumpkin_data::tag::Taggable;
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_util::Difficulty;
 use pumpkin_util::math::boundingbox::{BoundingBox, EntityDimensions};
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector3::Vector3;
+use pumpkin_util::random::{RandomGenerator, RandomImpl};
 
 use crate::entity::{
     Entity, EntityBase, NBTStorage, NbtFuture,
@@ -18,8 +20,6 @@ use crate::entity::{
     mob::{Mob, MobEntity},
 };
 use crate::world::World;
-use pumpkin_util::random::RandomImpl;
-use rand::RngExt;
 
 pub struct SlimeEntity {
     entity: Arc<MobEntity>,
@@ -159,7 +159,11 @@ impl SlimeEntity {
         self.get_size() <= 1
     }
 
-    pub fn check_slime_spawn_rules(world: &World, pos: &BlockPos) -> bool {
+    pub fn check_slime_spawn_rules(
+        world: &World,
+        pos: &BlockPos,
+        random: &mut RandomGenerator,
+    ) -> bool {
         if world.level_info.load().difficulty == Difficulty::Peaceful {
             return false;
         }
@@ -167,23 +171,30 @@ impl SlimeEntity {
         // TODO: check spawn reason. if it's spawner, we should return true if block below is valid
         // For now, we assume natural spawning as that's what we are implementing.
 
-        // Swamp/Surface Spawning
-        // TODO: fix
-        // let biome = world.get_biome(pos);
-        // if biome.has_tag(&pumpkin_data::tag::WorldgenBiome::MINECRAFT_ALLOWS_SURFACE_SLIME_SPAWNS)
-        //     && pos.0.y > 50
-        //     && pos.0.y < 70
-        // {
-        //     let time = world.level_time.lock().await.time_of_day;
-        //     let moon_phase = (time / 24000) % 8;
-        //     let surface_slime_spawn_chance = Self::get_spawn_chance(moon_phase);
-        //     let mut rng = rand::rng();
-        //     if rng.random::<f32>() < surface_slime_spawn_chance
-        //         && world.get_max_local_raw_brightness(pos) <= rng.random_range(0..8)
-        //     {
-        //         return true;
-        //     }
-        // }
+        // Surface spawning uses the biome tag, the 51..69 Y interval, the
+        // moon-phase chance and a light gate.  The vanilla 26.x server now
+        // exposes this chance as an environment attribute; until the shared
+        // environment-attribute registry is wired into World, its canonical
+        // moon-phase values are used (the same values used by the legacy
+        // SurfaceSlimeSpawnChance provider).
+        if world
+            .get_biome(pos)
+            .has_tag(&pumpkin_data::tag::WorldgenBiome::MINECRAFT_ALLOWS_SURFACE_SLIME_SPAWNS)
+            && pos.0.y > 50
+            && pos.0.y < 70
+        {
+            let moon_phase = world
+                .level_time
+                .try_lock()
+                .map(|time| (time.time_of_day.div_euclid(24_000) % 8) as u8)
+                .unwrap_or(0);
+            let surface_slime_spawn_chance = Self::get_spawn_chance(moon_phase);
+            if random.next_f32() < surface_slime_spawn_chance
+                && world.get_max_local_raw_brightness(pos) <= random.next_bounded_i32(8) as u8
+            {
+                return true;
+            }
+        }
 
         // Slime Chunk Spawning
         let chunk_pos = pos.chunk_position();
@@ -196,23 +207,23 @@ impl SlimeEntity {
         );
         let mut slime_rand = pumpkin_util::random::legacy_rand::LegacyRand::from_seed(slime_seed);
 
-        let mut rng = rand::rng();
-        if rng.random_range(0..10) == 0 && slime_rand.next_bounded_i32(10) == 0 && pos.0.y < 40 {
+        if random.next_bounded_i32(10) == 0 && slime_rand.next_bounded_i32(10) == 0 && pos.0.y < 40
+        {
             return true;
         }
 
         false
     }
 
-    // const fn get_spawn_chance(moon_phase: i64) -> f32 {
-    //     match moon_phase {
-    //         0 => 1.0,
-    //         1 | 7 => 0.75,
-    //         2 | 6 => 0.5,
-    //         3 | 5 => 0.25,
-    //         _ => 0.0,
-    //     }
-    // }
+    const fn get_spawn_chance(moon_phase: u8) -> f32 {
+        match moon_phase {
+            0 => 1.0,
+            1 | 7 => 0.75,
+            2 | 6 => 0.5,
+            3 | 5 => 0.25,
+            _ => 0.0,
+        }
+    }
 
     pub(crate) const fn hurt_sound_for_size(size: i32) -> Sound {
         if size == 1 {
@@ -340,7 +351,8 @@ impl Mob for SlimeEntity {
         Box::pin(async move {
             if !self.is_tiny() {
                 // dealDamage
-                self.entity.try_attack(self, &**player).await;
+                let successful = self.entity.try_attack(self, &**player).await;
+                self.after_attack(&**player, successful).await;
             }
         })
     }
@@ -675,5 +687,17 @@ mod tests {
         );
         assert_eq!(SlimeEntity::hurt_sound_for_size(0), Sound::EntitySlimeHurt);
         assert_eq!(SlimeEntity::hurt_sound_for_size(2), Sound::EntitySlimeHurt);
+    }
+
+    #[test]
+    fn surface_spawn_chance_follows_vanilla_moon_phase_table() {
+        assert_eq!(SlimeEntity::get_spawn_chance(0), 1.0);
+        assert_eq!(SlimeEntity::get_spawn_chance(1), 0.75);
+        assert_eq!(SlimeEntity::get_spawn_chance(2), 0.5);
+        assert_eq!(SlimeEntity::get_spawn_chance(3), 0.25);
+        assert_eq!(SlimeEntity::get_spawn_chance(4), 0.0);
+        assert_eq!(SlimeEntity::get_spawn_chance(5), 0.25);
+        assert_eq!(SlimeEntity::get_spawn_chance(6), 0.5);
+        assert_eq!(SlimeEntity::get_spawn_chance(7), 0.75);
     }
 }

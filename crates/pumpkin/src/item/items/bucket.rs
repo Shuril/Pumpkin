@@ -2,11 +2,14 @@ use std::{pin::Pin, sync::Arc};
 
 use crate::{
     entity::player::Player,
+    entity::r#type::from_type,
     item::{ItemBehaviour, ItemMetadata},
 };
 use pumpkin_data::{
     Block, BlockDirection, BlockStateId,
+    data_component_impl::BucketEntityDataImpl,
     dimension::Dimension,
+    entity::EntityType,
     fluid::Fluid,
     item::Item,
     item_stack::ItemStack,
@@ -16,13 +19,76 @@ use pumpkin_util::{
     GameMode,
     math::{position::BlockPos, vector3::Vector3},
 };
-use pumpkin_world::{inventory::Inventory, tick::TickPriority, world::BlockFlags};
+use pumpkin_world::{tick::TickPriority, world::BlockFlags};
 
 use crate::world::World;
 
 pub struct EmptyBucketItem;
 pub struct FilledBucketItem;
 pub struct MilkBucketItem;
+
+/// Returns the mob represented by a vanilla mob bucket. Water-bearing buckets
+/// place their fluid first; the sulfur-cube bucket intentionally carries
+/// `Fluids.EMPTY` and only spawns the entity, matching `MobBucketItem`.
+pub(crate) fn bucket_entity_type(item: &Item) -> Option<&'static EntityType> {
+    match item.id {
+        id if id == Item::AXOLOTL_BUCKET.id => Some(&EntityType::AXOLOTL),
+        id if id == Item::COD_BUCKET.id => Some(&EntityType::COD),
+        id if id == Item::SALMON_BUCKET.id => Some(&EntityType::SALMON),
+        id if id == Item::TROPICAL_FISH_BUCKET.id => Some(&EntityType::TROPICAL_FISH),
+        id if id == Item::PUFFERFISH_BUCKET.id => Some(&EntityType::PUFFERFISH),
+        id if id == Item::TADPOLE_BUCKET.id => Some(&EntityType::TADPOLE),
+        id if id == Item::SULFUR_CUBE_BUCKET.id => Some(&EntityType::SULFUR_CUBE),
+        _ => None,
+    }
+}
+
+pub(crate) async fn spawn_bucket_entity(world: &Arc<World>, stack: &ItemStack, position: BlockPos) {
+    let Some(entity_type) = bucket_entity_type(stack.item) else {
+        return;
+    };
+    let entity = from_type(
+        entity_type,
+        position.to_f64().add_raw(0.5, 0.0, 0.5),
+        world,
+        uuid::Uuid::new_v4(),
+    );
+    crate::item::items::spawn_egg::apply_entity_variant(stack, entity.as_ref());
+    if let Some(data) = stack.get_data_component::<BucketEntityDataImpl>()
+        && let BucketEntityDataImpl::Compound(data) = data
+    {
+        // Bucket entity data is deliberately limited to the entity's custom
+        // payload. Position/UUID/type are created by the server and must not
+        // be overwritten by item NBT.
+        let mut safe_data = data.clone();
+        for key in ["Pos", "Motion", "Rotation", "UUID", "id"] {
+            safe_data.child_tags.remove(key);
+        }
+        entity.read_nbt_non_mut(&safe_data).await;
+
+        let base = entity.get_entity();
+        if let Some(value) = safe_data.get_bool("NoGravity") {
+            base.set_has_no_gravity(value);
+        }
+        if let Some(value) = safe_data.get_bool("Silent") {
+            base.set_silent(value);
+        }
+        if let Some(value) = safe_data.get_bool("Glowing") {
+            base.set_glowing(value).await;
+        }
+        if let Some(value) = safe_data.get_bool("NoAI")
+            && let Some(mob) = entity.get_mob()
+        {
+            mob.get_mob_entity().set_no_ai(value);
+        }
+        if let Some(value) = safe_data.get_float("Health")
+            && let Some(living) = entity.get_living_entity()
+        {
+            living.set_health(value);
+        }
+    }
+    world.spawn_entity(entity).await;
+}
 
 impl ItemMetadata for EmptyBucketItem {
     fn ids() -> Box<[u16]> {
@@ -42,6 +108,7 @@ impl ItemMetadata for FilledBucketItem {
             Item::TROPICAL_FISH_BUCKET.id,
             Item::PUFFERFISH_BUCKET.id,
             Item::TADPOLE_BUCKET.id,
+            Item::SULFUR_CUBE_BUCKET.id,
         ]
         .into()
     }
@@ -133,10 +200,11 @@ async fn give_player_bucket_item(player: &Player, item: &'static Item) {
     }
 }
 
-async fn try_pickup_bucket_item(
+/// Tries to pick up powder snow, a waterlogged block, or a fluid source block at `block_pos`,
+/// returning the matching filled bucket item on success.
+pub(crate) async fn try_pickup_fluid_at(
     world: &Arc<World>,
     block_pos: BlockPos,
-    direction: BlockDirection,
 ) -> Option<&'static Item> {
     let (block, state) = world.get_block_and_state_id(&block_pos);
 
@@ -178,6 +246,18 @@ async fn try_pickup_bucket_item(
         });
     }
 
+    None
+}
+
+async fn try_pickup_bucket_item(
+    world: &Arc<World>,
+    block_pos: BlockPos,
+    direction: BlockDirection,
+) -> Option<&'static Item> {
+    if let Some(item) = try_pickup_fluid_at(world, block_pos).await {
+        return Some(item);
+    }
+
     let target_pos = block_pos.offset(direction.to_offset());
     let (block, state) = world.get_block_and_state_id(&target_pos);
     if waterlogged_check(block, state).is_some() {
@@ -192,17 +272,17 @@ async fn try_pickup_bucket_item(
     None
 }
 
-fn should_evaporate_in_nether(item: &Item, world: &World) -> bool {
+pub(crate) fn should_evaporate_in_nether(item: &Item, world: &World) -> bool {
     item.id != Item::LAVA_BUCKET.id
         && item.id != Item::POWDER_SNOW_BUCKET.id
         && world.dimension == Dimension::THE_NETHER
 }
 
-fn play_bucket_evaporation(world: &Arc<World>, player: &Player) {
+pub(crate) fn play_bucket_evaporation(world: &Arc<World>, position: &Vector3<f64>) {
     world.play_sound_raw(
         Sound::BlockFireExtinguish as u16,
         SoundCategory::Blocks,
-        &player.position(),
+        position,
         0.5,
         (rand::random::<f32>() - rand::random::<f32>()).mul_add(0.8, 2.6),
     );
@@ -233,13 +313,20 @@ async fn try_place_powder_snow(
     true
 }
 
-async fn try_place_filled_bucket(
+pub(crate) async fn try_place_filled_bucket(
     world: &Arc<World>,
     item: &Item,
     pos: BlockPos,
     direction: BlockDirection,
 ) -> bool {
     let (block, state) = world.get_block_and_state(&pos);
+    if item.id == Item::SULFUR_CUBE_BUCKET.id {
+        // `MobBucketItem(EntityTypes.SULFUR_CUBE, Fluids.EMPTY, ...)` has no
+        // block content to place.  `emptyContents` succeeds at the adjacent
+        // position and `checkExtraContent` performs the actual spawn; trying
+        // to treat it as a water bucket would create an unintended source.
+        return true;
+    }
     if item.id == Item::POWDER_SNOW_BUCKET.id {
         return try_place_powder_snow(world, pos, direction).await;
     }
@@ -343,6 +430,52 @@ impl ItemBehaviour for EmptyBucketItem {
     }
 }
 
+impl FilledBucketItem {
+    async fn use_bucket(&self, stack: &ItemStack, player: &Player, hand: pumpkin_util::Hand) {
+        let item = stack.item;
+        let world = player.world();
+        let (start_pos, end_pos) = get_start_and_end_pos(player);
+        let checker = async |pos: &BlockPos, world_inner: &Arc<World>| {
+            let state_id = world_inner.get_block_state_id(pos);
+            if Fluid::from_state_id(state_id).is_some() {
+                return false;
+            }
+            state_id != Block::AIR.default_state.id
+        };
+
+        let Some((pos, direction)) = world.raycast(start_pos, end_pos, checker).await else {
+            return;
+        };
+
+        if should_evaporate_in_nether(item, &world) {
+            play_bucket_evaporation(&world, &player.position());
+            return;
+        }
+        if !try_place_filled_bucket(&world, item, pos, direction).await {
+            return;
+        }
+
+        spawn_bucket_entity(&world, stack, pos.offset(direction.to_offset())).await;
+
+        if let Some(server) = world.server.upgrade()
+            && let Some(player_arc) = world.get_player_by_uuid(player.gameprofile.id)
+        {
+            let mut event =
+                crate::plugin::api::events::player::player_bucket::PlayerBucketEmptyEvent::new(
+                    player_arc,
+                    pos,
+                    item.registry_key.to_string(),
+                );
+            server.plugin_manager.fire(&server, &mut event).await;
+        }
+
+        if player.gamemode.load() != GameMode::Creative {
+            let item_stack = ItemStack::new(1, &Item::BUCKET);
+            player.inventory.set_stack_in_hand(hand, item_stack).await;
+        }
+    }
+}
+
 impl ItemBehaviour for FilledBucketItem {
     fn normal_use<'a>(
         &'a self,
@@ -350,48 +483,22 @@ impl ItemBehaviour for FilledBucketItem {
         player: &'a Player,
     ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
         Box::pin(async move {
-            let world = player.world();
-            let (start_pos, end_pos) = get_start_and_end_pos(player);
-            let checker = async |pos: &BlockPos, world_inner: &Arc<World>| {
-                let state_id = world_inner.get_block_state_id(pos);
-                if Fluid::from_state_id(state_id).is_some() {
-                    return false;
-                }
-                state_id != Block::AIR.default_state.id
-            };
+            let item = Item::from_id(item.id).unwrap_or(&Item::AIR);
+            let stack = ItemStack::new(1, item);
+            self.use_bucket(&stack, player, pumpkin_util::Hand::Right)
+                .await;
+        })
+    }
 
-            let Some((pos, direction)) = world.raycast(start_pos, end_pos, checker).await else {
-                return;
-            };
-
-            if should_evaporate_in_nether(item, &world) {
-                play_bucket_evaporation(&world, player);
-                return;
-            }
-            if !try_place_filled_bucket(&world, item, pos, direction).await {
-                return;
-            }
-
-            if let Some(server) = world.server.upgrade()
-                && let Some(player_arc) = world.get_player_by_uuid(player.gameprofile.id)
-            {
-                let mut event =
-                    crate::plugin::api::events::player::player_bucket::PlayerBucketEmptyEvent::new(
-                        player_arc,
-                        pos,
-                        item.registry_key.to_string(),
-                    );
-                server.plugin_manager.fire(&server, &mut event).await;
-            }
-
-            //TODO: Spawn entity if applicable
-            if player.gamemode.load() != GameMode::Creative {
-                let item_stack = ItemStack::new(1, &Item::BUCKET);
-                player
-                    .inventory
-                    .set_stack(player.inventory.get_selected_slot().into(), item_stack)
-                    .await;
-            }
+    fn normal_use_with_hand<'a>(
+        &'a self,
+        _item: &'a Item,
+        player: &'a Player,
+        hand: pumpkin_util::Hand,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+        Box::pin(async move {
+            let stack = player.inventory().get_stack_in_hand(hand).await;
+            self.use_bucket(&stack, player, hand).await;
         })
     }
 
@@ -432,5 +539,20 @@ impl ItemBehaviour for MilkBucketItem {
 
     fn as_any(&self) -> &dyn std::any::Any {
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::bucket_entity_type;
+    use pumpkin_data::{entity::EntityType, item::Item};
+
+    #[test]
+    fn sulfur_cube_bucket_uses_empty_content_entity_path() {
+        assert_eq!(
+            bucket_entity_type(&Item::SULFUR_CUBE_BUCKET).map(|entity| entity.id),
+            Some(EntityType::SULFUR_CUBE.id)
+        );
+        assert_eq!(bucket_entity_type(&Item::WATER_BUCKET), None);
     }
 }

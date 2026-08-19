@@ -40,6 +40,13 @@ pub trait RecipeInputInventory: Inventory {
     /// Gets the height of the crafting grid.
     fn get_height(&self) -> usize;
 
+    /// Whether a grid slot participates in recipe matching.  The vanilla
+    /// Crafter uses this to implement its disabled-slot bit mask; ordinary
+    /// crafting grids keep every slot enabled.
+    fn is_slot_enabled(&self, _slot: usize) -> bool {
+        true
+    }
+
     // TODO: Additional methods for recipe input handling
     // fn get_held_stacks(), Get a lock on the inventory instead
     // createRecipeInput

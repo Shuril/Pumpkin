@@ -1,6 +1,7 @@
 use pumpkin_data::BlockStateId;
 use pumpkin_data::damage::DamageType;
 use pumpkin_data::entity::EntityType;
+use pumpkin_data::fluid::Fluid;
 use pumpkin_data::meta_data_type::MetaDataType;
 use pumpkin_data::{Block, tracked_data::TrackedData};
 use pumpkin_protocol::java::client::play::Metadata;
@@ -29,21 +30,36 @@ impl FallingEntity {
 
     /// Replaced the current Block and Spawns a new Falling one
     pub async fn replace_spawn(world: &Arc<World>, position: BlockPos, block_state: BlockStateId) {
-        // Replace the original block, TODO: use fluid state
+        // Vanilla FallingBlockEntity.fall replaces the source with
+        // `state.getFluidState().createLegacyBlock()`, not unconditional air.
+        // In particular, a waterlogged block leaves a water source behind
+        // while its dry block state is carried by the entity.
+        let fluid = world.get_fluid(&position);
+        let replacement = if fluid.id == Fluid::WATER.id || fluid.id == Fluid::FLOWING_WATER.id {
+            Block::WATER.default_state.id
+        } else if fluid.id == Fluid::LAVA.id || fluid.id == Fluid::FLOWING_LAVA.id {
+            Block::LAVA.default_state.id
+        } else {
+            Block::AIR.default_state.id
+        };
         world
-            .set_block_state(
-                &position,
-                Block::AIR.default_state.id,
-                BlockFlags::NOTIFY_ALL,
-            )
+            .set_block_state(&position, replacement, BlockFlags::NOTIFY_ALL)
             .await;
+
+        // FallingBlockEntity.fall carries the block's dry state.  The source
+        // fluid is represented by `replacement` above; retaining
+        // `waterlogged=true` on the entity would make a later landing create a
+        // second fluid source and diverge from vanilla.
+        let carried_state = Block::from_state_id(block_state)
+            .without_waterlogged(block_state)
+            .map_or(block_state, |state| state.id);
 
         let position = position.0.to_f64().add_raw(0.5, 0.0, 0.5);
         let entity = Entity::new(world.clone(), position, &EntityType::FALLING_BLOCK);
         entity
             .data
-            .store(i32::from(block_state.as_u16()), Ordering::Relaxed);
-        let entity = Arc::new(Self::new(entity, block_state));
+            .store(i32::from(carried_state.as_u16()), Ordering::Relaxed);
+        let entity = Arc::new(Self::new(entity, carried_state));
         world.spawn_entity(entity).await;
     }
 }

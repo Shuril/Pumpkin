@@ -24,6 +24,7 @@ use pumpkin_data::biome::Biome;
 use pumpkin_data::dimension::Dimension;
 use pumpkin_data::{Block, BlockStateId, block_properties::has_random_ticks, fluid::Fluid};
 use pumpkin_util::math::{position::BlockPos, vector2::Vector2};
+use pumpkin_util::random::{RandomGenerator, RandomImpl, legacy_rand::LegacyRand};
 use pumpkin_util::world_seed::Seed;
 use rustc_hash::FxHashSet;
 use std::sync::{Arc, Mutex, Weak};
@@ -310,6 +311,7 @@ impl Level {
                     x: pos.x,
                     z: pos.y,
                     data: tokio::sync::Mutex::new(Vec::new()),
+                    unknown_nbt: std::sync::Mutex::new(pumpkin_nbt::compound::NbtCompound::new()),
                     dirty: AtomicBool::new(false),
                 });
 
@@ -331,6 +333,9 @@ impl Level {
                         x: pos.x,
                         z: pos.y,
                         data: tokio::sync::Mutex::new(Vec::new()),
+                        unknown_nbt: std::sync::Mutex::new(
+                            pumpkin_nbt::compound::NbtCompound::new(),
+                        ),
                         dirty: AtomicBool::new(false),
                     });
 
@@ -518,16 +523,57 @@ impl Level {
         });
     }
 
+    /// Collects scheduled and random ticks using vanilla's default speed of
+    /// three random samples per section.
     pub fn get_tick_data(&self, active_chunks: &FxHashSet<Vector2<i32>>) -> TickData {
+        self.get_tick_data_with_random_tick_speed(active_chunks, 3)
+    }
+
+    /// Collects tick work using the world's `random_tick_speed` gamerule.
+    pub fn get_tick_data_with_random_tick_speed(
+        &self,
+        active_chunks: &FxHashSet<Vector2<i32>>,
+        random_tick_speed: i64,
+    ) -> TickData {
+        self.get_tick_data_with_random_tick_speed_seeded(
+            active_chunks,
+            random_tick_speed,
+            self.seed.0 as u64,
+            0,
+        )
+    }
+
+    /// Collects tick work with a deterministic random-tick stream for each
+    /// active chunk.  Vanilla owns one random source per `ServerLevel`; the
+    /// runtime executes random-tick handlers concurrently, so sharing that
+    /// source would make results depend on task scheduling.  Deriving a
+    /// stream from the world seed, age and chunk coordinates preserves the
+    /// observable seeded behavior while making concurrent chunks independent.
+    pub fn get_tick_data_with_random_tick_speed_seeded(
+        &self,
+        active_chunks: &FxHashSet<Vector2<i32>>,
+        random_tick_speed: i64,
+        world_seed: u64,
+        world_age: i64,
+    ) -> TickData {
         let mut ticks = TickData {
             block_ticks: Vec::new(),
             fluid_ticks: Vec::new(),
             random_ticks: Vec::with_capacity(active_chunks.len() * 3),
         };
+        // Vanilla samples this many random positions per section.  Negative
+        // values are treated as zero by the game-rule command's runtime
+        // behavior; clamp the upper bound to the Java integer range before
+        // converting to usize on 64-bit hosts.
+        let random_tick_count = random_tick_speed.clamp(0, i32::MAX as i64) as usize;
 
-        // 1. Process active chunks (random ticks, block entities)
-        for pos in active_chunks {
-            if let Some(chunk) = self.loaded_chunks.get(pos) {
+        // 1. Process active chunks (random ticks, block entities).  The
+        // caller stores these in a hash set; sort a snapshot so the resulting
+        // random-tick queue has a stable chunk order as well as stable values.
+        let mut ordered_chunks: Vec<_> = active_chunks.iter().copied().collect();
+        ordered_chunks.sort_unstable_by_key(|pos| (pos.x, pos.y));
+        for pos in ordered_chunks {
+            if let Some(chunk) = self.loaded_chunks.get(&pos) {
                 let chunk = chunk.value();
                 let chunk_x_base = chunk.x * 16;
                 let chunk_z_base = chunk.z * 16;
@@ -542,14 +588,17 @@ impl Level {
                         .read()
                         .unwrap_or_else(std::sync::PoisonError::into_inner);
                     let min_y = chunk.section.min_y;
+                    let mut random = RandomGenerator::Legacy(LegacyRand::from_seed(
+                        random_tick_seed(world_seed, world_age, pos),
+                    ));
 
                     for i in 0..section_count {
                         if (mask & (1 << i)) == 0 {
                             continue;
                         }
                         let y_base = min_y + (i as i32 * 16);
-                        for _ in 0..3 {
-                            let r = rand::random::<u32>();
+                        for _ in 0..random_tick_count {
+                            let r = random.next_i32() as u32;
                             let x_offset = (r & 0xF) as usize;
                             let z_offset = (r >> 8 & 0xF) as usize;
                             let y_in_section = ((r >> 4) & 0xF) as usize;
@@ -789,6 +838,7 @@ impl Level {
                     x: pos.x,
                     z: pos.y,
                     data: tokio::sync::Mutex::new(Vec::new()),
+                    unknown_nbt: std::sync::Mutex::new(pumpkin_nbt::compound::NbtCompound::new()),
                     dirty: AtomicBool::new(false),
                 })
             })
@@ -924,13 +974,16 @@ impl Level {
         self.loaded_entity_chunks.try_get(&coordinates).try_unwrap()
     }
 
-    pub fn schedule_block_tick(
+    pub fn schedule_block_tick<D: TryInto<u32>>(
         &self,
         block: &Block,
         block_pos: BlockPos,
-        delay: u8,
+        delay: D,
         priority: TickPriority,
     ) {
+        let Ok(delay) = delay.try_into() else {
+            return;
+        };
         let tick_order = self.schedule_tick_counts.fetch_add(1, Ordering::Relaxed);
         let scheduled_tick = ScheduledTick {
             delay,
@@ -951,13 +1004,16 @@ impl Level {
         }
     }
 
-    pub fn schedule_fluid_tick(
+    pub fn schedule_fluid_tick<D: TryInto<u32>>(
         &self,
         fluid: &Fluid,
         block_pos: BlockPos,
-        delay: u8,
+        delay: D,
         priority: TickPriority,
     ) {
+        let Ok(delay) = delay.try_into() else {
+            return;
+        };
         let tick_order = self.schedule_tick_counts.fetch_add(1, Ordering::Relaxed);
         let scheduled_tick = ScheduledTick {
             delay,
@@ -990,5 +1046,54 @@ impl Level {
             chunk.fluid_ticks.is_scheduled(*block_pos, fluid)
         })
         .unwrap_or(false)
+    }
+
+    pub fn clear_block_tick_inflight(&self, active_chunks: &FxHashSet<Vector2<i32>>) {
+        for pos in active_chunks {
+            if let Some(chunk) = self.loaded_chunks.get(pos) {
+                chunk.block_ticks.clear_inflight();
+            }
+        }
+    }
+
+    /// Completes the in-flight half of fluid ticks after their handlers have
+    /// run. Keeping this separate from block ticks preserves the vanilla
+    /// `isScheduled` contract for water/lava without allowing an async fluid
+    /// task to race the redstone scheduler.
+    pub fn clear_fluid_tick_inflight(&self, active_chunks: &FxHashSet<Vector2<i32>>) {
+        for pos in active_chunks {
+            if let Some(chunk) = self.loaded_chunks.get(pos) {
+                chunk.fluid_ticks.clear_inflight();
+            }
+        }
+    }
+}
+
+/// Stable per-world-age/per-chunk seed used by random tick sampling.  The
+/// final splitmix-style avalanche prevents nearby chunks or adjacent ticks
+/// from sharing the same low bits (the bits used for the X/Y/Z offsets).
+#[inline]
+fn random_tick_seed(world_seed: u64, world_age: i64, chunk: Vector2<i32>) -> u64 {
+    let mut value = world_seed
+        ^ (world_age as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
+        ^ (chunk.x as i64 as u64).wrapping_mul(0xBF58_476D_1CE4_E5B9)
+        ^ (chunk.y as i64 as u64).wrapping_mul(0x94D0_49BB_1331_11EB);
+    value = (value ^ (value >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    value = (value ^ (value >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    value ^ (value >> 31)
+}
+
+#[cfg(test)]
+mod random_tick_tests {
+    use super::random_tick_seed;
+    use pumpkin_util::math::vector2::Vector2;
+
+    #[test]
+    fn random_tick_seed_is_reproducible_but_scoped_to_age_and_chunk() {
+        let chunk = Vector2::new(12, -7);
+        let first = random_tick_seed(0x5eed, 200, chunk);
+        assert_eq!(first, random_tick_seed(0x5eed, 200, chunk));
+        assert_ne!(first, random_tick_seed(0x5eed, 201, chunk));
+        assert_ne!(first, random_tick_seed(0x5eed, 200, Vector2::new(13, -7)));
     }
 }

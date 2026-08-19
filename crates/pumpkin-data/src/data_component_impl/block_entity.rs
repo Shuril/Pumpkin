@@ -27,10 +27,57 @@ impl DataComponentImpl for EntityDataImpl {
     default_impl!(EntityData);
 }
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct BucketEntityDataImpl;
+/// Custom NBT saved with a mob bucket and restored when the bucket spawns its
+/// entity.  The empty variant is used by generated item definitions because
+/// vanilla bucket items carry the component even when no custom data is set.
+#[derive(Clone, Debug, PartialEq)]
+pub enum BucketEntityDataImpl {
+    Empty,
+    Compound(NbtCompound),
+}
+
+impl BucketEntityDataImpl {
+    pub const EMPTY: Self = Self::Empty;
+
+    pub fn read_data(tag: &NbtTag) -> Option<Self> {
+        match tag {
+            NbtTag::Compound(compound) => Some(Self::Compound(compound.clone())),
+            _ => None,
+        }
+    }
+}
+
 impl DataComponentImpl for BucketEntityDataImpl {
+    fn write_data(&self) -> NbtTag {
+        match self {
+            Self::Empty => NbtTag::Compound(NbtCompound::new()),
+            Self::Compound(compound) => NbtTag::Compound(compound.clone()),
+        }
+    }
+
     default_impl!(BucketEntityData);
+}
+
+#[cfg(test)]
+mod bucket_entity_data_tests {
+    use super::*;
+
+    #[test]
+    fn bucket_entity_data_round_trips_custom_nbt() {
+        let mut nbt = NbtCompound::new();
+        nbt.put_byte("NoAI", 1);
+        nbt.put_int("Health", 7);
+        let value = BucketEntityDataImpl::Compound(nbt.clone());
+        let restored = BucketEntityDataImpl::read_data(&value.write_data())
+            .expect("compound bucket data must decode");
+        assert_eq!(restored, value);
+        assert_eq!(restored.write_data(), NbtTag::Compound(nbt));
+    }
+
+    #[test]
+    fn bucket_entity_data_rejects_non_compound_payload() {
+        assert!(BucketEntityDataImpl::read_data(&NbtTag::Int(1)).is_none());
+    }
 }
 
 #[derive(Clone)]

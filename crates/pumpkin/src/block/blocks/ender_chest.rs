@@ -8,6 +8,7 @@ use crate::block::{
 use crate::world::World;
 use pumpkin_data::BlockStateId;
 use pumpkin_data::block_properties::{BlockProperties, LadderLikeProperties};
+use pumpkin_data::entity::{EntityPose, EntityType};
 use pumpkin_data::translation;
 use pumpkin_inventory::{
     generic_container_screen_handler::create_generic_9x3,
@@ -15,7 +16,7 @@ use pumpkin_inventory::{
     screen_handler::{BoxFuture, InventoryPlayer, ScreenHandlerFactory, SharedScreenHandler},
 };
 use pumpkin_macros::pumpkin_block;
-use pumpkin_util::math::position::BlockPos;
+use pumpkin_util::math::{boundingbox::BoundingBox, position::BlockPos, vector3::Vector3};
 use pumpkin_util::text::TextComponent;
 use pumpkin_world::inventory::Inventory;
 use tokio::sync::Mutex;
@@ -52,6 +53,7 @@ impl BlockBehaviour for EnderChestBlock {
     fn on_place<'a>(&'a self, args: OnPlaceArgs<'a>) -> BlockFuture<'a, BlockStateId> {
         Box::pin(async move {
             let mut props = LadderLikeProperties::default(args.block);
+            props.waterlogged = args.replacing.water_source();
             props.facing = args
                 .player
                 .living_entity
@@ -114,13 +116,32 @@ impl BlockBehaviour for EnderChestBlock {
 }
 
 fn is_chest_blocked(world: &World, block_pos: &BlockPos) -> bool {
-    // TODO: Block opening when a cat is sitting on top.
-    has_block_on_top(world, block_pos)
+    has_block_on_top(world, block_pos) || has_sitting_cat_on_top(world, block_pos)
+}
+
+fn has_sitting_cat_on_top(world: &World, block_pos: &BlockPos) -> bool {
+    let min = Vector3::new(
+        f64::from(block_pos.0.x),
+        f64::from(block_pos.0.y + 1),
+        f64::from(block_pos.0.z),
+    );
+    let above = BoundingBox {
+        min,
+        max: Vector3::new(min.x + 1.0, min.y + 1.0, min.z + 1.0),
+    };
+    world.get_entities_at_box(&above).into_iter().any(|entity| {
+        let base = entity.get_entity();
+        base.entity_type == &EntityType::CAT
+            && base.is_alive()
+            && base.pose.load() == EntityPose::Sitting
+    })
 }
 fn has_block_on_top(world: &World, block_pos: &BlockPos) -> bool {
     let above_pos = block_pos.up();
     let above_state = world.get_block_state(&above_pos);
-    above_state.is_solid_block()
+    // EnderChestBlock uses the same vanilla isRedstoneConductor predicate as
+    // ordinary chests; collision shape is state-aware for slabs/stairs.
+    above_state.is_collision_shape_full_block()
 }
 impl EnderChestBlock {
     pub const LID_ANIMATION_EVENT_TYPE: u8 = 1;

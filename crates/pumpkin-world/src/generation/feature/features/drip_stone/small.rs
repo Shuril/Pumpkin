@@ -22,7 +22,8 @@ impl SmallDripstoneFeature {
         if let Some(dir) = Self::get_direction(chunk, pos, random) {
             let pos = pos.offset(dir.opposite().to_offset());
             self.gen_dripstone_blocks(chunk, pos, random);
-            // TODO
+            let origin = pos.offset(dir.to_offset());
+            super::grow_pointed_feature(chunk, origin, dir, self.taller_dripstone, random);
             return true;
         }
         false
@@ -61,7 +62,7 @@ impl SmallDripstoneFeature {
         random: &mut RandomGenerator,
     ) {
         super::gen_dripstone(chunk, pos);
-        for dir in BlockDirection::horizontal() {
+        for dir in BlockDirection::horizontal_worldgen() {
             if random.next_f32() > self.directional_spread {
                 continue;
             }

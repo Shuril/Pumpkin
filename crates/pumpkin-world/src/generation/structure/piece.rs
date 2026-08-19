@@ -45,6 +45,7 @@ pub enum StructurePieceType {
     RuinedPortal,
     SwampHut,
     DesertTemple,
+    OceanRuin,
 
     // Ocean Monument
     OceanMonumentBase,

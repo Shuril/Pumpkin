@@ -1,11 +1,11 @@
 use crate::block::entities::BlockEntity;
 use crate::entity::experience_orb::ExperienceOrbEntity;
 use crate::world::World;
-use pumpkin_data::BlockStateId;
 use pumpkin_data::block_properties::{BlockProperties, FacingHopper, HopperLikeProperties};
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::tag::Taggable;
 use pumpkin_data::{Block, tag};
+use pumpkin_data::{BlockDirection, BlockStateId};
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_nbt::tag::NbtTag;
 use pumpkin_util::math::position::BlockPos;
@@ -37,6 +37,26 @@ pub fn to_offset(facing: &FacingHopper) -> Vector3<i32> {
         FacingHopper::East => (1, 0, 0),
     }
     .into()
+}
+
+#[must_use]
+fn to_block_direction(facing: &FacingHopper) -> BlockDirection {
+    match facing {
+        FacingHopper::Down => BlockDirection::Down,
+        FacingHopper::North => BlockDirection::North,
+        FacingHopper::South => BlockDirection::South,
+        FacingHopper::West => BlockDirection::West,
+        FacingHopper::East => BlockDirection::East,
+    }
+}
+
+#[inline]
+#[must_use]
+fn allows_entity_suction_above(is_full_collision: bool, does_not_block_hoppers: bool) -> bool {
+    // HopperBlockEntity.suckInItems blocks entities only under a full collision
+    // shape that is not in BlockTags.DOES_NOT_BLOCK_HOPPERS.  The old predicate
+    // inverted the tag and allowed item pickup through ordinary solid blocks.
+    !is_full_collision || does_not_block_hoppers
 }
 
 impl BlockEntity for HopperBlockEntity {
@@ -75,7 +95,14 @@ impl BlockEntity for HopperBlockEntity {
         Box::pin(async move {
             self.ticked_game_time
                 .store(world.get_world_age().await, Ordering::Relaxed);
-            if self.cooldown_time.fetch_sub(1, Ordering::Relaxed) <= 0 {
+            // Vanilla decrements first and then tests the new value, so the transfer
+            // happens on the tick the counter reaches 0. `fetch_sub` returns the
+            // *previous* value, so the comparison is against 1 rather than 0;
+            // gating on 0 here spent an extra tick and made hoppers run every 9
+            // ticks instead of 8. This stays a single atomic read-modify-write
+            // because a neighbouring hopper can write this field from its own
+            // concurrently spawned tick task.
+            if self.cooldown_time.fetch_sub(1, Ordering::Relaxed) <= 1 {
                 self.cooldown_time.store(0, Ordering::Relaxed);
                 let state = HopperLikeProperties::from_state_id(
                     world.get_block_state(&self.position).id,
@@ -99,7 +126,6 @@ impl BlockEntity for HopperBlockEntity {
     }
 
     fn set_block_state(&mut self, block_state: BlockStateId) {
-        // TODO !!!IMPORTANT!!! set block state when loading the chunk
         self.facing = HopperLikeProperties::from_state_id(block_state, &Block::HOPPER).facing;
     }
 
@@ -142,6 +168,23 @@ impl HopperBlockEntity {
             ticked_game_time: AtomicI64::new(0),
         }
     }
+
+    /// Finds the first inventory-bearing entity occupying a block position.
+    ///
+    /// This is the server-side equivalent of vanilla's `getEntityContainer`:
+    /// storage minecarts are containers for hopper purposes, while ordinary
+    /// entities simply return `None` through `EntityBase::get_inventory`.
+    async fn entity_container_at(
+        world: &Arc<World>,
+        position: &BlockPos,
+    ) -> Option<Arc<dyn Inventory>> {
+        let bounds = pumpkin_util::math::boundingbox::BoundingBox::from_block(position);
+        world
+            .get_entities_at_box(&bounds)
+            .into_iter()
+            .find_map(|entity| entity.get_entity_inventory())
+    }
+
     async fn try_move_items(&self, state: &HopperLikeProperties, world: &Arc<World>) {
         if self.cooldown_time.load(Ordering::Relaxed) <= 0 && state.enabled {
             let mut success = if self.is_empty().await {
@@ -170,20 +213,26 @@ impl HopperBlockEntity {
     }
 
     async fn suck_in_items(&self, world: &Arc<World>) -> bool {
-        // TODO getEntityContainer
         let pos_up = &self.position.up();
         if let Some(entity) = world.get_block_entity(pos_up)
             && let Some(container) = entity.clone().get_inventory()
         {
-            // TODO check WorldlyContainer
+            // Inventory's sided extraction hook is the WorldlyContainer
+            // equivalent; furnaces/brewing/shulkers override it below.
             for i in 0..container.size() {
                 let mut item = container.get_stack(i).await;
-                if !item.is_empty() && container.can_transfer_to(self, i, &item) {
-                    //TODO WorldlyContainer
+                if !item.is_empty()
+                    && container.can_extract_to_hopper(self, i, &item, BlockDirection::Down)
+                {
                     let _backup = item.clone();
                     let one_item = item.split(1);
-                    if Self::add_one_item(container.as_ref(), self, one_item).await {
+                    if Self::add_one_item(container.as_ref(), self, one_item, BlockDirection::Up)
+                        .await
+                    {
                         container.set_stack(i, item).await;
+                        world
+                            .update_comparators(&self.position, &Block::HOPPER)
+                            .await;
                         // If extracting from furnace output slot (index 2), drop XP as orbs
                         let furnace_output_slot: usize = 2;
                         if i == furnace_output_slot
@@ -202,8 +251,31 @@ impl HopperBlockEntity {
             }
             return false;
         }
+        if let Some(container) = Self::entity_container_at(world, pos_up).await {
+            for i in 0..container.size() {
+                let mut item = container.get_stack(i).await;
+                if !item.is_empty()
+                    && container.can_extract_to_hopper(self, i, &item, BlockDirection::Down)
+                {
+                    let one_item = item.split(1);
+                    if Self::add_one_item(container.as_ref(), self, one_item, BlockDirection::Up)
+                        .await
+                    {
+                        container.set_stack(i, item).await;
+                        world
+                            .update_comparators(&self.position, &Block::HOPPER)
+                            .await;
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
         let (block, state) = world.get_block_and_state(pos_up);
-        if !(state.is_solid() && block.has_tag(&tag::Block::MINECRAFT_DOES_NOT_BLOCK_HOPPERS)) {
+        if allows_entity_suction_above(
+            state.is_solid(),
+            block.has_tag(&tag::Block::MINECRAFT_DOES_NOT_BLOCK_HOPPERS),
+        ) {
             let pos_up_f = pos_up.to_f64();
             let search_box = pumpkin_util::math::boundingbox::BoundingBox::new(
                 pos_up_f,
@@ -216,7 +288,7 @@ impl HopperBlockEntity {
                     if !stack.is_empty() {
                         let backup = stack.clone();
                         let one_item = stack.split(1);
-                        if Self::add_one_item(self, self, one_item).await {
+                        if Self::add_one_item(self, self, one_item, BlockDirection::Up).await {
                             if stack.is_empty() {
                                 item_entity.get_entity().remove().await;
                             }
@@ -231,48 +303,83 @@ impl HopperBlockEntity {
     }
 
     async fn eject_items(&self, world: &Arc<World>) -> bool {
-        // TODO getEntityContainer
-
         if let Some(entity) = world.get_block_entity(&self.position.offset(to_offset(&self.facing)))
             && let Some(container) = entity.get_inventory()
         {
-            // TODO check WorldlyContainer
-            let mut is_full = true;
-            for i in 0..container.size() {
-                let item = container.get_stack(i).await;
-                if item.item_count < item.get_max_stack_size() {
-                    is_full = false;
-                    break;
-                }
+            return self
+                .eject_into_container(
+                    world,
+                    container,
+                    to_block_direction(&self.facing).opposite(),
+                )
+                .await;
+        }
+        let output = self.position.offset(to_offset(&self.facing));
+        if let Some(container) = Self::entity_container_at(world, &output).await {
+            return self
+                .eject_into_container(
+                    world,
+                    container,
+                    to_block_direction(&self.facing).opposite(),
+                )
+                .await;
+        }
+        false
+    }
+
+    async fn eject_into_container(
+        &self,
+        world: &Arc<World>,
+        container: Arc<dyn Inventory>,
+        direction: BlockDirection,
+    ) -> bool {
+        let mut is_full = true;
+        for i in 0..container.size() {
+            let item = container.get_stack(i).await;
+            if item.is_empty() || item.item_count < item.get_max_stack_size() {
+                is_full = false;
+                break;
             }
-            if is_full {
-                return false;
-            }
-            let items = self.items.read().await;
-            for item in items.iter() {
-                if !item.is_empty() {
-                    let mut item_clone = item.clone();
-                    let one_item = item_clone.split(1);
-                    if Self::add_one_item(self, container.as_ref(), one_item).await {
-                        return true;
-                    }
+        }
+        if is_full {
+            return false;
+        }
+        // Remove the source unit only after the destination accepted it.
+        for slot in 0..Self::INVENTORY_SIZE {
+            let item = self.get_stack(slot).await;
+            if !item.is_empty() {
+                let mut item_clone = item.clone();
+                let one_item = item_clone.split(1);
+                if Self::add_one_item(self, container.as_ref(), one_item, direction).await {
+                    self.set_stack(slot, item_clone).await;
+                    world
+                        .update_comparators(&self.position, &Block::HOPPER)
+                        .await;
+                    return true;
                 }
             }
         }
         false
     }
-    pub async fn add_one_item(from: &dyn Inventory, to: &dyn Inventory, item: ItemStack) -> bool {
+    pub async fn add_one_item(
+        from: &dyn Inventory,
+        to: &dyn Inventory,
+        item: ItemStack,
+        direction: BlockDirection,
+    ) -> bool {
         let mut success = false;
         let to_empty = to.is_empty().await;
         for j in 0..to.size() {
-            if to.is_valid_slot_for(j, &item) {
+            if to.can_insert_from_hopper(j, &item, direction) {
                 let mut dst = to.get_stack(j).await;
                 if dst.is_empty() {
                     dst = item.clone();
                     to.set_stack(j, dst).await;
                     success = true;
-                } else if dst.item_count < dst.get_max_stack_size() && dst.item == item.item {
-                    // TODO check Components equal
+                } else if dst.item_count < dst.get_max_stack_size()
+                    && to.can_merge_from_hopper(j, &dst, &item, direction)
+                    && dst.are_items_and_components_equal(&item)
+                {
                     dst.item_count += 1;
                     to.set_stack(j, dst).await;
                     success = true;
@@ -368,5 +475,18 @@ impl Clearable for HopperBlockEntity {
             items.fill_with(|| ItemStack::EMPTY.clone());
             self.mark_dirty();
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::allows_entity_suction_above;
+
+    #[test]
+    fn hopper_entity_suction_respects_full_collision_and_tag() {
+        assert!(allows_entity_suction_above(false, false));
+        assert!(allows_entity_suction_above(false, true));
+        assert!(!allows_entity_suction_above(true, false));
+        assert!(allows_entity_suction_above(true, true));
     }
 }

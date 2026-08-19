@@ -53,15 +53,18 @@ impl VarLong {
         Ok(())
     }
 
-    // TODO: Validate that the first byte will not overflow a i64
     #[inline]
     pub fn decode(read: &mut impl Read) -> Result<Self, ReadingError> {
-        let mut val = 0;
+        let mut val = 0_u64;
         for i in 0..Self::MAX_SIZE.get() {
             let byte = read.get_u8()?;
-            val |= (i64::from(byte) & 0x7F) << (i * 7);
+            let payload = u64::from(byte & 0x7F);
+            if i == Self::MAX_SIZE.get() - 1 && payload > 0x01 {
+                return Err(ReadingError::TooLarge("VarLong".to_string()));
+            }
+            val |= payload << (i * 7);
             if byte & 0x80 == 0 {
-                return Ok(Self(val));
+                return Ok(Self(val as i64));
             }
         }
         Err(ReadingError::TooLarge("VarLong".to_string()))

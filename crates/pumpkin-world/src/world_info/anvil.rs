@@ -19,9 +19,9 @@ use crate::world_info::{
     MINIMUM_SUPPORTED_LEVEL_VERSION, MINIMUM_SUPPORTED_WORLD_DATA_VERSION, WorldVersion,
     data_files::{
         minecraft_data_dir, read_game_rules, read_wandering_trader, read_weather,
-        read_world_clocks, read_world_gen_settings, write_custom_boss_events_stub,
-        write_game_rules, write_scheduled_events_stub, write_wandering_trader, write_weather,
-        write_world_clocks, write_world_gen_settings,
+        read_world_clocks, read_world_gen_settings, write_custom_boss_events, write_game_rules,
+        write_scheduled_events, write_wandering_trader, write_weather, write_world_clocks,
+        write_world_gen_settings,
     },
     default_data_packs,
 };
@@ -138,6 +138,14 @@ fn data_packs_to_nbt(packs: &DataPacks) -> NbtCompound {
     compound.put_list("Disabled", strings_to_nbt(&packs.disabled));
     compound.put_list("Enabled", strings_to_nbt(&packs.enabled));
     compound
+}
+
+fn merge_compound_fields(existing: Option<&NbtCompound>, known: NbtCompound) -> NbtCompound {
+    let mut merged = existing.cloned().unwrap_or_default();
+    for (key, tag) in known.child_tags {
+        merged.put(key.as_ref(), tag);
+    }
+    merged
 }
 
 fn stored_world_seed(level_folder: &Path, data: &NbtCompound) -> Option<i64> {
@@ -266,7 +274,11 @@ fn level_data_to_nbt(info: &LevelData, data: &mut NbtCompound) {
     data.put_long("BorderSizeLerpTime", info.border_size_lerp_time);
     data.put_double("BorderWarningBlocks", info.border_warning_blocks);
     data.put_double("BorderWarningTime", info.border_warning_time);
-    data.put_compound("DataPacks", data_packs_to_nbt(&info.data_packs));
+    let data_packs = merge_compound_fields(
+        data.get_compound("DataPacks"),
+        data_packs_to_nbt(&info.data_packs),
+    );
+    data.put_compound("DataPacks", data_packs);
     data.put_int("DataVersion", info.data_version);
     data.put_byte("Difficulty", info.difficulty as i8);
     data.put_bool("DifficultyLocked", info.difficulty_locked);
@@ -277,7 +289,11 @@ fn level_data_to_nbt(info: &LevelData, data: &mut NbtCompound) {
     data.put_int("SpawnZ", info.spawn_z);
     data.put_float("SpawnAngle", info.spawn_yaw);
     data.put_float("SpawnPitch", info.spawn_pitch);
-    data.put_compound("Version", world_version_to_nbt(&info.world_version));
+    let version = merge_compound_fields(
+        data.get_compound("Version"),
+        world_version_to_nbt(&info.world_version),
+    );
+    data.put_compound("Version", version);
     data.put_int("version", info.level_version);
     data.put_int("map_id", info.map_id);
     put_world_gen_settings_seed(data, info.world_gen_settings.seed);
@@ -414,20 +430,20 @@ impl WorldInfoWriter for AnvilLevelInfo {
             error!("Failed to write weather.dat: {e}");
         }
 
-        // wandering_trader.dat (stub / load-save)
+        // wandering_trader.dat (load-save)
         let mut wandering_trader = read_wandering_trader(level_folder);
         wandering_trader.data_version = data_version;
         if let Err(e) = write_wandering_trader(level_folder, &wandering_trader) {
             error!("Failed to write wandering_trader.dat: {e}");
         }
 
-        // custom_boss_events.dat
-        if let Err(e) = write_custom_boss_events_stub(level_folder, data_version) {
+        // custom_boss_events.dat (lossless for unknown future entries)
+        if let Err(e) = write_custom_boss_events(level_folder, data_version) {
             error!("Failed to write custom_boss_events.dat: {e}");
         }
 
-        // scheduled_events.dat
-        if let Err(e) = write_scheduled_events_stub(level_folder, data_version) {
+        // scheduled_events.dat (lossless for unknown future entries)
+        if let Err(e) = write_scheduled_events(level_folder, data_version) {
             error!("Failed to write scheduled_events.dat: {e}");
         }
 
@@ -477,9 +493,11 @@ mod test {
         let mut world_version = NbtCompound::new();
         world_version.put_string("Name", "1.21.9".to_string());
         world_version.put_int("Id", MINIMUM_SUPPORTED_WORLD_DATA_VERSION);
+        world_version.put_string("FutureVersionMetadata", "kept".to_string());
 
         let mut data_packs = NbtCompound::new();
         data_packs.put_list("Enabled", vec![NbtTag::from("vanilla")]);
+        data_packs.put_string("FuturePackMetadata", "kept".to_string());
 
         let mut data = NbtCompound::new();
         data.put_int("DataVersion", MINIMUM_SUPPORTED_WORLD_DATA_VERSION);
@@ -586,8 +604,18 @@ mod test {
         assert_eq!(data.get_bool("hardcore"), Some(true));
         assert_eq!(data.get_string("LevelName"), Some("Renamed World"));
         assert_eq!(
+            data.get_compound("DataPacks")
+                .and_then(|packs| packs.get_string("FuturePackMetadata")),
+            Some("kept")
+        );
+        assert_eq!(
             data.get_compound("Version").unwrap().get_string("Series"),
             Some("main")
+        );
+        assert_eq!(
+            data.get_compound("Version")
+                .and_then(|version| version.get_string("FutureVersionMetadata")),
+            Some("kept")
         );
     }
 
