@@ -1409,7 +1409,8 @@ impl Entity {
         self.last_sent_yaw.store(yaw, Relaxed);
         self.last_sent_pitch.store(pitch, Relaxed);
 
-        self.world.load().broadcast_to_chunk(
+        self.world.load().broadcast_java_to_entity_trackers_sync(
+            self.entity_id,
             chunk_pos,
             &CUpdateEntityRot::new(
                 self.entity_id.into(),
