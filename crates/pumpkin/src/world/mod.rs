@@ -1130,17 +1130,15 @@ impl World {
         let server_for_players = server.clone();
         let player_future = async move {
             let t = tokio::time::Instant::now();
-            let mut tasks = tokio::task::JoinSet::new();
             for player in players.iter() {
                 let p_clone = player.clone();
                 let s_clone = server_for_players.clone();
-                tasks.spawn(async move {
+                let result = tokio::spawn(async move {
                     p_clone.tick(&s_clone).await;
-                });
-            }
-            while let Some(res) = tasks.join_next().await {
-                if let Err(e) = res {
-                    error!("Player tick panicked: {:?}", e);
+                })
+                .await;
+                if let Err(error) = result {
+                    error!("Player tick panicked: {:?}", error);
                 }
             }
             t.elapsed()
@@ -1154,7 +1152,7 @@ impl World {
 
         let entity_future = async move {
             let t = tokio::time::Instant::now();
-            let mut tasks = tokio::task::JoinSet::new();
+            let mut tickable_entities = Vec::new();
             for entity in entities_to_tick.iter() {
                 // Only tick entities that sit in an active (ticking) chunk — the
                 // same set block-entity ticking and mob spawning already use, and
@@ -1178,11 +1176,19 @@ impl World {
                     continue;
                 }
 
-                let e_clone = entity.clone();
+                tickable_entities.push(entity.clone());
+            }
+
+            // Java's entity tick list is stable for a tick. Sorting by server
+            // entity id gives a deterministic order even though the live
+            // registry is backed by an immutable snapshot, and avoids
+            // concurrent movement/collision updates racing one another.
+            tickable_entities.sort_by_key(|entity| entity.get_entity().entity_id);
+            for e_clone in tickable_entities {
                 let s_clone = server_for_entities.clone();
                 let p_cache = players_cache.clone();
 
-                tasks.spawn(async move {
+                let result = tokio::spawn(async move {
                     e_clone.get_entity().age.fetch_add(1, Relaxed);
                     e_clone.tick(&e_clone, &s_clone).await;
 
@@ -1200,11 +1206,10 @@ impl World {
                             break;
                         }
                     }
-                });
-            }
-            while let Some(res) = tasks.join_next().await {
-                if let Err(e) = res {
-                    error!("Entity tick panicked: {:?}", e);
+                })
+                .await;
+                if let Err(error) = result {
+                    error!("Entity tick panicked: {:?}", error);
                 }
             }
             t.elapsed()
@@ -1218,15 +1223,18 @@ impl World {
             }
         }
         let block_entity_count = block_entities.len();
+        block_entities.sort_by_key(|block_entity| {
+            let position = block_entity.get_position();
+            (position.0.x, position.0.y, position.0.z)
+        });
 
         let world_for_be = self.clone();
         let block_entity_future = async move {
             let t = tokio::time::Instant::now();
-            let mut tasks = tokio::task::JoinSet::new();
             for be in block_entities {
                 let be_clone = be.clone();
                 let w_clone = world_for_be.clone();
-                tasks.spawn(async move {
+                let result = tokio::spawn(async move {
                     be_clone.tick(&w_clone).await;
                     // Block-entity inventory mutations (player clicks,
                     // hopper transfers, furnace/brewing progress, jukebox
@@ -1238,22 +1246,23 @@ impl World {
                     w_clone
                         .refresh_comparator_output(be_clone.get_position())
                         .await;
-                });
-            }
-            while let Some(res) = tasks.join_next().await {
-                if let Err(e) = res {
-                    error!("Block entity panicked: {:?}", e);
+                })
+                .await;
+                if let Err(error) = result {
+                    error!("Block entity panicked: {:?}", error);
                 }
             }
             t.elapsed()
         };
 
-        let (chunk_elapsed, player_elapsed, entity_elapsed, block_entity_elapsed) = tokio::join!(
-            chunk_future,
-            player_future,
-            entity_future,
-            block_entity_future
-        );
+        // Keep the authoritative world phases ordered.  Running these futures
+        // in `join!` lets chunk publication, player movement, entity physics,
+        // and inventory block entities observe partially committed state from
+        // one another, which is observably different from the vanilla tick.
+        let chunk_elapsed = chunk_future.await;
+        let player_elapsed = player_future.await;
+        let entity_elapsed = entity_future.await;
+        let block_entity_elapsed = block_entity_future.await;
 
         self.level
             .chunk_loading

@@ -26,6 +26,7 @@ Pumpkin API.
 | Worldborder commands | `pumpkin/src/command/commands/worldborder.rs`, `command/mod.rs` | `WorldBorderCommand`, `CommandSourceStack#getLevel` | mostly; player/command-block senders mutate the border in their current dimension and console/RCON fall back to the overworld; multi-dimension command fixtures and client packet captures remain |
 | Shared player spawn finder | `pumpkin/src/world/mod.rs` | `PlayerSpawnFinder`, `ServerPlayer#findRespawnPositionAndUseSpawnBlock` | mostly; bounded `respawn_radius` search, border/heightmap/fluid/full-collision checks and height fixup are wired for Java/Bedrock login and fallback respawn; randomized candidate permutation and real-client respawn fixtures remain |
 | Plugins | `pumpkin-plugin-api`, `pumpkin/src/plugin` | no direct vanilla equivalent | separate contract; preserve WIT/API version compatibility |
+| World tick phase order | `pumpkin/src/world/mod.rs` | `ServerLevel.tick`, `ServerLevel.tickEntities`, block-entity ticking | mostly; chunk work completes before deterministic player/entity/block-entity phases, with entity IDs and block positions providing stable order; exact vanilla section iteration and full differential tick traces remain |
 
 ## World, chunks and persistence
 

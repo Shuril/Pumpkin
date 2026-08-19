@@ -340,6 +340,12 @@ registry entry exists.
   and removes fast entities even after they cross a boundary. Movement,
   rotation, head-yaw, velocity and metadata deltas now use the same paired-ID
   gate, so a client cannot receive a delta before spawn or after removal.
+- `world.tick_phase_order`: player, entity and block-entity ticks are now
+  processed in deterministic order (players in connection order, entities by
+  server entity id, block entities by block position), with chunk ticking
+  completed before those phases. Each item still runs in an isolated spawned
+  task so a panic is logged and does not abort the server, but no phase can
+  observe another phase's partially committed state.
 - `chunk.loading_ticket_recovery`: a stale derived chunk-level map no longer
   panics the server during ticket removal. The authoritative ticket set is
   rebuilt, affected stage transitions are published to the worker, and a
