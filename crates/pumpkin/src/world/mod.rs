@@ -636,15 +636,17 @@ impl World {
         // chunk-watch barrier as the remove packet and other entity updates;
         // broadcasting to every player leaks updates for unloaded chunks and
         // can reference an entity the recipient has never spawned.
-        self.broadcast_to_chunk(
+        let packet = CUpdateMobEffect::new(
+            VarInt(entity.entity_id),
+            VarInt(i32::from(effect.effect_type.id)),
+            VarInt(i32::from(effect.amplifier)),
+            VarInt(effect.duration),
+            flags,
+        );
+        self.broadcast_java_to_entity_trackers_sync(
+            entity.entity_id,
             entity.chunk_pos.load(),
-            &CUpdateMobEffect::new(
-                VarInt(entity.entity_id),
-                VarInt(i32::from(effect.effect_type.id)),
-                VarInt(i32::from(effect.amplifier)),
-                VarInt(effect.duration),
-                flags,
-            ),
+            &packet,
         );
     }
 
