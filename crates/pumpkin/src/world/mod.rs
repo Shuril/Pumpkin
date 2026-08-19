@@ -126,6 +126,7 @@ use pumpkin_protocol::{
     java::client::play::{CBlockEvent, CRemoveMobEffect, CSetEquipment, CUpdateMobEffect},
 };
 use pumpkin_util::GameMode;
+use pumpkin_util::permission::PermissionLvl;
 use pumpkin_util::resource_location::ResourceLocation;
 use pumpkin_util::text::{TextComponent, color::NamedColor};
 use pumpkin_util::version::JavaMinecraftVersion;
@@ -156,6 +157,18 @@ enum EntityVisibilityTransition {
     None,
     Spawn,
     Remove,
+}
+
+/// Maps Pumpkin's Java-style operator levels to Bedrock's command
+/// permission enum. Bedrock exposes only visitor/member/operator in the
+/// start-game packet; non-operators must never be advertised as operators.
+#[must_use]
+const fn bedrock_permission_level(player: PermissionLvl, op_level: PermissionLvl) -> u8 {
+    if (player as u8) >= (op_level as u8) {
+        2 // operator
+    } else {
+        1 // member
+    }
 }
 
 #[must_use]
@@ -2420,8 +2433,10 @@ impl World {
             },
             bonus_chest: false,
             has_start_with_map_enabled: false,
-            // TODO Bedrock permission level are different
-            permission_level: 2,
+            permission_level: bedrock_permission_level(
+                player.permission_lvl.load(),
+                server.basic_config.op_permission_level,
+            ),
             server_simulation_distance: server
                 .advanced_config
                 .networking
@@ -7328,5 +7343,23 @@ mod tests {
         assert_eq!(merged.get_string("FutureComponent"), Some("keep"));
         assert_eq!(merged.get_int("x"), Some(12));
         assert_eq!(merged.get_string("id"), Some("minecraft:chest"));
+    }
+
+    #[test]
+    fn bedrock_permission_level_only_advertises_operator_for_configured_ops() {
+        use pumpkin_util::permission::PermissionLvl;
+
+        assert_eq!(
+            super::bedrock_permission_level(PermissionLvl::Zero, PermissionLvl::Four),
+            1
+        );
+        assert_eq!(
+            super::bedrock_permission_level(PermissionLvl::Three, PermissionLvl::Four),
+            1
+        );
+        assert_eq!(
+            super::bedrock_permission_level(PermissionLvl::Four, PermissionLvl::Four),
+            2
+        );
     }
 }

@@ -84,8 +84,9 @@ Checkpoint branch: `codex/intermediate-parity-checkpoint`
   behavior, riptide pose, fall/fire/freeze/armor/XP fixes, selected AI LOS and
   target predicates.
 - Java/Bedrock packet fixes, main/off-hand mapping, command/recipe/light/entity
-  metadata codecs, Java `ClientTickEnd` known-movement reset, NetherNet
-  discovery and malformed input guards.
+  metadata codecs, Java `ClientTickEnd` known-movement reset, configured
+  Bedrock member/operator permission, NetherNet discovery and malformed input
+  guards.
 
 ### Documentation and audit tooling
 

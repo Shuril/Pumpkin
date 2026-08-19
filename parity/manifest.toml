@@ -1624,6 +1624,16 @@ tests = ["cargo check -p pumpkin --lib"]
 dependencies = ["block.wither_skull", "dispenser.equipment", "entity.wither"]
 
 [[contract]]
+id = "protocol.bedrock_permission_level"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/network/protocol/game/ClientboundStartGamePacket.java", "net/minecraft/server/players/PlayerList.java"]
+pumpkin_sources = ["crates/pumpkin/src/world/mod.rs", "crates/pumpkin-util/src/permission.rs"]
+status = "mostly"
+observable_contracts = ["Bedrock StartGame advertises member for players below the configured operator threshold", "Bedrock StartGame advertises operator only for players at or above the configured operator threshold", "the mapping remains stable when Java permission levels three and four are used"]
+tests = ["bedrock_permission_level_only_advertises_operator_for_configured_ops", "cargo test -p pumpkin --lib world::tests"]
+dependencies = ["permission.level", "net.bedrock.start_game"]
+
+[[contract]]
 id = "player.client_tick_known_movement"
 vanilla_version = "26.2"
 vanilla_sources = ["net/minecraft/server/network/ServerGamePacketListenerImpl.java", "net/minecraft/server/level/ServerPlayer.java"]

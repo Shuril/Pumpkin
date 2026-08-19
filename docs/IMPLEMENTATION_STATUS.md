@@ -343,6 +343,9 @@ registry entry exists.
   Java `ClientTickEnd` now tracks the last accepted client movement delta and
   resets it to zero when a tick contains no movement packet, matching
   `ServerGamePacketListenerImpl` and the player known-movement predicates.
+- Bedrock `StartGame` now advertises member/operator permission from the
+  player's actual configured operator level instead of hard-coding every
+  connection as an operator.
 - `world.tick_phase_order`: player, entity and block-entity ticks are now
   processed in deterministic order (players in connection order, entities by
   server entity id, block entities by block position), with chunk ticking
