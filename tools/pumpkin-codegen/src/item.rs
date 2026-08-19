@@ -1543,15 +1543,13 @@ pub fn build() -> TokenStream {
         use pumpkin_util::text::TextComponent;
         use std::borrow::Cow;
         use std::hash::{Hash, Hasher};
-        use crate::{tag, AttributeModifierSlot};
+        use crate::AttributeModifierSlot;
         use crate::attributes::Attributes;
         use crate::data_component_impl::IDSet::{IDs, Tag};
         use crate::data_component::DataComponent;
         use crate::effect::StatusEffect;
         use crate::Block;
         use crate::sound::Sound;
-
-        use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
 
         #[derive(Clone)]
         pub struct Item {

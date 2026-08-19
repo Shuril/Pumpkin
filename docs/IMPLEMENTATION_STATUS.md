@@ -890,7 +890,7 @@ registry entry exists.
 cargo fmt --all -- --check
 cargo check -p pumpkin --lib
 cargo check --workspace
-cargo test -p pumpkin --lib                         # 386 passed in the last full run
+cargo test -p pumpkin --lib                         # 388 passed in the last full run
   cargo test -p pumpkin --lib block::entities::chest::tests::deferred_loot_table_can_be_restored_without_losing_seed  # 1 passed
   cargo test -p pumpkin-inventory --lib               # 13 passed
   cargo test -p pumpkin-data --lib use_remainder_converts_only_the_exhausted_survival_stack
@@ -911,7 +911,7 @@ movement additions, plus the player/dispenser brush state machine and the
   advancements and structures.
 The same run includes datapack function ZIP/directory priority, validation,
 canonical `/function` and `/schedule` command coverage; the Pumpkin library
-The last full Pumpkin suite is 386/386, including the deferred-chest and
+The last full Pumpkin suite is 388/388, including the deferred-chest and
 storage-minecart datapack regressions, fishing pool/open-water coverage, and
 minecart persistence-related regressions. World-info scheduled callback persistence has a
 dedicated round-trip test in the world crate.

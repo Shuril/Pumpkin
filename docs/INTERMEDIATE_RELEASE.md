@@ -153,7 +153,7 @@ Checkpoint branch: `codex/intermediate-parity-checkpoint`
 - `git diff --check`
 - `python3 tools/parity_inventory.py` — 151 contracts, `manifest_errors = []`
 - `CARGO_INCREMENTAL=0 cargo check -p pumpkin --lib`
-- `CARGO_INCREMENTAL=0 cargo test -p pumpkin --lib --no-fail-fast` — **386/386**
+- `CARGO_INCREMENTAL=0 cargo test -p pumpkin --lib --no-fail-fast` — **388/388**
 - `CARGO_INCREMENTAL=0 cargo test -p pumpkin-world --lib --no-fail-fast` —
   **226/226**
 - targeted spawn-finder regression — **1/1**
