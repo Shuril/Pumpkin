@@ -172,12 +172,23 @@ pub async fn send_attribute_updates_for_living(
         player_tick: VarULong(0),
     };
 
-    living
-        .entity
-        .world
-        .load()
-        .broadcast_editioned(&je_packet, &be_packet)
-        .await;
+    let world = living.entity.world.load();
+    let entity_id = living.entity.entity_id;
+    let chunk_pos = living.entity.chunk_pos.load();
+
+    // Attribute deltas are entity-scoped just like metadata and equipment.
+    // Broadcasting them to every player lets clients receive a packet for an
+    // entity whose chunk/spawn was never delivered, and leaks updates across
+    // view-distance boundaries.  Reuse the paired-ID tracker for observers.
+    world.broadcast_to_entity_trackers_editioned_sync(entity_id, chunk_pos, &je_packet, &be_packet);
+
+    // The owning player is not in its own paired-ID set, but vanilla still
+    // sends self-attribute changes (health/effects/flight) to that connection.
+    if let Some(player) = world.get_player_by_id(entity_id) {
+        player
+            .client
+            .try_enqueue_packet_editioned(&je_packet, &be_packet);
+    }
 }
 
 impl Clone for AttributeInstance {

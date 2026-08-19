@@ -354,6 +354,8 @@ registry entry exists.
 - Equipment deltas now use the same paired-ID and delivered-chunk barrier;
   Java armor/equipment packets are not sent to watchers that have not received
   the entity spawn, while Bedrock keeps its edition-specific equipment path.
+  Attribute deltas now use the same barrier and still reach the owning player
+  connection for self-health/effect updates.
 - `world.block_update_delivery`: batched multi-block updates use the same
   delivered-chunk barrier as single updates.
 - `entity.effect_tracking`: authoritative mob-effect add/remove packets are
