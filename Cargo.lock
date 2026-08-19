@@ -3522,7 +3522,6 @@ dependencies = [
  "pumpkin-data",
  "pumpkin-nbt",
  "pumpkin-util",
- "rand 0.10.2",
  "rayon",
  "rustc-hash",
  "ruzstd",

@@ -52,7 +52,6 @@ rayon.workspace = true
 # lru.workspace = true
 
 tokio-util = { workspace = true, features = ["rt"] }
-rand.workspace = true
 rustc-hash.workspace = true
 slotmap.workspace = true
 crossfire.workspace = true
@@ -86,6 +85,3 @@ harness = false
 
 [lints]
 workspace = true
-
-[package.metadata.cargo-machete]
-ignored = ["serde_json"]
