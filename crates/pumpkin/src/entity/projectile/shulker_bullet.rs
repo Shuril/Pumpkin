@@ -8,6 +8,12 @@ use pumpkin_data::entity::EntityType;
 use pumpkin_data::particle::Particle;
 use pumpkin_data::potion::Effect;
 use pumpkin_data::sound::{Sound, SoundCategory};
+use pumpkin_protocol::bedrock::client::move_actor_delta::{
+    CMoveActorDelta, MOVE_ACTOR_DELTA_FLAG_FORCE_MOVE, MOVE_ACTOR_DELTA_FLAG_HAS_HEAD_YAW,
+    MOVE_ACTOR_DELTA_FLAG_HAS_PITCH, MOVE_ACTOR_DELTA_FLAG_HAS_X, MOVE_ACTOR_DELTA_FLAG_HAS_Y,
+    MOVE_ACTOR_DELTA_FLAG_HAS_YAW, MOVE_ACTOR_DELTA_FLAG_HAS_Z,
+};
+use pumpkin_protocol::codec::var_ulong::VarULong;
 use pumpkin_protocol::java::client::play::{CEntityPositionSync, CEntityVelocity};
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector3::Vector3;
@@ -427,7 +433,26 @@ impl EntityBase for ShulkerBulletEntity {
 
             // Broadcast position and velocity
             let chunk_pos = entity.chunk_pos.load();
-            world.broadcast_to_chunk(
+            let yaw = (entity.yaw.load() * 256.0 / 360.0).rem_euclid(256.0) as u8;
+            let pitch = (entity.pitch.load() * 256.0 / 360.0).rem_euclid(256.0) as u8;
+            let bedrock_position = CMoveActorDelta::new(
+                VarULong(entity.entity_id as u64),
+                MOVE_ACTOR_DELTA_FLAG_HAS_X
+                    | MOVE_ACTOR_DELTA_FLAG_HAS_Y
+                    | MOVE_ACTOR_DELTA_FLAG_HAS_Z
+                    | MOVE_ACTOR_DELTA_FLAG_HAS_PITCH
+                    | MOVE_ACTOR_DELTA_FLAG_HAS_YAW
+                    | MOVE_ACTOR_DELTA_FLAG_HAS_HEAD_YAW
+                    | MOVE_ACTOR_DELTA_FLAG_FORCE_MOVE,
+                new_pos.x as f32,
+                new_pos.y as f32,
+                new_pos.z as f32,
+                pitch,
+                yaw,
+                yaw,
+            );
+            world.broadcast_to_entity_trackers_editioned_sync(
+                entity.entity_id,
                 chunk_pos,
                 &CEntityPositionSync::new(
                     entity.entity_id.into(),
@@ -437,8 +462,10 @@ impl EntityBase for ShulkerBulletEntity {
                     entity.pitch.load(),
                     false,
                 ),
+                &bedrock_position,
             );
-            world.broadcast_to_chunk(
+            world.broadcast_java_to_entity_trackers_sync(
+                entity.entity_id,
                 chunk_pos,
                 &CEntityVelocity::new(entity.entity_id.into(), vel),
             );
