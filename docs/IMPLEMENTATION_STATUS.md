@@ -84,7 +84,8 @@ registry entry exists.
   Live mounts and entity dismounts now emit `ENTITY_MOUNT`/`ENTITY_DISMOUNT`
   from the vehicle position before client movement; persisted passenger-tree
   hydration uses a silent path so chunk loading does not replay gameplay
-  vibrations.
+  vibrations. Living damage and one-shot death now emit `ENTITY_DAMAGE` and
+  `ENTITY_DIE` only after the corresponding state transition is authoritative.
 - `entity.creeper_lingering_cloud`: creeper explosions snapshot active effects
   before removing the mob and create a vanilla-parameterized area-effect cloud
   only when the snapshot is non-empty. Effect duration, amplifier and visual

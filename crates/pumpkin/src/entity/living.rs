@@ -1797,6 +1797,19 @@ impl LivingEntity {
             self.movement_input.store(Vector3::default());
             self.jumping.store(false, Relaxed);
 
+            // LivingEntity#die emits ENTITY_DIE exactly once, before death
+            // loot and removal.  The entity itself is the event source;
+            // passing the attacker here would incorrectly let a player-owned
+            // shrieker treat every mob death as a player vibration.
+            let death_pos = self.entity.block_pos.load();
+            world
+                .emit_game_event_from(
+                    death_pos,
+                    crate::world::game_event::GameEventKind::EntityDie,
+                    Some(self.entity.entity_uuid),
+                )
+                .await;
+
             // Statistics updates
             self.update_death_stats(dyn_self.as_ref(), cause).await;
 
@@ -3261,6 +3274,19 @@ impl EntityBase for LivingEntity {
             let clamped_health = new_health.max(0.0).min(max_h);
             if remaining > 0.0 {
                 self.set_health(clamped_health);
+
+                // LivingEntity#actuallyHurt emits ENTITY_DAMAGE only after
+                // absorption has been removed and health really changed.
+                // Blocked hits, invulnerability and absorption-only hits must
+                // not create a vibration.
+                let damage_pos = self.entity.block_pos.load();
+                world
+                    .emit_game_event_from(
+                        damage_pos,
+                        crate::world::game_event::GameEventKind::EntityDamage,
+                        Some(self.entity.entity_uuid),
+                    )
+                    .await;
 
                 // Statistics updates
                 if let Some(player) = caller.get_player() {

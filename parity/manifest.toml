@@ -1634,6 +1634,16 @@ tests = ["bedrock_permission_level_only_advertises_operator_for_configured_ops",
 dependencies = ["permission.level", "net.bedrock.start_game"]
 
 [[contract]]
+id = "world.game_event_living_damage_death"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/entity/LivingEntity.java", "net/minecraft/world/entity/player/Player.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/living.rs", "crates/pumpkin/src/world/game_event.rs"]
+status = "mostly"
+observable_contracts = ["ENTITY_DAMAGE is emitted only after absorption is removed and health changes", "invulnerable, blocked and absorption-only hits emit no ENTITY_DAMAGE", "ENTITY_DIE is emitted once before living-entity loot/removal", "the victim remains the event source so ordinary mob damage/death does not masquerade as a player vibration"]
+tests = ["cargo test -p pumpkin --lib world::game_event", "cargo check -p pumpkin --lib"]
+dependencies = ["world.game_event", "entity.damage_pipeline", "entity.death_pipeline"]
+
+[[contract]]
 id = "player.client_tick_known_movement"
 vanilla_version = "26.2"
 vanilla_sources = ["net/minecraft/server/network/ServerGamePacketListenerImpl.java", "net/minecraft/server/level/ServerPlayer.java"]
