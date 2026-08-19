@@ -3851,7 +3851,6 @@ impl World {
 
         self.broadcast_packet_except(
             &[player.gameprofile.id],
-            // TODO: add velo
             &CSpawnEntity::new(
                 entity.entity_id.into(),
                 player.gameprofile.id,
@@ -3861,7 +3860,7 @@ impl World {
                 yaw,
                 yaw,
                 0.into(),
-                Vector3::new(0.0, 0.0, 0.0),
+                entity.velocity.load(),
             ),
         );
 
