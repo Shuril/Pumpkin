@@ -5,9 +5,10 @@
 совместимости с Mojang: ниже отдельно перечислены реализованные подсистемы,
 оставшиеся расхождения и фактически выполненные проверки.
 
-Checkpoint commit: `d35ccb2ca` (the immutable restore point created before
-post-checkpoint fixes). The same commit is tagged locally as
-`intermediate-parity-checkpoint`.
+Checkpoint baseline commit: `d35ccb2ca` (the immutable restore point created
+before post-checkpoint fixes). The published branch additionally contains the
+follow-up fixes through `1c914a4d7`; the local tag remains the immutable
+baseline `intermediate-parity-checkpoint`.
 Checkpoint branch: `codex/intermediate-parity-checkpoint`
 
 ## Что входит в checkpoint
@@ -96,7 +97,7 @@ Checkpoint branch: `codex/intermediate-parity-checkpoint`
   blockers.
 - `docs/VANILLA_PARITY.md` — subsystem-by-subsystem comparison with Mojang
   classes and remaining work.
-- `parity/manifest.toml` — 147 tracked vanilla contracts with sources,
+- `parity/manifest.toml` — 151 tracked vanilla contracts with sources,
   observable behavior, tests and dependencies.
 
 ## Что ещё НЕ готово для заявления «полная совместимость»
@@ -150,9 +151,9 @@ Checkpoint branch: `codex/intermediate-parity-checkpoint`
 
 - `cargo fmt --all -- --check`
 - `git diff --check`
-- `python3 tools/parity_inventory.py` — 147 contracts, `manifest_errors = []`
+- `python3 tools/parity_inventory.py` — 151 contracts, `manifest_errors = []`
 - `CARGO_INCREMENTAL=0 cargo check -p pumpkin --lib`
-- `CARGO_INCREMENTAL=0 cargo test -p pumpkin --lib --no-fail-fast` — **385/385**
+- `CARGO_INCREMENTAL=0 cargo test -p pumpkin --lib --no-fail-fast` — **386/386**
 - `CARGO_INCREMENTAL=0 cargo test -p pumpkin-world --lib --no-fail-fast` —
   **226/226**
 - targeted spawn-finder regression — **1/1**
@@ -170,7 +171,7 @@ recipe/crafter, sculk, minecart, persistence и worldgen. Полный
 `codex/intermediate-parity-checkpoint`. Для публикации в свой fork:
 
 ```bash
-git push -u origin codex/intermediate-parity-checkpoint
+git push -u fork codex/intermediate-parity-checkpoint
 ```
 
 Перед push проверьте `git status --short`: каталог `Minecraft/` должен остаться

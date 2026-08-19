@@ -880,7 +880,7 @@ registry entry exists.
   `waterlogged` property while retaining the vanilla facing.
 - `parity/manifest.toml` and `tools/parity_inventory.py` provide a
   machine-readable ledger and deterministic source/TODO inventory. The
-  inventory report currently validates 147 tracked contracts; all remain
+  inventory report currently validates 151 tracked contracts; all remain
   explicitly `mostly` until their world/packet/persistence boundaries have
   differential evidence.
 
@@ -947,7 +947,7 @@ coverage, generated protocol certification, Bedrock parity and the differential
 Java 26.2 harness. These must be closed and promoted to `complete` before a
 release claim.
 
-The current ledger intentionally reports all 147 contracts as `mostly`: this is
+The current ledger intentionally reports all 151 contracts as `mostly`: this is
 not a build failure, but a release gate. Each row still needs its world/packet/
 persistence boundary fixture and differential evidence before it may become
 `complete`.
