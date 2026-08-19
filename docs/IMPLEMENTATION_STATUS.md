@@ -893,7 +893,7 @@ registry entry exists.
 ```text
 cargo fmt --all -- --check
 cargo check -p pumpkin --lib
-cargo check --workspace
+cargo check --workspace --all-targets
 cargo test -p pumpkin --lib                         # 388 passed in the last full run
   cargo test -p pumpkin --lib block::entities::chest::tests::deferred_loot_table_can_be_restored_without_losing_seed  # 1 passed
   cargo test -p pumpkin-inventory --lib               # 13 passed
@@ -925,7 +925,7 @@ the protocol crate is 93/93 (including item-component and malformed-packet
 guards), Java light serialization is 4/4, and inventory is 13/13. A complete
 `cargo test --workspace --no-fail-fast` baseline run passed before the final
 chunk-ticket recovery change; after that change the focused
-`chunk_system::chunk_loading` suite passes 2/2. `cargo check --workspace`
+`chunk_system::chunk_loading` suite passes 2/2. `cargo check --workspace --all-targets`
 also passes after the current changes. A complete `cargo test --workspace
 --no-fail-fast` rerun remains intentionally separate because it previously
 hit the host's disk-full condition; no test failure was observed in that run.

@@ -160,6 +160,7 @@ Checkpoint branch: `codex/intermediate-parity-checkpoint`
 - `python3 tools/parity_inventory.py` — 153 contracts, `manifest_errors = []`
 - `python3 -m unittest discover -s tools/parity-runner -p 'test_*.py'` — 2/2
 - `CARGO_INCREMENTAL=0 cargo check -p pumpkin --lib`
+- GitHub `Intermediate compile` workflow — `cargo check --workspace --all-targets`
 - `CARGO_INCREMENTAL=0 cargo test -p pumpkin --lib --no-fail-fast` — **388/388**
 - `CARGO_INCREMENTAL=0 cargo test -p pumpkin-world --lib --no-fail-fast` —
   **226/226**
