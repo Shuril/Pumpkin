@@ -89,6 +89,7 @@ impl AttributeInstance {
 }
 
 /// Send updates for multiple attributes in a single packet for the given living entity.
+#[allow(clippy::unused_async)]
 pub async fn send_attribute_updates_for_living(
     living: &crate::entity::living::LivingEntity,
     attributes: Vec<Attributes>,
