@@ -279,16 +279,18 @@ impl ShulkerEntity {
                 entity.set_pos(new_pos);
 
                 let chunk_pos = entity.chunk_pos.load();
-                world.broadcast_to_chunk(
+                let position_packet = CEntityPositionSync::new(
+                    entity.entity_id.into(),
+                    new_pos,
+                    Vector3::new(0.0, 0.0, 0.0),
+                    entity.yaw.load(),
+                    entity.pitch.load(),
+                    entity.on_ground.load(Ordering::Relaxed),
+                );
+                world.broadcast_java_to_entity_trackers_sync(
+                    entity.entity_id,
                     chunk_pos,
-                    &CEntityPositionSync::new(
-                        entity.entity_id.into(),
-                        new_pos,
-                        Vector3::new(0.0, 0.0, 0.0),
-                        entity.yaw.load(),
-                        entity.pitch.load(),
-                        entity.on_ground.load(Ordering::Relaxed),
-                    ),
+                    &position_packet,
                 );
 
                 entity.last_sent_pos.store(new_pos);
