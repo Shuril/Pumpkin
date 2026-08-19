@@ -86,6 +86,9 @@ registry entry exists.
   hydration uses a silent path so chunk loading does not replay gameplay
   vibrations. Living damage and one-shot death now emit `ENTITY_DAMAGE` and
   `ENTITY_DIE` only after the corresponding state transition is authoritative.
+  Vehicles (including TNT minecarts on their specialised prime path) and item
+  entities now emit `ENTITY_DAMAGE`; item entities also honor the vanilla
+  `mob_griefing` guard for mob-caused damage.
 - `entity.creeper_lingering_cloud`: creeper explosions snapshot active effects
   before removing the mob and create a vanilla-parameterized area-effect cloud
   only when the snapshot is non-empty. Effect duration, amplifier and visual

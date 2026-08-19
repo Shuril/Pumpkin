@@ -147,6 +147,7 @@ impl VehicleEntity {
         }
 
         let new_strength = self.apply_damage_wobble(amount);
+        self.emit_damage_game_event(source).await;
 
         let is_creative = source
             .and_then(|s| s.get_player())
@@ -161,6 +162,22 @@ impl VehicleEntity {
         }
 
         true
+    }
+
+    /// Emits the vehicle damage vibration with the same attacker context as
+    /// vanilla `VehicleEntity#hurtServer`.  TNT minecarts use this helper from
+    /// their specialised prime path because they may bypass the common damage
+    /// method after applying the wobble.
+    pub async fn emit_damage_game_event(&self, source: Option<&dyn EntityBase>) {
+        let world = self.entity.world.load();
+        let source_entity = source.map(|entity| entity.get_entity().entity_uuid);
+        world
+            .emit_game_event_from(
+                self.entity.block_pos.load(),
+                crate::world::game_event::GameEventKind::EntityDamage,
+                source_entity,
+            )
+            .await;
     }
 
     /// Applies the standard minecart damage wobble without destroying the vehicle.

@@ -1644,6 +1644,16 @@ tests = ["cargo test -p pumpkin --lib world::game_event", "cargo check -p pumpki
 dependencies = ["world.game_event", "entity.damage_pipeline", "entity.death_pipeline"]
 
 [[contract]]
+id = "world.game_event_vehicle_item_damage"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/entity/vehicle/VehicleEntity.java", "net/minecraft/world/entity/item/ItemEntity.java", "net/minecraft/world/entity/vehicle/minecart/MinecartTNT.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/vehicle/vehicle.rs", "crates/pumpkin/src/entity/vehicle/minecart.rs", "crates/pumpkin/src/entity/item.rs"]
+status = "mostly"
+observable_contracts = ["ordinary vehicle damage emits ENTITY_DAMAGE with the attacker context", "TNT minecart prime damage emits the same event before the fuse transition", "item-entity damage emits only after health changes", "mob-caused item damage is rejected while mob_griefing=false"]
+tests = ["cargo test -p pumpkin --lib entity::vehicle::minecart", "cargo check -p pumpkin --lib"]
+dependencies = ["world.game_event_living_damage_death", "entity.vehicle", "entity.item"]
+
+[[contract]]
 id = "player.client_tick_known_movement"
 vanilla_version = "26.2"
 vanilla_sources = ["net/minecraft/server/network/ServerGamePacketListenerImpl.java", "net/minecraft/server/level/ServerPlayer.java"]

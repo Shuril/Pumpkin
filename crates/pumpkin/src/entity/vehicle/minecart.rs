@@ -989,6 +989,7 @@ impl EntityBase for MinecartEntity {
                     || self.vehicle.entity.fire_ticks.load(Ordering::Relaxed) > 0;
                 if ignites || speed_squared >= 0.01 {
                     self.vehicle.apply_damage_wobble(amount);
+                    self.vehicle.emit_damage_game_event(source).await;
                     let fuse = rand::rng().random_range(0..20) + rand::rng().random_range(0..20);
                     if self
                         .vehicle

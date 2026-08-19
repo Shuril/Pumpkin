@@ -509,7 +509,7 @@ impl EntityBase for ItemEntity {
         amount: f32,
         damage_type: DamageType,
         _position: Option<Vector3<f64>>,
-        _source: Option<&'a dyn EntityBase>,
+        source: Option<&'a dyn EntityBase>,
         _cause: Option<&'a dyn EntityBase>,
     ) -> EntityBaseFuture<'a, bool> {
         Box::pin(async move {
@@ -521,6 +521,14 @@ impl EntityBase for ItemEntity {
                 return false;
             }
 
+            let world = self.entity.world.load();
+            let rules = world.level_info.load();
+            if !rules.game_rules.mob_griefing
+                && source.is_some_and(|entity| entity.get_entity().entity_type.mob)
+            {
+                return false;
+            }
+
             loop {
                 let current = self.health.load(Relaxed);
                 let new = current - amount;
@@ -529,6 +537,13 @@ impl EntityBase for ItemEntity {
                     .compare_exchange(current, new, AcqRel, Relaxed)
                     .is_ok()
                 {
+                    world
+                        .emit_game_event_from(
+                            self.entity.block_pos.load(),
+                            crate::world::game_event::GameEventKind::EntityDamage,
+                            source.map(|entity| entity.get_entity().entity_uuid),
+                        )
+                        .await;
                     if new <= 0.0 {
                         self.entity.remove().await;
                     }
