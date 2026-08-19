@@ -6,7 +6,8 @@
 оставшиеся расхождения и фактически выполненные проверки.
 
 Checkpoint commit: `d35ccb2ca` (the immutable restore point created before
-post-checkpoint fixes).
+post-checkpoint fixes). The same commit is tagged locally as
+`intermediate-parity-checkpoint`.
 Checkpoint branch: `codex/intermediate-parity-checkpoint`
 
 ## Что входит в checkpoint
