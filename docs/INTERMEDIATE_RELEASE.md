@@ -101,7 +101,7 @@ Checkpoint branch: `codex/intermediate-parity-checkpoint`
   blockers.
 - `docs/VANILLA_PARITY.md` — subsystem-by-subsystem comparison with Mojang
   classes and remaining work.
-- `parity/manifest.toml` — 153 tracked vanilla contracts with sources,
+- `parity/manifest.toml` — 154 tracked vanilla contracts with sources,
   observable behavior, tests and dependencies.
 
 ## Что ещё НЕ готово для заявления «полная совместимость»
@@ -134,7 +134,7 @@ Checkpoint branch: `codex/intermediate-parity-checkpoint`
    vibration source и exact `VibrationSystem` filters, полный Warden spawn rule
    (difficulty/structure/biome/obstruction) и real block-entity fixture.
 8. **Spawning и AI.** Остаются structure-specific Nether fortress rules,
-   exact `SpawnPlacements`/spawn boxes, biome holder paths и отдельные subtype
+   structure-backed biome holder paths и отдельные subtype
    goals/brains (phantom, witch, drowned, spider jumping, dragon handling и
    другие TODO из inventory).
 9. **Lighting/fluids/weather.** Java changed-section и Bedrock subchunk packet
@@ -157,7 +157,7 @@ Checkpoint branch: `codex/intermediate-parity-checkpoint`
 
 - `cargo fmt --all -- --check`
 - `git diff --check`
-- `python3 tools/parity_inventory.py` — 153 contracts, `manifest_errors = []`
+- `python3 tools/parity_inventory.py` — 154 contracts, `manifest_errors = []`
 - `python3 -m unittest discover -s tools/parity-runner -p 'test_*.py'` — 2/2
 - `CARGO_INCREMENTAL=0 cargo check -p pumpkin --lib`
 - GitHub `Intermediate compile` workflow — `cargo check --workspace --all-targets`

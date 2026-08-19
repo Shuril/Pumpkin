@@ -637,11 +637,7 @@ pub fn spawn_mobs_for_chunk_generation(
                 // collision volume when a heightmap was stale. Keep all
                 // decisions on this chunk-local RNG stream so generation is
                 // reproducible across worker scheduling.
-                let dimensions = EntityDimensions {
-                    width: entity_type.dimension[0],
-                    height: entity_type.dimension[1],
-                    eye_height: entity_type.eye_height,
-                };
+                let dimensions = natural_spawn_dimensions(entity_type);
                 let spawn_box = BoundingBox::new_from_pos(
                     f64::from(pos.0.x) + 0.5,
                     f64::from(pos.0.y),
@@ -1019,16 +1015,11 @@ pub fn is_valid_spawn_position_for_type(
     if !check_spawn_rules(entity_type, world, block_pos, is_thundering, random) {
         return false;
     }
-    // TODO: we should use getSpawnBox, but this is only modified for slimes and magma slimes
     if !world.is_space_empty(BoundingBox::new_from_pos(
         f64::from(block_pos.0.x) + 0.5,
         f64::from(block_pos.0.y),
         f64::from(block_pos.0.z) + 0.5,
-        &EntityDimensions {
-            width: entity_type.dimension[0],
-            height: entity_type.dimension[1],
-            eye_height: entity_type.eye_height,
-        },
+        &natural_spawn_dimensions(entity_type),
     )) {
         return false;
     }
@@ -1134,7 +1125,8 @@ pub fn is_spawn_position_ok(
             let is_valid_spawn_below = is_valid_spawn_support(down);
 
             if is_valid_spawn_below {
-                is_valid_empty_spawn_block(cur) && is_valid_empty_spawn_block(up)
+                is_valid_empty_spawn_block_for_type(cur, entity_type)
+                    && is_valid_empty_spawn_block_for_type(up, entity_type)
             } else {
                 false
             }
@@ -1178,7 +1170,8 @@ pub fn is_spawn_position_ok_cache(
             let is_valid_spawn_below = is_valid_spawn_support(&down);
 
             if is_valid_spawn_below {
-                is_valid_empty_spawn_block(state) && is_valid_empty_spawn_block(up)
+                is_valid_empty_spawn_block_for_type(state, entity_type)
+                    && is_valid_empty_spawn_block_for_type(up, entity_type)
             } else {
                 false
             }
@@ -1228,6 +1221,36 @@ pub fn adjust_spawn_position(
 
 #[must_use]
 pub fn is_valid_empty_spawn_block(state: &'static BlockState) -> bool {
+    is_valid_empty_spawn_block_for_type(state, &EntityType::ZOMBIE)
+}
+
+/// Vanilla `EntityType#getSpawnAABB` applies a four-times spawn-dimension scale
+/// to slime and magma-cube candidates.  The runtime entity later picks a
+/// random size, but the pre-spawn obstruction check must use this conservative
+/// maximum box or a large variant can be created inside an occupied volume.
+#[must_use]
+fn natural_spawn_dimensions(entity_type: &'static EntityType) -> EntityDimensions {
+    let scale = if entity_type == &EntityType::SLIME || entity_type == &EntityType::MAGMA_CUBE {
+        4.0
+    } else {
+        1.0
+    };
+    EntityDimensions {
+        width: entity_type.dimension[0] * scale,
+        height: entity_type.dimension[1] * scale,
+        eye_height: entity_type.eye_height * scale,
+    }
+}
+
+/// Entity-aware counterpart of `NaturalSpawner.isValidEmptySpawnBlock`.
+/// Fire-immune types may occupy fire/soul-fire blocks; all other dangerous
+/// blocks remain rejected.  The legacy wrapper above intentionally keeps the
+/// default hostile-mob behaviour for callers and tests that do not have a type.
+#[must_use]
+fn is_valid_empty_spawn_block_for_type(
+    state: &'static BlockState,
+    entity_type: &'static EntityType,
+) -> bool {
     // NaturalSpawner.isValidEmptySpawnBlock uses the actual collision shape,
     // not the generated full-cube/render flag.  This matters for trapdoors,
     // slabs, panes, and custom states whose collision and rendering metadata
@@ -1249,11 +1272,11 @@ pub fn is_valid_empty_spawn_block(state: &'static BlockState) -> bool {
     // dangerous for every naturally spawned mob and must never be treated as
     // an empty spawn volume by the generic path.
     let block = Block::from_state_id(state.id);
-    block != &Block::FIRE
-        && block != &Block::SOUL_FIRE
+    (entity_type.fire_immune || (block != &Block::FIRE && block != &Block::SOUL_FIRE))
         && block != &Block::SWEET_BERRY_BUSH
         && block != &Block::WITHER_ROSE
         && block != &Block::CACTUS
+        && block != &Block::POWDER_SNOW
 }
 
 /// Default `BlockBehaviour` implementation of `BlockState.isValidSpawn` for
@@ -1296,8 +1319,9 @@ fn is_signal_source(state: &'static BlockState) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        PointCharge, is_signal_source, is_valid_empty_spawn_block, is_valid_spawn_support,
-        natural_despawn_roll, should_despawn_mob,
+        PointCharge, is_signal_source, is_valid_empty_spawn_block,
+        is_valid_empty_spawn_block_for_type, is_valid_spawn_support, natural_despawn_roll,
+        natural_spawn_dimensions, should_despawn_mob,
     };
     use pumpkin_data::Block;
     use pumpkin_data::entity::EntityType;
@@ -1315,6 +1339,36 @@ mod tests {
             assert!(!is_valid_empty_spawn_block(block.default_state));
         }
         assert!(is_valid_empty_spawn_block(Block::AIR.default_state));
+        assert!(!is_valid_empty_spawn_block(
+            Block::POWDER_SNOW.default_state
+        ));
+    }
+
+    #[test]
+    fn spawn_dimensions_match_entity_type_scale() {
+        let zombie = natural_spawn_dimensions(&EntityType::ZOMBIE);
+        assert_eq!(zombie.width, EntityType::ZOMBIE.dimension[0]);
+        assert_eq!(zombie.height, EntityType::ZOMBIE.dimension[1]);
+
+        let slime = natural_spawn_dimensions(&EntityType::SLIME);
+        assert_eq!(slime.width, EntityType::SLIME.dimension[0] * 4.0);
+        assert_eq!(slime.height, EntityType::SLIME.dimension[1] * 4.0);
+    }
+
+    #[test]
+    fn fire_immune_spawn_types_follow_vanilla_dangerous_block_rules() {
+        assert!(!is_valid_empty_spawn_block_for_type(
+            Block::FIRE.default_state,
+            &EntityType::ZOMBIE,
+        ));
+        assert!(is_valid_empty_spawn_block_for_type(
+            Block::FIRE.default_state,
+            &EntityType::MAGMA_CUBE,
+        ));
+        assert!(!is_valid_empty_spawn_block_for_type(
+            Block::POWDER_SNOW.default_state,
+            &EntityType::MAGMA_CUBE,
+        ));
     }
 
     #[test]

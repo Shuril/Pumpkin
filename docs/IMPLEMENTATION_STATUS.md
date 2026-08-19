@@ -567,7 +567,10 @@ registry entry exists.
   parrot support tags, polar-bear alternate-biome rules, turtle sand bounds,
   lush-cave tropical-fish height rules, glow-squid darkness/depth and the
   ocelot one-in-three gate are also covered. Thunder monster brightness uses
-  the dimension-aware raw-light API.
+  the dimension-aware raw-light API. Natural-spawn obstruction AABBs now use
+  the EntityType spawn-dimension scale (including the four-times slime and
+  magma-cube scale), and fire/soul-fire danger is resolved against fire
+  immunity while powder snow remains dangerous.
 - `spawning.drowned`: natural drowned spawning now has its own two-water-cell,
   dark-light, deep-water and biome-dependent 1/40 or 1/15 chance predicate.
 - `spawning.spawn_placements`: blaze/breeze/zoglin now use the any-light
@@ -884,7 +887,7 @@ registry entry exists.
   `waterlogged` property while retaining the vanilla facing.
 - `parity/manifest.toml` and `tools/parity_inventory.py` provide a
   machine-readable ledger and deterministic source/TODO inventory. The
-  inventory report currently validates 153 tracked contracts; all remain
+  inventory report currently validates 154 tracked contracts; all remain
   explicitly `mostly` until their world/packet/persistence boundaries have
   differential evidence.
 
@@ -951,7 +954,7 @@ coverage, generated protocol certification, Bedrock parity and the differential
 Java 26.2 harness. These must be closed and promoted to `complete` before a
 release claim.
 
-The current ledger intentionally reports all 153 contracts as `mostly`: this is
+The current ledger intentionally reports all 154 contracts as `mostly`: this is
 not a build failure, but a release gate. Each row still needs its world/packet/
 persistence boundary fixture and differential evidence before it may become
 `complete`.

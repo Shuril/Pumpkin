@@ -1689,3 +1689,14 @@ observable_contracts = ["accepted position, rotation and vehicle movement packet
 tests = ["cargo check -p pumpkin --lib"]
 dependencies = ["protocol.client_tick_end", "entity.player", "entity.movement_predicates"]
 last_verified_commit = "working-tree"
+
+[[contract]]
+id = "spawning.entity_type_spawn_aabb"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/entity/EntityType.java", "net/minecraft/world/level/NaturalSpawner.java"]
+pumpkin_sources = ["crates/pumpkin/src/world/natural_spawner.rs"]
+status = "mostly"
+observable_contracts = ["natural-spawn obstruction uses EntityType#getSpawnAABB dimensions", "slime and magma-cube candidates use the vanilla four-times spawn-dimension scale", "fire and soul-fire are allowed for fire-immune types but powder snow remains dangerous"]
+tests = ["spawn_dimensions_match_entity_type_scale", "fire_immune_spawn_types_follow_vanilla_dangerous_block_rules", "cargo test -p pumpkin --lib world::natural_spawner::tests"]
+dependencies = ["spawning.shared_predicates", "entity.type"]
+last_verified_commit = "working-tree"
