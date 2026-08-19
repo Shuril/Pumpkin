@@ -1,0 +1,5 @@
+# Commands are executed in order.  wait_ticks creates a deterministic barrier
+# before the next command is sent to the server.
+- command: "seed"
+- wait_ticks: 5
+- command: "time query gametime"

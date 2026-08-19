@@ -585,7 +585,6 @@ impl World {
         java_status: EntityStatus,
         bedrock_status: Option<ActorEventType>,
     ) {
-        let chunk_pos = entity.chunk_pos.load();
         let je_packet = CEntityStatus::new(entity.entity_id, java_status as i8);
         if let Some(be_event) = bedrock_status {
             let be_packet = SActorEvent {
@@ -594,15 +593,25 @@ impl World {
                 event_data: VarInt(0),
                 fire_at_position: None,
             };
-            self.broadcast_to_chunk_editioned_sync(chunk_pos, &je_packet, &be_packet);
+            self.broadcast_to_entity_trackers_editioned_sync(
+                entity.entity_id,
+                entity.chunk_pos.load(),
+                &je_packet,
+                &be_packet,
+            );
         } else {
-            self.broadcast_to_chunk(chunk_pos, &je_packet);
+            self.broadcast_java_to_entity_trackers_sync(
+                entity.entity_id,
+                entity.chunk_pos.load(),
+                &je_packet,
+            );
         }
     }
 
     pub fn send_remove_mob_effect(&self, entity: &Entity, effect_type: &'static StatusEffect) {
         let chunk_pos = entity.chunk_pos.load();
-        self.broadcast_to_chunk(
+        self.broadcast_java_to_entity_trackers_sync(
+            entity.entity_id,
             chunk_pos,
             &CRemoveMobEffect::new(entity.entity_id.into(), VarInt(i32::from(effect_type.id))),
         );

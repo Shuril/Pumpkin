@@ -19,6 +19,17 @@ dependencies = ["entity.tracking_chunk_barrier", "persistence.proto_chunk_resume
 last_verified_commit = "working-tree"
 
 [[contract]]
+id = "tool.parity_runner_rcon_tick_barrier"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/server/ServerInterface.java", "net/minecraft/server/rcon/RconConsoleSource.java"]
+pumpkin_sources = ["tools/parity-runner/parity_runner.py"]
+status = "mostly"
+observable_contracts = ["the same ordered scenario is replayed against each server", "RCON commands and explicit game-time barriers are recorded as JSONL trace records", "volatile session fields and UUIDs are normalized without reordering observable lists", "different traces produce a unified diff while equal traces exit successfully"]
+tests = ["tools/parity-runner/test_parity_runner.py", "python3 -m unittest discover -s tools/parity-runner -p 'test_*.py'"]
+dependencies = ["protocol.packet_bot", "persistence.world_snapshot", "world.tick_barrier"]
+last_verified_commit = "working-tree"
+
+[[contract]]
 id = "block.piston_break_authority"
 vanilla_version = "26.2"
 vanilla_sources = ["net/minecraft/world/level/block/piston/PistonHeadBlock.java", "net/minecraft/world/level/block/piston/MovingPistonBlock.java"]

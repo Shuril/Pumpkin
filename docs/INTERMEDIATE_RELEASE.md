@@ -97,7 +97,7 @@ Checkpoint branch: `codex/intermediate-parity-checkpoint`
   blockers.
 - `docs/VANILLA_PARITY.md` — subsystem-by-subsystem comparison with Mojang
   classes and remaining work.
-- `parity/manifest.toml` — 151 tracked vanilla contracts with sources,
+- `parity/manifest.toml` — 152 tracked vanilla contracts with sources,
   observable behavior, tests and dependencies.
 
 ## Что ещё НЕ готово для заявления «полная совместимость»
@@ -105,9 +105,11 @@ Checkpoint branch: `codex/intermediate-parity-checkpoint`
 Эти пункты намеренно остаются отмеченными как `mostly`/pending. Их наличие
 нельзя скрывать при публикации checkpoint.
 
-1. **Differential certification.** Нет завершённого `tools/parity-runner` с
-   packet bot для Java 26.2/26.1, RCON/tick barrier, normalized packet/entity/
-   block/NBT/tick traces и автоматическим сравнением с запущенным vanilla.
+1. **Differential certification.** Рабочее dependency-free ядро
+   `tools/parity-runner` уже выполняет одинаковые сценарии через RCON,
+   фиксирует game-time barriers и сравнивает canonical JSONL traces. Остаются
+   Java 26.2/26.1 packet bot, entity/block/NBT world snapshots, malformed
+   packet corpus и два чистых запуска против реального vanilla.
 2. **Реальный клиент и soak.** Не выполнены два чистых прогона полного matrix
    на Java и Bedrock, save/reload/restart, malformed packet fuzz, долгий soak,
    crash-recovery и performance/security gates.
@@ -151,7 +153,8 @@ Checkpoint branch: `codex/intermediate-parity-checkpoint`
 
 - `cargo fmt --all -- --check`
 - `git diff --check`
-- `python3 tools/parity_inventory.py` — 151 contracts, `manifest_errors = []`
+- `python3 tools/parity_inventory.py` — 152 contracts, `manifest_errors = []`
+- `python3 -m unittest discover -s tools/parity-runner -p 'test_*.py'` — 2/2
 - `CARGO_INCREMENTAL=0 cargo check -p pumpkin --lib`
 - `CARGO_INCREMENTAL=0 cargo test -p pumpkin --lib --no-fail-fast` — **388/388**
 - `CARGO_INCREMENTAL=0 cargo test -p pumpkin-world --lib --no-fail-fast` —
