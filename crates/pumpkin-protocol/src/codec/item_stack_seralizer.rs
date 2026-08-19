@@ -456,6 +456,7 @@ impl OptionalItemStackHash {
     }
 }
 
+#[allow(clippy::items_after_test_module)]
 #[cfg(test)]
 mod tests {
     use super::ItemStackSerializer;
@@ -479,11 +480,7 @@ mod tests {
     #[test]
     fn item_stack_rejects_counts_that_do_not_fit_u8() {
         let mut bytes = Vec::new();
-        for value in [256] {
-            VarInt(value)
-                .encode(&mut bytes)
-                .expect("encode test varint");
-        }
+        VarInt(256).encode(&mut bytes).expect("encode test varint");
         assert!(ItemStackSerializer::read(&mut std::io::Cursor::new(bytes)).is_err());
     }
 

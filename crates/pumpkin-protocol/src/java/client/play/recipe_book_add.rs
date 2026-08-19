@@ -105,7 +105,7 @@ fn recipe_id_allowed(allowed: Option<&HashSet<String>>, recipe_id: &str) -> bool
         || (!recipe_id.contains(':') && allowed.contains(&format!("minecraft:{recipe_id}")))
 }
 
-fn builtin_crafting_recipe_id(recipe: &CraftingRecipeTypes) -> Option<&'static str> {
+const fn builtin_crafting_recipe_id(recipe: &CraftingRecipeTypes) -> Option<&'static str> {
     match recipe {
         CraftingRecipeTypes::CraftingShaped { recipe_id, .. }
         | CraftingRecipeTypes::CraftingShapeless { recipe_id, .. }
@@ -116,7 +116,7 @@ fn builtin_crafting_recipe_id(recipe: &CraftingRecipeTypes) -> Option<&'static s
     }
 }
 
-fn builtin_cooking_recipe_id(recipe: &CookingRecipeType) -> &'static str {
+const fn builtin_cooking_recipe_id(recipe: &CookingRecipeType) -> &'static str {
     match recipe {
         CookingRecipeType::Smelting(recipe)
         | CookingRecipeType::Blasting(recipe)
@@ -856,16 +856,17 @@ fn write_dynamic_result_slot_display(
         .strip_prefix("minecraft:")
         .unwrap_or(&result.item_id);
     if let Some(item) = Item::from_registry_key(key) {
-        let stack = if let Some(components) = &result.components {
-            let mut compound = NbtCompound::new();
-            compound.put_string("id", format!("minecraft:{key}"));
-            compound.put_int("count", i32::from(result.count));
-            compound.put_compound("components", components.clone());
-            ItemStack::read_item_stack(&compound)
-                .unwrap_or_else(|| ItemStack::new(result.count, item))
-        } else {
-            ItemStack::new(result.count, item)
-        };
+        let stack = result.components.as_ref().map_or_else(
+            || ItemStack::new(result.count, item),
+            |components| {
+                let mut compound = NbtCompound::new();
+                compound.put_string("id", format!("minecraft:{key}"));
+                compound.put_int("count", i32::from(result.count));
+                compound.put_compound("components", components.clone());
+                ItemStack::read_item_stack(&compound)
+                    .unwrap_or_else(|| ItemStack::new(result.count, item))
+            },
+        );
         write_item_stack_slot_display_stack(write, stack, version)?;
     } else {
         write_empty_slot_display(write)?;

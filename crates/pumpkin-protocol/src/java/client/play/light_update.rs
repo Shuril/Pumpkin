@@ -24,12 +24,12 @@ fn build_light_mask(
     changed_sections: Option<&[usize]>,
 ) -> (BitSet, BitSet, Vec<usize>) {
     let word_count = (section_count + 2).div_ceil(64).max(1);
-    let mut full = vec![0_i64; word_count];
-    let mut empty = vec![0_i64; word_count];
+    let mut full = vec![0i64; word_count];
+    let mut empty = vec![0i64; word_count];
     let mut full_sections = Vec::new();
 
     let set_bit = |mask: &mut [i64], bit: usize| {
-        mask[bit / 64] |= 1_i64 << (bit % 64);
+        mask[bit / 64] |= 1i64 << (bit % 64);
     };
 
     // The section below the minimum world Y is always an empty data layer.
@@ -67,14 +67,14 @@ fn build_light_mask(
 /// Serializes the light payload shared by `LightUpdate` and
 /// `LevelChunkWithLight`. Keeping one implementation is important: a client
 /// must interpret a live update exactly like the initial chunk packet.
-pub(crate) fn write_light_data(
+pub(super) fn write_light_data(
     write: &mut impl Write,
     light_engine: &ChunkLight,
 ) -> Result<(), WritingError> {
     write_light_data_filtered(write, light_engine, None)
 }
 
-pub(crate) fn write_light_data_filtered(
+fn write_light_data_filtered(
     write: &mut impl Write,
     light_engine: &ChunkLight,
     changed_sections: Option<&[usize]>,
@@ -164,11 +164,11 @@ mod tests {
         let (mask, empty, full_sections) = build_light_mask(&sections, sections.len(), None);
 
         assert_eq!(full_sections, vec![1]);
-        assert_eq!(mask.0.as_ref(), &[1_i64 << 2]);
+        assert_eq!(mask.0.as_ref(), &[1i64 << 2]);
         // bit 0 = below, bit 1 and 3 = empty real sections, bit 4 = above
         assert_eq!(
             empty.0[0],
-            (1_i64 << 0) | (1_i64 << 1) | (1_i64 << 3) | (1_i64 << 4)
+            (1i64 << 0) | (1i64 << 1) | (1i64 << 3) | (1i64 << 4)
         );
     }
 
@@ -194,15 +194,15 @@ mod tests {
         let (mask, empty, full_sections) = build_light_mask(&sections, sections.len(), Some(&[2]));
 
         assert_eq!(full_sections, vec![2]);
-        assert_eq!(mask.0[0], 1_i64 << 3);
+        assert_eq!(mask.0[0], 1i64 << 3);
         // Synthetic below/above layers remain represented; unchanged real
         // sections are absent from both masks.
-        assert_eq!(empty.0[0], (1_i64 << 0) | (1_i64 << 4));
+        assert_eq!(empty.0[0], (1i64 << 0) | (1i64 << 4));
     }
 
     #[test]
     fn light_payload_keeps_vanilla_low_nibble_first_order() {
-        let mut sky = vec![0_u8; LightContainer::ARRAY_SIZE].into_boxed_slice();
+        let mut sky = vec![0u8; LightContainer::ARRAY_SIZE].into_boxed_slice();
         sky[0] = 0x12;
         let light = ChunkLight {
             sky_light: vec![LightContainer::new(sky)].into_boxed_slice(),

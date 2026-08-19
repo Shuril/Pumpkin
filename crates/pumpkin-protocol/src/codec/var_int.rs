@@ -57,7 +57,7 @@ impl VarInt {
 
     #[inline]
     pub fn decode(read: &mut impl Read) -> Result<Self, ReadingError> {
-        let mut val = 0_u32;
+        let mut val = 0u32;
         for i in 0..Self::MAX_SIZE.get() {
             let byte = read.get_u8()?;
             let payload = u32::from(byte & 0x7F);

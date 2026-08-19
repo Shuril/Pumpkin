@@ -7,10 +7,11 @@ use pumpkin_data::packet::serverbound::PLAY_SET_COMMAND_MINECART;
 use pumpkin_macros::java_packet;
 use pumpkin_util::version::JavaMinecraftVersion;
 
-/// Java's command-minecart editor packet.  The entity id is deliberately a
-/// VarInt (not a block position): the client sends this after interacting with
-/// a `MinecartCommandBlock` entity and the server validates its subtype and
-/// permission before mutating state.
+/// Java's command-minecart editor packet.
+///
+/// The entity ID is deliberately a `VarInt` (not a block position): the client
+/// sends this after interacting with a `MinecartCommandBlock` entity and the
+/// server validates its subtype and permission before mutating state.
 #[java_packet(PLAY_SET_COMMAND_MINECART)]
 pub struct SSetCommandMinecart<'a> {
     pub entity_id: VarInt,
