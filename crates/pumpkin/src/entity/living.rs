@@ -987,7 +987,12 @@ impl LivingEntity {
             swing_source: None,
         };
 
-        world.broadcast_editioned(&je_packet, &be_packet).await;
+        world.broadcast_to_entity_trackers_editioned_sync(
+            entity_id,
+            self.entity.chunk_pos.load(),
+            &je_packet,
+            &be_packet,
+        );
     }
 
     async fn tick_movement<'a>(&'a self, server: &'a Server, caller: &'a Arc<dyn EntityBase>) {
@@ -3140,21 +3145,25 @@ impl EntityBase for LivingEntity {
                     event_data: VarInt(0),
                     fire_at_position: None,
                 };
-                world
-                    .broadcast_editioned(
-                        &CHurtAnimation::new(VarInt(entity_id), hurt_yaw),
-                        &hurt_event,
-                    )
-                    .await;
+                world.broadcast_to_entity_trackers_editioned_sync(
+                    entity_id,
+                    self.entity.chunk_pos.load(),
+                    &CHurtAnimation::new(VarInt(entity_id), hurt_yaw),
+                    &hurt_event,
+                );
             }
 
-            world.broadcast_packet_all(&CDamageEvent::new(
-                self.entity.entity_id.into(),
-                damage_type.id.into(),
-                source.map(|e| e.get_entity().entity_id.into()),
-                cause.map(|e| e.get_entity().entity_id.into()),
-                position,
-            ));
+            world.broadcast_java_to_entity_trackers_sync(
+                self.entity.entity_id,
+                self.entity.chunk_pos.load(),
+                &CDamageEvent::new(
+                    self.entity.entity_id.into(),
+                    damage_type.id.into(),
+                    source.map(|e| e.get_entity().entity_id.into()),
+                    cause.map(|e| e.get_entity().entity_id.into()),
+                    position,
+                ),
+            );
 
             // Try to spawn infested silverfish
             self.try_spawn_infested_silverfish().await;
