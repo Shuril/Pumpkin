@@ -3567,7 +3567,7 @@ impl Entity {
         *passenger_entity.vehicle.lock().await = Some(vehicle);
 
         let mut passengers = self.passengers.lock().await;
-        passengers.push(passenger);
+        passengers.push(passenger.clone());
 
         let passenger_ids: Vec<VarInt> = passengers
             .iter()
@@ -3585,10 +3585,27 @@ impl Entity {
                 )
                 .await;
         }
-        world.broadcast_to_chunk(
-            chunk_pos,
-            &CSetPassengers::new(VarInt(self.entity_id), &passenger_ids),
-        );
+        let passengers_packet = CSetPassengers::new(VarInt(self.entity_id), &passenger_ids);
+        if emit_game_event {
+            // The rider must receive the mount transition even when its own
+            // tracker has not paired the vehicle yet.  Other Java clients are
+            // gated by the vehicle's paired-ID and delivered-chunk barriers;
+            // this prevents a passenger list from arriving before the vehicle
+            // spawn or after the vehicle was unloaded.
+            if let Some(player) = passenger.get_player() {
+                player.client.enqueue_packet(&passengers_packet).await;
+            }
+            world.broadcast_java_to_entity_trackers_except_sync(
+                self.entity_id,
+                chunk_pos,
+                Some(passenger_entity.entity_id),
+                &passengers_packet,
+            );
+        } else {
+            // Chunk-load replay is ordered after the entity spawn packets, so
+            // retain the broad replay path for persisted passenger graphs.
+            world.broadcast_to_chunk(chunk_pos, &passengers_packet);
+        }
     }
 
     pub(crate) async fn remove_passenger_on_disconnect(&self, passenger_id: i32) {
@@ -3607,9 +3624,11 @@ impl Entity {
             .collect();
         drop(passengers);
 
-        self.world.load().broadcast_to_chunk(
+        let packet = CSetPassengers::new(VarInt(self.entity_id), &passenger_ids);
+        self.world.load().broadcast_java_to_entity_trackers_sync(
+            self.entity_id,
             self.chunk_pos.load(),
-            &CSetPassengers::new(VarInt(self.entity_id), &passenger_ids),
+            &packet,
         );
     }
 
@@ -3679,13 +3698,18 @@ impl Entity {
             let passengers_packet = CSetPassengers::new(VarInt(self.entity_id), &passenger_ids);
             if let Some(player) = passenger.get_player() {
                 player.client.enqueue_packet(&passengers_packet).await;
-                world.broadcast_to_chunk_except(
+                world.broadcast_java_to_entity_trackers_except_sync(
+                    self.entity_id,
                     chunk_pos,
-                    &[player.get_entity().entity_uuid],
+                    Some(passenger_entity.entity_id),
                     &passengers_packet,
                 );
             } else {
-                world.broadcast_to_chunk(chunk_pos, &passengers_packet);
+                world.broadcast_java_to_entity_trackers_sync(
+                    self.entity_id,
+                    chunk_pos,
+                    &passengers_packet,
+                );
             }
 
             // Calculate dismount directions and offsets (vanilla DismountHelper)
@@ -3897,7 +3921,8 @@ impl Entity {
         } else {
             // No passenger was removed, still need to broadcast the passenger list
             let world = self.world.load();
-            world.broadcast_to_chunk(
+            world.broadcast_java_to_entity_trackers_sync(
+                self.entity_id,
                 chunk_pos,
                 &CSetPassengers::new(VarInt(self.entity_id), &passenger_ids),
             );

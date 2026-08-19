@@ -7074,9 +7074,27 @@ impl World {
         chunk_pos: Vector2<i32>,
         packet: &J,
     ) {
+        self.broadcast_java_to_entity_trackers_except_sync(entity_id, chunk_pos, None, packet);
+    }
+
+    /// Broadcasts a Java-only entity delta after the entity has been paired,
+    /// optionally excluding one entity's own connection.
+    ///
+    /// The exclusion is needed for mount/dismount packets: the passenger's
+    /// connection is sent the authoritative packet first, while every other
+    /// watcher still goes through the paired-ID and delivered-chunk barriers.
+    pub fn broadcast_java_to_entity_trackers_except_sync<J: ClientPacket>(
+        &self,
+        entity_id: i32,
+        chunk_pos: Vector2<i32>,
+        excluded_entity_id: Option<i32>,
+        packet: &J,
+    ) {
         let players = self.players.load();
         let recipients = players.iter().filter(|player| {
             player.get_entity().entity_id != entity_id
+                && excluded_entity_id
+                    .is_none_or(|excluded| player.get_entity().entity_id != excluded)
                 && player.is_entity_tracked_now(entity_id).unwrap_or(false)
                 && player.has_sent_chunk_now(chunk_pos).unwrap_or(false)
                 && matches!(player.client.as_ref(), ClientPlatform::Java(_))

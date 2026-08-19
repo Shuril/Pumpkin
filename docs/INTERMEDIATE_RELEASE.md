@@ -117,9 +117,12 @@ Checkpoint branch: `codex/intermediate-parity-checkpoint`
 2. **Реальный клиент и soak.** Не выполнены два чистых прогона полного matrix
    на Java и Bedrock, save/reload/restart, malformed packet fuzz, долгий soak,
    crash-recovery и performance/security gates.
-3. **Entity tracking.** Нужен полный per-player `ChunkMap.TrackedEntity` delta
-   tracker: chunk-send ACK barriers для всех типов, metadata/attribute/equipment
-   dirty snapshots, unload/reload ghost removal и minecart live-client fixture.
+3. **Entity tracking.** Основной per-player `ChunkMap.TrackedEntity` barrier уже
+   покрывает spawn/remove/movement/rotation/metadata/status и Java mount/dismount
+   passenger-list deltas, включая ordering для собственного rider connection.
+   Остаются chunk-send ACK barriers для всех редких типов, полноценные
+   metadata/attribute/equipment dirty snapshots, Bedrock passenger-link packet,
+   unload/reload ghost removal и minecart live-client fixture.
 4. **Chunk persistence.** Нужны реальные `.mca` fixtures для всех block entities,
    ticks, entities, unknown components и crash-safe atomic save/unload; текущие
    round-trip tests не заменяют такую certification.
