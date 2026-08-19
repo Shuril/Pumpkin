@@ -29,5 +29,5 @@ jobs:
       - name: Verify formatting
         run: cargo fmt --all -- --check
 
-      - name: Compile the server library
-        run: cargo check -p pumpkin --lib
+      - name: Compile every workspace target
+        run: cargo check --workspace --all-targets

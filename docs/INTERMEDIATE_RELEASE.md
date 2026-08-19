@@ -7,8 +7,11 @@
 
 Checkpoint baseline commit: `d35ccb2ca` (the immutable restore point created
 before post-checkpoint fixes). The published branch additionally contains the
-follow-up fixes through `6977a0747`; the local tag remains the immutable
-baseline `intermediate-parity-checkpoint`.
+follow-up fixes through the current branch head; the local tag remains the
+immutable baseline `intermediate-parity-checkpoint`. Query the exact published
+head with `git rev-parse HEAD` or the fork branch page before preparing a
+release note, because this branch is intentionally still receiving parity
+fixes.
 Checkpoint branch: `codex/intermediate-parity-checkpoint`
 
 ## Что входит в checkpoint
