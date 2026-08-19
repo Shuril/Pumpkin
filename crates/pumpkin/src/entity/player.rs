@@ -381,6 +381,11 @@ impl ChunkManager {
     pub fn mark_chunk_delivered_with_chunk(&mut self, position: Vector2<i32>, chunk: &SyncChunk) {
         self.chunk_sent.insert(position, Arc::downgrade(chunk));
         self.chunk_delivered.insert(position);
+        // A synchronous center-chunk send can race the regular tick task.  The
+        // chunk was already written to the client, so remove its stale queued
+        // node; otherwise the next tick would transmit the same terrain a
+        // second time and could replay entity spawns after the barrier.
+        remove_queued_chunk_nodes(&mut self.chunk_queue, position);
     }
 
     /// Records a chunk delivered by the asynchronous packet writer.
@@ -661,6 +666,20 @@ impl ChunkManager {
 
         chunks.into_boxed_slice()
     }
+}
+
+fn remove_queued_chunk_nodes(queue: &mut BinaryHeap<HeapNode>, position: Vector2<i32>) {
+    if queue.is_empty() {
+        return;
+    }
+
+    let mut retained = Vec::with_capacity(queue.len());
+    while let Some(node) = queue.pop() {
+        if node.1 != position {
+            retained.push(node);
+        }
+    }
+    *queue = BinaryHeap::from(retained);
 }
 
 /// Represents a Minecraft player entity.
@@ -4176,11 +4195,15 @@ impl Player {
             (yaw_cos * pitch_cos).mul_add(0.3, horizontal_offset.sin() * l),
         );
 
-        // TODO: Merge stacks together
         let item_entity = Arc::new(ItemEntity::new_with_velocity(
             entity, item_stack, velocity, 40,
         ));
-        self.world().spawn_entity(item_entity).await;
+        self.world().spawn_entity(item_entity.clone()).await;
+        // Vanilla immediately lets a freshly dropped stack participate in the
+        // item-entity merge pass.  Doing this after registration prevents two
+        // identical drops made in the same tick from remaining as duplicate
+        // stacks until the first periodic merge interval.
+        item_entity.try_merge().await;
     }
 
     pub async fn drop_held_item(&self, drop_stack: bool) {
@@ -6697,8 +6720,11 @@ mod tests {
     use pumpkin_inventory::entity_equipment::EntityEquipment;
     use pumpkin_inventory::player::player_inventory::PlayerInventory;
     use pumpkin_nbt::{compound::NbtCompound, tag::NbtTag};
+    use pumpkin_util::math::vector2::Vector2;
     use pumpkin_world::inventory::Inventory;
+    use std::collections::BinaryHeap;
     use std::sync::Arc;
+    use std::sync::Weak;
     use tokio::sync::Mutex;
     use uuid::Uuid;
 
@@ -6714,6 +6740,21 @@ mod tests {
         record_chunk_batch_sent(&mut batches, &mut last, true);
         assert_eq!(batches, 5);
         assert!(last >= before);
+    }
+
+    #[test]
+    fn synchronous_chunk_delivery_removes_pending_duplicate() {
+        let delivered = Vector2::new(4, -2);
+        let retained = Vector2::new(5, -2);
+        let mut queue = BinaryHeap::from(vec![
+            super::HeapNode(0, delivered, Weak::new()),
+            super::HeapNode(1, retained, Weak::new()),
+        ]);
+
+        super::remove_queued_chunk_nodes(&mut queue, delivered);
+
+        assert_eq!(queue.len(), 1);
+        assert!(queue.iter().all(|node| node.1 == retained));
     }
 
     #[test]

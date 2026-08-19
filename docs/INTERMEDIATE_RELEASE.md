@@ -5,8 +5,8 @@
 совместимости с Mojang: ниже отдельно перечислены реализованные подсистемы,
 оставшиеся расхождения и фактически выполненные проверки.
 
-Checkpoint commit: use `git rev-parse HEAD` on this branch (the file is part of
-that commit).  
+Checkpoint commit: `d35ccb2ca` (the immutable restore point created before
+post-checkpoint fixes).
 Checkpoint branch: `codex/intermediate-parity-checkpoint`
 
 ## Что входит в checkpoint
@@ -74,7 +74,8 @@ Checkpoint branch: `codex/intermediate-parity-checkpoint`
 
 ### Entities, items и protocol
 
-- Minecart/entity world transfer and unload cleanup, experience orb lifecycle,
+- Minecart/entity world transfer and unload cleanup, synchronous center-chunk
+  delivery barriers, experience orb lifecycle,
   firework component/lifetime persistence and exact placement raycast for boats.
 - Mob bucket variants (fish/axolotl/tadpole/sulfur cube), dispenser equipment,
   beehive occupants, item component codecs, use-cooldown and hand validation.

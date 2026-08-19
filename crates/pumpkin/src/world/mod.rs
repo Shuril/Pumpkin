@@ -3207,6 +3207,16 @@ impl World {
         client.send_packet_now(&CChunkBatchStart).await;
         client.send_packet_now(&CChunkData(&chunk)).await;
         client.send_packet_now(&CChunkBatchEnd::new(1u16)).await;
+        // The center chunk is sent synchronously before the first teleport.
+        // Record that delivery and pair the entities now; otherwise the tick
+        // queue sends the same chunk again and the client can miss entities
+        // that were already present at login.
+        player
+            .chunk_manager
+            .lock()
+            .await
+            .mark_chunk_delivered_with_chunk(center_chunk, &chunk);
+        self.send_entities_in_chunk_to_player(player, center_chunk);
 
         let velocity = player.living_entity.entity.velocity.load();
 
