@@ -5341,6 +5341,14 @@ impl World {
         }
         base_entity.removed.store(true, Ordering::Release);
 
+        // Multipart hitboxes are owned by the dragon and have no independent
+        // lifecycle. Remove them together so a killed, unloaded or transferred
+        // dragon cannot leave invisible attack targets in the entity registry.
+        let dragon_parts = entity
+            .cast_any()
+            .downcast_ref::<crate::entity::boss::ender_dragon::EnderDragonEntity>()
+            .map(|dragon| dragon.parts.clone());
+
         self.spawn_state.load().remove_entity(self, entity);
         self.entities.rcu(|current_entities| {
             let mut new_entities = (**current_entities).clone();
@@ -5362,6 +5370,12 @@ impl World {
                 player
                     .client
                     .try_enqueue_packet_editioned(&remove_java, &remove_bedrock);
+            }
+        }
+
+        if let Some(parts) = dragon_parts {
+            for part in parts {
+                Box::pin(self.remove_entity(part.as_ref())).await;
             }
         }
     }
@@ -5391,6 +5405,18 @@ impl World {
                 let pos = base_entity.block_pos.load().chunk_position();
                 if chunks_set.contains(&pos) {
                     entities_to_remove.push(entity.clone());
+                    if let Some(dragon) = entity
+                        .cast_any()
+                        .downcast_ref::<crate::entity::boss::ender_dragon::EnderDragonEntity>(
+                    ) {
+                        entities_to_remove.extend(
+                            dragon
+                                .parts
+                                .iter()
+                                .cloned()
+                                .map(|part| part as Arc<dyn EntityBase>),
+                        );
+                    }
                     false
                 } else {
                     true
