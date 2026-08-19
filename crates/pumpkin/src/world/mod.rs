@@ -533,7 +533,7 @@ impl World {
     /// there is nothing stale to deduplicate.
     async fn save_entity(&self, entity: &Arc<dyn EntityBase>) {
         let base_entity = entity.get_entity();
-        if base_entity.is_removed() {
+        if base_entity.is_removed() || !entity.should_save() {
             return;
         }
         // Vanilla only saves a root entity; mounted passengers are emitted

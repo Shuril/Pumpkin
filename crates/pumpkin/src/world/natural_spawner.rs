@@ -300,6 +300,9 @@ impl SpawnState {
     }
 
     pub fn add_entity(&self, world: &World, entity: &dyn EntityBase) {
+        if !entity.should_save() {
+            return;
+        }
         let base_entity = entity.get_entity();
         let entity_type = base_entity.entity_type;
         if !entity_type.mob || entity_type.category == &MobCategory::MISC {
@@ -324,6 +327,9 @@ impl SpawnState {
     }
 
     pub fn remove_entity(&self, world: &World, entity: &dyn EntityBase) {
+        if !entity.should_save() {
+            return;
+        }
         let base_entity = entity.get_entity();
         let entity_type = base_entity.entity_type;
         if !entity_type.mob || entity_type.category == &MobCategory::MISC {

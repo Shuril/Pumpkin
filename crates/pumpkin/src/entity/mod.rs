@@ -760,6 +760,13 @@ pub trait EntityBase: Send + Sync + NBTStorage + std::any::Any {
     /// Returns itself as the nbt storage for saving and loading data.
     fn as_nbt_storage(&self) -> &dyn NBTStorage;
 
+    /// Whether this runtime entity should be serialized to an entity region.
+    /// Multipart hitboxes are live server helpers, not independent vanilla
+    /// entities, so they must not become a second persisted copy.
+    fn should_save(&self) -> bool {
+        true
+    }
+
     fn get_experience_reward(&self, _killer: Option<&dyn EntityBase>) -> u32 {
         0
     }

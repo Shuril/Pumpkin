@@ -195,6 +195,10 @@ impl EntityBase for EnderDragonPart {
         self
     }
 
+    fn should_save(&self) -> bool {
+        false
+    }
+
     fn can_hit(&self) -> bool {
         true
     }
@@ -637,6 +641,18 @@ impl EnderDragonEntity {
     }
 
     async fn tick_parts(&self) {
+        // Dragon parts are server-side hitboxes. Register them lazily because
+        // construction is synchronous while the world registry is async-safe.
+        // `EntityBase::should_save` keeps them out of entity-region writes.
+        let world = self.mob_entity.living_entity.entity.world.load();
+        for part in &self.parts {
+            if world.get_entity_by_id(part.entity.entity_id).is_none() {
+                world
+                    .add_entity_silent(part.clone() as Arc<dyn EntityBase>)
+                    .await;
+            }
+        }
+
         let history: tokio::sync::MutexGuard<'_, DragonFlightHistory> =
             self.flight_history.lock().await;
         let p5 = history.get(5);
@@ -803,6 +819,10 @@ impl Mob for EnderDragonEntity {
         Box::pin(async move {
             let living = &self.mob_entity.living_entity;
             if living.health.load() <= 0.0 {
+                let world = living.entity.world.load();
+                for part in &self.parts {
+                    world.remove_entity(part.as_ref()).await;
+                }
                 self.set_phase(EnderDragonPhase::Dying).await;
             }
         })
