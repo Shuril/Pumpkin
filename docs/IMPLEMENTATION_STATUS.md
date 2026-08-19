@@ -119,6 +119,10 @@ registry entry exists.
   and Ender-Dragon damage, emit death/explosion game events, perform the
   vanilla power-six explosion for non-explosion damage, and notify the active
   dragon-fight respawn state after removal.
+- `entity.ender_dragon_parts_lifecycle`: multipart dragon hitboxes are created
+  in the live entity index before collision queries, excluded from entity-region
+  persistence, and removed with their parent so unload/reload cannot leave
+  invisible stale attack targets.
 - `world.item_scatter_rng`: container drops retain vanilla stack splitting and
   triangular velocity ranges, but their async-safe RNG stream is now derived
   from world seed, source position, world age and item identity rather than a
@@ -880,7 +884,7 @@ registry entry exists.
   `waterlogged` property while retaining the vanilla facing.
 - `parity/manifest.toml` and `tools/parity_inventory.py` provide a
   machine-readable ledger and deterministic source/TODO inventory. The
-  inventory report currently validates 152 tracked contracts; all remain
+  inventory report currently validates 153 tracked contracts; all remain
   explicitly `mostly` until their world/packet/persistence boundaries have
   differential evidence.
 
@@ -947,7 +951,7 @@ coverage, generated protocol certification, Bedrock parity and the differential
 Java 26.2 harness. These must be closed and promoted to `complete` before a
 release claim.
 
-The current ledger intentionally reports all 152 contracts as `mostly`: this is
+The current ledger intentionally reports all 153 contracts as `mostly`: this is
 not a build failure, but a release gate. Each row still needs its world/packet/
 persistence boundary fixture and differential evidence before it may become
 `complete`.

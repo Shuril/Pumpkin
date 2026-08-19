@@ -86,7 +86,8 @@ Checkpoint branch: `codex/intermediate-parity-checkpoint`
   beehive occupants, item component codecs, use-cooldown and hand validation.
 - Cross-dimension respawn, bed/anchor candidate order, swimming/flying/mining
   behavior, riptide pose, fall/fire/freeze/armor/XP fixes, selected AI LOS and
-  target predicates.
+  target predicates. Ender Dragon multipart hitboxes are registered only while
+  the parent is live, excluded from persistence, and removed with the parent.
 - Java/Bedrock packet fixes, main/off-hand mapping, command/recipe/light/entity
   metadata codecs, Java `ClientTickEnd` known-movement reset, configured
   Bedrock member/operator permission, NetherNet discovery and malformed input
@@ -100,7 +101,7 @@ Checkpoint branch: `codex/intermediate-parity-checkpoint`
   blockers.
 - `docs/VANILLA_PARITY.md` — subsystem-by-subsystem comparison with Mojang
   classes and remaining work.
-- `parity/manifest.toml` — 152 tracked vanilla contracts with sources,
+- `parity/manifest.toml` — 153 tracked vanilla contracts with sources,
   observable behavior, tests and dependencies.
 
 ## Что ещё НЕ готово для заявления «полная совместимость»
@@ -156,7 +157,7 @@ Checkpoint branch: `codex/intermediate-parity-checkpoint`
 
 - `cargo fmt --all -- --check`
 - `git diff --check`
-- `python3 tools/parity_inventory.py` — 152 contracts, `manifest_errors = []`
+- `python3 tools/parity_inventory.py` — 153 contracts, `manifest_errors = []`
 - `python3 -m unittest discover -s tools/parity-runner -p 'test_*.py'` — 2/2
 - `CARGO_INCREMENTAL=0 cargo check -p pumpkin --lib`
 - `CARGO_INCREMENTAL=0 cargo test -p pumpkin --lib --no-fail-fast` — **388/388**

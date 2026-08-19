@@ -1669,6 +1669,17 @@ dependencies = ["world.game_event_living_damage_death", "entity.vehicle", "entit
 last_verified_commit = "working-tree"
 
 [[contract]]
+id = "entity.ender_dragon_parts_lifecycle"
+vanilla_version = "26.2"
+vanilla_sources = ["net/minecraft/world/entity/boss/enderdragon/EnderDragon.java", "net/minecraft/world/level/entity/EntityTickList.java"]
+pumpkin_sources = ["crates/pumpkin/src/entity/boss/ender_dragon.rs", "crates/pumpkin/src/entity/mod.rs", "crates/pumpkin/src/world/mod.rs"]
+status = "mostly"
+observable_contracts = ["dragon multipart hitboxes are registered in the live entity index before collision queries", "parts are never serialized as independent entity-region records", "removing or unloading the parent removes every registered part and its tracker pairing"]
+tests = ["cargo test -p pumpkin --lib", "cargo check -p pumpkin --lib"]
+dependencies = ["entity.lifecycle", "entity.tracking_chunk_barrier", "persistence.entity_region"]
+last_verified_commit = "working-tree"
+
+[[contract]]
 id = "player.client_tick_known_movement"
 vanilla_version = "26.2"
 vanilla_sources = ["net/minecraft/server/network/ServerGamePacketListenerImpl.java", "net/minecraft/server/level/ServerPlayer.java"]
