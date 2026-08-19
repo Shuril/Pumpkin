@@ -3442,23 +3442,13 @@ impl Entity {
             self.entity_id,
             holder_entity.entity_id,
         );
-        let be_packet = pumpkin_protocol::bedrock::client::CSetActorLink {
-            link: pumpkin_protocol::bedrock::client::common::EntityLink {
-                ridden_unique_id: pumpkin_protocol::codec::var_long::VarLong(self.entity_id as i64),
-                rider_unique_id: pumpkin_protocol::codec::var_long::VarLong(
-                    holder_entity.entity_id as i64,
-                ),
-                link_type: 1, // Leash link
-                immediate: true,
-                rider_initiated: false,
-                vehicle_angular_velocity: 0.0,
-            },
-        };
-
-        self.world.load().broadcast_to_chunk_editioned_sync(
+        // Bedrock's SetActorLink type 1 is RIDER, not a leash relation.  A
+        // leash must therefore never be encoded as an actor mount; keeping
+        // this Java-only avoids turning a lead into a false passenger link.
+        self.world.load().broadcast_java_to_entity_trackers_sync(
+            self.entity_id,
             self.chunk_pos.load(),
             &je_packet,
-            &be_packet,
         );
     }
 
@@ -3470,21 +3460,10 @@ impl Entity {
 
         let je_packet =
             pumpkin_protocol::java::client::play::CSetEntityLink::new(self.entity_id, -1);
-        let be_packet = pumpkin_protocol::bedrock::client::CSetActorLink {
-            link: pumpkin_protocol::bedrock::client::common::EntityLink {
-                ridden_unique_id: pumpkin_protocol::codec::var_long::VarLong(self.entity_id as i64),
-                rider_unique_id: pumpkin_protocol::codec::var_long::VarLong(-1),
-                link_type: 0, // Unlink
-                immediate: true,
-                rider_initiated: false,
-                vehicle_angular_velocity: 0.0,
-            },
-        };
-
-        self.world.load().broadcast_to_chunk_editioned_sync(
+        self.world.load().broadcast_java_to_entity_trackers_sync(
+            self.entity_id,
             self.chunk_pos.load(),
             &je_packet,
-            &be_packet,
         );
     }
 
@@ -3586,6 +3565,22 @@ impl Entity {
                 .await;
         }
         let passengers_packet = CSetPassengers::new(VarInt(self.entity_id), &passenger_ids);
+        let passenger_id = passenger_entity.entity_id;
+        let link_type = if passenger_ids.first().is_some_and(|id| id.0 == passenger_id) {
+            1 // EntityLinkData::RIDER
+        } else {
+            2 // EntityLinkData::PASSENGER
+        };
+        let passenger_link_packet = pumpkin_protocol::bedrock::client::CSetActorLink {
+            link: pumpkin_protocol::bedrock::client::common::EntityLink {
+                ridden_unique_id: pumpkin_protocol::codec::var_long::VarLong(self.entity_id as i64),
+                rider_unique_id: pumpkin_protocol::codec::var_long::VarLong(passenger_id as i64),
+                link_type,
+                immediate: false,
+                rider_initiated: false,
+                vehicle_angular_velocity: 0.0,
+            },
+        };
         if emit_game_event {
             // The rider must receive the mount transition even when its own
             // tracker has not paired the vehicle yet.  Other Java clients are
@@ -3593,18 +3588,26 @@ impl Entity {
             // this prevents a passenger list from arriving before the vehicle
             // spawn or after the vehicle was unloaded.
             if let Some(player) = passenger.get_player() {
-                player.client.enqueue_packet(&passengers_packet).await;
+                player
+                    .client
+                    .enqueue_packet_editioned(&passengers_packet, &passenger_link_packet)
+                    .await;
             }
-            world.broadcast_java_to_entity_trackers_except_sync(
+            world.broadcast_to_entity_trackers_editioned_except_sync(
                 self.entity_id,
                 chunk_pos,
-                Some(passenger_entity.entity_id),
+                Some(passenger_id),
                 &passengers_packet,
+                &passenger_link_packet,
             );
         } else {
             // Chunk-load replay is ordered after the entity spawn packets, so
             // retain the broad replay path for persisted passenger graphs.
-            world.broadcast_to_chunk(chunk_pos, &passengers_packet);
+            world.broadcast_to_chunk_editioned_sync(
+                chunk_pos,
+                &passengers_packet,
+                &passenger_link_packet,
+            );
         }
     }
 
@@ -3625,11 +3628,24 @@ impl Entity {
         drop(passengers);
 
         let packet = CSetPassengers::new(VarInt(self.entity_id), &passenger_ids);
-        self.world.load().broadcast_java_to_entity_trackers_sync(
-            self.entity_id,
-            self.chunk_pos.load(),
-            &packet,
-        );
+        let unlink_packet = pumpkin_protocol::bedrock::client::CSetActorLink {
+            link: pumpkin_protocol::bedrock::client::common::EntityLink {
+                ridden_unique_id: pumpkin_protocol::codec::var_long::VarLong(self.entity_id as i64),
+                rider_unique_id: pumpkin_protocol::codec::var_long::VarLong(passenger_id as i64),
+                link_type: 0, // EntityLinkData::REMOVE
+                immediate: false,
+                rider_initiated: false,
+                vehicle_angular_velocity: 0.0,
+            },
+        };
+        self.world
+            .load()
+            .broadcast_to_entity_trackers_editioned_sync(
+                self.entity_id,
+                self.chunk_pos.load(),
+                &packet,
+                &unlink_packet,
+            );
     }
 
     #[allow(clippy::too_many_lines)]
@@ -3696,19 +3712,38 @@ impl Entity {
                 )
                 .await;
             let passengers_packet = CSetPassengers::new(VarInt(self.entity_id), &passenger_ids);
+            let unlink_packet = pumpkin_protocol::bedrock::client::CSetActorLink {
+                link: pumpkin_protocol::bedrock::client::common::EntityLink {
+                    ridden_unique_id: pumpkin_protocol::codec::var_long::VarLong(
+                        self.entity_id as i64,
+                    ),
+                    rider_unique_id: pumpkin_protocol::codec::var_long::VarLong(
+                        passenger_entity.entity_id as i64,
+                    ),
+                    link_type: 0, // EntityLinkData::REMOVE
+                    immediate: false,
+                    rider_initiated: false,
+                    vehicle_angular_velocity: 0.0,
+                },
+            };
             if let Some(player) = passenger.get_player() {
-                player.client.enqueue_packet(&passengers_packet).await;
-                world.broadcast_java_to_entity_trackers_except_sync(
+                player
+                    .client
+                    .enqueue_packet_editioned(&passengers_packet, &unlink_packet)
+                    .await;
+                world.broadcast_to_entity_trackers_editioned_except_sync(
                     self.entity_id,
                     chunk_pos,
                     Some(passenger_entity.entity_id),
                     &passengers_packet,
+                    &unlink_packet,
                 );
             } else {
-                world.broadcast_java_to_entity_trackers_sync(
+                world.broadcast_to_entity_trackers_editioned_sync(
                     self.entity_id,
                     chunk_pos,
                     &passengers_packet,
+                    &unlink_packet,
                 );
             }
 

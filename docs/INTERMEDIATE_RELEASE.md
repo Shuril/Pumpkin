@@ -119,10 +119,11 @@ Checkpoint branch: `codex/intermediate-parity-checkpoint`
    crash-recovery и performance/security gates.
 3. **Entity tracking.** Основной per-player `ChunkMap.TrackedEntity` barrier уже
    покрывает spawn/remove/movement/rotation/metadata/status и Java mount/dismount
-   passenger-list deltas, включая ordering для собственного rider connection.
-   Остаются chunk-send ACK barriers для всех редких типов, полноценные
-   metadata/attribute/equipment dirty snapshots, Bedrock passenger-link packet,
-   unload/reload ghost removal и minecart live-client fixture.
+   passenger-list deltas, включая ordering для собственного rider connection,
+   и Bedrock `SetActorLink` для rider/passenger/remove transitions. Остаются
+   chunk-send ACK barriers для всех редких типов, полноценные
+   metadata/attribute/equipment dirty snapshots, unload/reload ghost removal и
+   minecart live-client fixture.
 4. **Chunk persistence.** Нужны реальные `.mca` fixtures для всех block entities,
    ticks, entities, unknown components и crash-safe atomic save/unload; текущие
    round-trip tests не заменяют такую certification.

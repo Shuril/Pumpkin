@@ -349,10 +349,11 @@ registry entry exists.
   rotation, head-yaw, velocity and metadata deltas now use the same paired-ID
   gate, so a client cannot receive a delta before spawn or after removal.
   Live Java mount/dismount passenger-list packets now use the same paired
-  vehicle gate for every watcher; the rider's own connection is explicitly
-  ordered first when it is not yet paired. Persisted passenger graphs retain
-  the post-spawn chunk replay path. Bedrock passenger-link packets and a real
-  client mount/unmount fixture remain release-validation work.
+  vehicle gate for every watcher; Bedrock receives matching `SetActorLink`
+  packets (`RIDER`, `PASSENGER`, `REMOVE`) through the same gate. The rider's
+  own connection is explicitly ordered first when it is not yet paired.
+  Persisted passenger graphs retain the post-spawn chunk replay path. A real
+  client mount/unmount fixture remains release-validation work.
   Java `ClientTickEnd` now tracks the last accepted client movement delta and
   resets it to zero when a tick contains no movement packet, matching
   `ServerGamePacketListenerImpl` and the player known-movement predicates.

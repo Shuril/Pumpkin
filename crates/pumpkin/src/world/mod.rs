@@ -7042,11 +7042,31 @@ impl World {
         je_packet: &J,
         be_packet: &B,
     ) {
+        self.broadcast_to_entity_trackers_editioned_except_sync(
+            entity_id, chunk_pos, None, je_packet, be_packet,
+        );
+    }
+
+    /// Editioned entity-delta broadcast with an optional excluded entity.
+    ///
+    /// Mount transitions use this to send the passenger's own connection an
+    /// authoritative link first while keeping every other Java/Bedrock
+    /// watcher behind the paired-ID and delivered-chunk barriers.
+    pub fn broadcast_to_entity_trackers_editioned_except_sync<J: ClientPacket, B: BClientPacket>(
+        &self,
+        entity_id: i32,
+        chunk_pos: Vector2<i32>,
+        excluded_entity_id: Option<i32>,
+        je_packet: &J,
+        be_packet: &B,
+    ) {
         let players = self.players.load();
         let mut java_recipients = Vec::new();
 
         for player in players.iter() {
             if player.get_entity().entity_id == entity_id
+                || excluded_entity_id
+                    .is_some_and(|excluded| player.get_entity().entity_id == excluded)
                 || !player.is_entity_tracked_now(entity_id).unwrap_or(false)
                 || !player.has_sent_chunk_now(chunk_pos).unwrap_or(false)
             {
