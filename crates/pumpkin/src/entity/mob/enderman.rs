@@ -249,7 +249,8 @@ impl EndermanEntity {
 
         entity.set_pos(new_pos);
         let chunk_pos = entity.chunk_pos.load();
-        world.broadcast_to_chunk(
+        world.broadcast_java_to_entity_trackers_sync(
+            entity.entity_id,
             chunk_pos,
             &CEntityPositionSync::new(
                 entity.entity_id.into(),

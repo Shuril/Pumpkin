@@ -4987,7 +4987,6 @@ impl World {
             if entity_query_capacity_reached(list.len(), max_list_capacity) {
                 return;
             }
-            // TODO: Implement ender dragon handling
         }
     }
 

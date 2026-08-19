@@ -1118,7 +1118,8 @@ impl<T: Mob + Send + 'static> EntityBase for T {
             let chunk_pos = entity.chunk_pos.load();
             if yaw.abs_diff(last_yaw) >= 1 || pitch.abs_diff(last_pitch) >= 1 {
                 let world = entity.world.load();
-                world.broadcast_to_chunk(
+                world.broadcast_java_to_entity_trackers_sync(
+                    entity.entity_id,
                     chunk_pos,
                     &CUpdateEntityRot::new(
                         entity.entity_id.into(),
@@ -1134,7 +1135,8 @@ impl<T: Mob + Send + 'static> EntityBase for T {
             if head_yaw.abs_diff(last_head_yaw) >= 1 {
                 let world = entity.world.load();
 
-                world.broadcast_to_chunk(
+                world.broadcast_java_to_entity_trackers_sync(
+                    entity.entity_id,
                     chunk_pos,
                     &CHeadRot::new(entity.entity_id.into(), head_yaw),
                 );
