@@ -1117,7 +1117,7 @@ fn roll_datapack_chest_table(
                     .entries
                     .iter()
                     .map(|entry| entry.weight.max(0))
-                    .fold(0_i32, i32::saturating_add);
+                    .fold(0i32, i32::saturating_add);
                 if total_weight <= 0 {
                     continue;
                 }
@@ -1279,7 +1279,7 @@ fn parse_datapack_chest_entry(value: &Value) -> Result<DatapackChestEntry, Strin
                 .as_object()
                 .ok_or_else(|| "loot function must be an object".to_owned())?;
             match function_object.get("function").and_then(Value::as_str) {
-                Some("minecraft:set_count") | Some("set_count") => {
+                Some("minecraft:set_count" | "set_count") => {
                     let parsed =
                         parse_integer_range(function_object.get("count"), (1, 1), "count")?;
                     let add = function_object
@@ -1295,7 +1295,7 @@ fn parse_datapack_chest_entry(value: &Value) -> Result<DatapackChestEntry, Strin
                         parsed
                     };
                 }
-                Some("minecraft:limit_count") | Some("limit_count") => {
+                Some("minecraft:limit_count" | "limit_count") => {
                     let limits = function_object
                         .get("limit")
                         .and_then(Value::as_object)

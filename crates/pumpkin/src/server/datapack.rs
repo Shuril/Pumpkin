@@ -1995,7 +1995,7 @@ mod tests {
         }
         fs::write(
             pack.join("data/example/tags/function/tick.json"),
-            r##"{"values":["example:second","example:first","example:second"]}"##,
+            r#"{"values":["example:second","example:first","example:second"]}"#,
         )
         .expect("function tag");
         let snapshot = DataPackLoader::load(root.path(), &["file/test".to_owned()])
@@ -2007,13 +2007,13 @@ mod tests {
 
         fs::write(
             pack.join("data/example/tags/function/broken.json"),
-            r##"{"values":["example:missing"]}"##,
+            r#"{"values":["example:missing"]}"#,
         )
         .expect("broken function tag");
         assert!(DataPackLoader::load(root.path(), &["file/test".to_owned()]).is_err());
         fs::write(
             pack.join("data/example/tags/function/broken.json"),
-            r##"{"values":[{"id":"example:missing","required":false}]}"##,
+            r#"{"values":[{"id":"example:missing","required":false}]}"#,
         )
         .expect("optional function tag");
         let snapshot = DataPackLoader::load(root.path(), &["file/test".to_owned()])
@@ -2040,12 +2040,12 @@ mod tests {
         }
         fs::write(
             first.join("data/example/tags/items/planks.json"),
-            r##"{"values":["minecraft:oak_planks"]}"##,
+            r#"{"values":["minecraft:oak_planks"]}"#,
         )
         .expect("first tag");
         fs::write(
             second.join("data/example/tags/items/planks.json"),
-            r##"{"replace":true,"values":["minecraft:stone",{"id":"minecraft:not_an_item","required":false}]}"##,
+            r#"{"replace":true,"values":["minecraft:stone",{"id":"minecraft:not_an_item","required":false}]}"#,
         )
         .expect("second tag");
 
@@ -2104,7 +2104,7 @@ mod tests {
         .expect("metadata");
         fs::write(
             pack.join("data/example/recipes/component.json"),
-            r##"{"type":"minecraft:crafting_shapeless","ingredients":[{"item":"minecraft:oak_planks"}],"result":{"id":"minecraft:stick","components":{"minecraft:custom_data":{"source":"test","count":2}}}}"##,
+            r#"{"type":"minecraft:crafting_shapeless","ingredients":[{"item":"minecraft:oak_planks"}],"result":{"id":"minecraft:stick","components":{"minecraft:custom_data":{"source":"test","count":2}}}}"#,
         )
         .expect("recipe");
 

@@ -673,10 +673,10 @@ impl LivingEntity {
             // Java's shift operator masks the shift distance; use the wrapping
             // equivalent here so malformed/high amplifier NBT cannot panic a
             // debug server while ordinary (0..30) effects remain identical.
-            let heal_amount = 4.0 * (1_i32.wrapping_shl(u32::from(effect.amplifier))) as f32;
+            let heal_amount = 4.0 * (1i32.wrapping_shl(u32::from(effect.amplifier))) as f32;
             self.heal(heal_amount);
         } else if effect.effect_type == &StatusEffect::INSTANT_DAMAGE {
-            let damage_amount = 6.0 * (1_i32.wrapping_shl(u32::from(effect.amplifier))) as f32;
+            let damage_amount = 6.0 * (1i32.wrapping_shl(u32::from(effect.amplifier))) as f32;
             let dyn_self = self
                 .entity
                 .world

@@ -510,7 +510,7 @@ impl EntityBase for ArrowEntity {
                     if pierce > 0 {
                         let target_id = target.get_entity().entity_id;
                         let mut ignored = self.piercing_ignore_entity_ids.write().await;
-                        if ignored.contains(&target_id) || ignored.len() >= pierce as usize + 1 {
+                        if ignored.contains(&target_id) || ignored.len() > pierce as usize {
                             entity.remove().await;
                             self.has_hit.store(false, Ordering::Release);
                             return;

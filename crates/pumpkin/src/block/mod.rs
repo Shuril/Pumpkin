@@ -522,7 +522,7 @@ pub const fn block_experience_allowed(requested: bool, silk_touch: bool) -> bool
 /// context seed; world-bound paths always pass `Some`.
 #[must_use]
 pub fn derive_experience_seed(seed: Option<u64>) -> u64 {
-    seed.map_or_else(get_seed, |seed| seed ^ 0x455850455249454e_u64)
+    seed.map_or_else(get_seed, |seed| seed ^ 0x4558_5045_5249_454eu64)
 }
 
 pub async fn calc_block_breaking(

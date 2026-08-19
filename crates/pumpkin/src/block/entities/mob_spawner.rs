@@ -51,7 +51,7 @@ fn weighted_index(entries: &[SpawnPotential], ticket: i32) -> Option<usize> {
     let total = entries
         .iter()
         .map(|entry| entry.weight.max(0))
-        .fold(0_i32, i32::saturating_add);
+        .fold(0i32, i32::saturating_add);
     if total <= 0 {
         return None;
     }
@@ -291,7 +291,7 @@ impl MobSpawnerBlockEntity {
             let total = potentials
                 .iter()
                 .map(|entry| entry.weight.max(0))
-                .fold(0_i32, i32::saturating_add);
+                .fold(0i32, i32::saturating_add);
             if total > 0 {
                 let ticket = rand::random_range(0..total);
                 if let Some(index) = weighted_index(&potentials, ticket) {
@@ -483,7 +483,7 @@ impl BlockEntity for MobSpawnerBlockEntity {
             let total = potentials
                 .iter()
                 .map(|potential| potential.weight.max(0))
-                .fold(0_i32, i32::saturating_add);
+                .fold(0i32, i32::saturating_add);
             let selected = (total > 0)
                 .then(|| rand::random_range(0..total))
                 .and_then(|ticket| weighted_index(&potentials, ticket))

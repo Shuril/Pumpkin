@@ -6021,7 +6021,7 @@ impl World {
             self.level.seed.0,
             Some(scatter_position),
             world_time,
-            0x5343_4154_5445_52
+            0x0053_4341_5454_4552
                 ^ u64::from(stack.item.id)
                 ^ original_count.rotate_left(17)
                 ^ source_slot.rotate_left(31),

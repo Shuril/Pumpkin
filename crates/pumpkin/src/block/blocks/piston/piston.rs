@@ -358,14 +358,13 @@ pub async fn try_move(world: &Arc<World>, block: &Block, block_pos: &BlockPos) {
                 };
                 let game_time = world.get_world_age().await;
                 if piston.extending
-                    && PistonBlockEntity::should_use_final_tick(
+                    && (PistonBlockEntity::should_use_final_tick(
                         piston.current_progress.load(),
                         game_time,
                         piston
                             .last_ticked
                             .load(std::sync::atomic::Ordering::Relaxed),
-                    )
-                    || (piston.extending && world.is_handling_tick())
+                    ) || world.is_handling_tick())
                 {
                     // Piston reduced too quickly, if its a stick piston no blocks will be dragged
                     r#type = 2;

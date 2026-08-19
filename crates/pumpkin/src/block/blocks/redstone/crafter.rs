@@ -179,7 +179,7 @@ impl BlockBehaviour for CrafterBlock {
                 None
             };
 
-            let output_position = CrafterBlock::output_position(args.position, props.orientation);
+            let output_position = Self::output_position(args.position, props.orientation);
             if let Some(stacks) = result {
                 // Java enters the visible crafting state only after a recipe
                 // was selected; failed redstone pulses never set CRAFTING.
@@ -224,7 +224,7 @@ impl BlockBehaviour for CrafterBlock {
                 args.world.sync_world_event(
                     WorldEvent::ParticlesShootSmoke,
                     *args.position,
-                    CrafterBlock::orientation_data(props.orientation),
+                    Self::orientation_data(props.orientation),
                 );
             }
 
@@ -293,7 +293,7 @@ impl CrafterBlock {
         }
     }
 
-    fn orientation_data(orientation: Orientation) -> i32 {
+    const fn orientation_data(orientation: Orientation) -> i32 {
         match orientation {
             Orientation::DownEast
             | Orientation::DownNorth
