@@ -18,7 +18,7 @@ impl LongDistancePatrolGoal {
     const REPATH_CHANCE: i32 = 10;
 
     #[must_use]
-    pub fn new(speed: f64) -> Self {
+    pub const fn new(speed: f64) -> Self {
         Self {
             goal_control: Controls::MOVE,
             speed,
@@ -41,7 +41,7 @@ impl LongDistancePatrolGoal {
 impl Goal for LongDistancePatrolGoal {
     fn can_start<'a>(&'a mut self, mob: &'a dyn Mob) -> GoalFuture<'a, bool> {
         Box::pin(async move {
-            let Some(target) = Self::patrol_target(&mob.get_mob_entity()).await else {
+            let Some(target) = Self::patrol_target(mob.get_mob_entity()).await else {
                 return false;
             };
             let pos = mob.get_entity().pos.load();
@@ -61,7 +61,7 @@ impl Goal for LongDistancePatrolGoal {
 
     fn should_continue<'a>(&'a self, mob: &'a dyn Mob) -> GoalFuture<'a, bool> {
         Box::pin(async move {
-            let Some(target) = Self::patrol_target(&mob.get_mob_entity()).await else {
+            let Some(target) = Self::patrol_target(mob.get_mob_entity()).await else {
                 return false;
             };
             let pos = mob.get_entity().pos.load();
@@ -80,7 +80,7 @@ impl Goal for LongDistancePatrolGoal {
 
     fn start<'a>(&'a mut self, mob: &'a dyn Mob) -> GoalFuture<'a, ()> {
         Box::pin(async move {
-            let Some(target) = Self::patrol_target(&mob.get_mob_entity()).await else {
+            let Some(target) = Self::patrol_target(mob.get_mob_entity()).await else {
                 return;
             };
             let pos = mob.get_entity().pos.load();

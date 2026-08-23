@@ -62,7 +62,7 @@ impl WitherEntity {
         mob_arc
     }
 
-    async fn closest_player(&self) -> Option<Arc<Player>> {
+    fn closest_player(&self) -> Option<Arc<Player>> {
         let world = self.mob_entity.living_entity.entity.world.load();
         let pos = self.mob_entity.living_entity.entity.pos.load();
         let player = world.get_closest_player(pos, TARGET_RANGE)?;
@@ -142,7 +142,7 @@ impl Mob for WitherEntity {
                 }
             }
 
-            let Some(target) = self.closest_player().await else {
+            let Some(target) = self.closest_player() else {
                 return;
             };
             let target_pos = target.get_entity().pos.load();
@@ -175,11 +175,9 @@ impl Mob for WitherEntity {
                 );
 
                 let skull_entity = Entity::new(world.clone(), skull_pos, &EntityType::WITHER_SKULL);
-                let mut skull = WitherSkullEntity::new_shot(skull_entity, entity);
+                let skull = WitherSkullEntity::new_shot(skull_entity, entity);
                 skull.thrown.entity.set_velocity(velocity);
-                world
-                    .spawn_entity(Arc::new(skull) as Arc<dyn crate::entity::EntityBase>)
-                    .await;
+                world.spawn_entity(Arc::new(skull)).await;
                 world.play_sound(Sound::EntityWitherShoot, SoundCategory::Hostile, &pos);
             }
         })

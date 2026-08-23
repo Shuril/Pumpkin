@@ -420,20 +420,17 @@ impl CustomSpawners {
         }
 
         let new_chance = (chance + 25).clamp(25, TRADER_MAX_SPAWN_CHANCE);
-        {
-            let mut custom_data = world
-                .custom_data
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            custom_data.put_int(TRADER_SPAWN_DELAY_KEY, DEFAULT_TRADER_SPAWN_DELAY);
-            custom_data.put_int(TRADER_SPAWN_CHANCE_KEY, new_chance);
-        }
-        if rand::rng().random_range(0..100) <= chance && spawn_wandering_trader(world).await {
-            let mut custom_data = world
-                .custom_data
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let spawn_succeeded =
+            rand::rng().random_range(0..100) <= chance && spawn_wandering_trader(world).await;
+        let mut custom_data = world
+            .custom_data
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        custom_data.put_int(TRADER_SPAWN_DELAY_KEY, DEFAULT_TRADER_SPAWN_DELAY);
+        if spawn_succeeded {
             custom_data.put_int(TRADER_SPAWN_CHANCE_KEY, 25);
+        } else {
+            custom_data.put_int(TRADER_SPAWN_CHANCE_KEY, new_chance);
         }
     }
 }
@@ -455,7 +452,7 @@ async fn spawn_wandering_trader(world: &Arc<World>) -> bool {
         poi.find_closest_meeting_point(&player_pos, 48.0)
             .unwrap_or(player_pos)
     };
-    let Some(spawn_pos) = find_spawn_position_near(world, reference, 48).await else {
+    let Some(spawn_pos) = find_spawn_position_near(world, reference, 48) else {
         return false;
     };
     if !has_spawn_space(world, &spawn_pos) {
@@ -470,7 +467,7 @@ async fn spawn_wandering_trader(world: &Arc<World>) -> bool {
     world.spawn_entity(trader.clone()).await;
 
     for _ in 0..2 {
-        if let Some(llama_pos) = find_spawn_position_near(world, spawn_pos, 4).await
+        if let Some(llama_pos) = find_spawn_position_near(world, spawn_pos, 4)
             && is_spawn_position_ok(world, &llama_pos, &EntityType::TRADER_LLAMA)
         {
             let llama = from_type(
@@ -486,7 +483,7 @@ async fn spawn_wandering_trader(world: &Arc<World>) -> bool {
     true
 }
 
-async fn find_spawn_position_near(
+fn find_spawn_position_near(
     world: &Arc<World>,
     reference: BlockPos,
     radius: i32,
@@ -531,7 +528,6 @@ fn bottom_center(pos: &BlockPos) -> Vector3<f64> {
     )
 }
 
-const SIEGE_RING_RADIUS: f32 = 32.0;
 const TRADER_TICK_DELAY: i32 = 1200;
 const TRADER_MAX_SPAWN_CHANCE: i32 = 75;
 const DEFAULT_TRADER_SPAWN_DELAY: i32 = 24_000;
