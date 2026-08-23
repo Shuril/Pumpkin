@@ -24,6 +24,7 @@ pub mod snowball;
 pub mod splash_potion;
 pub mod trident;
 pub mod wind_charge;
+pub mod wither_skull;
 
 #[must_use]
 pub fn is_projectile(entity_type: &EntityType) -> bool {
