@@ -164,6 +164,7 @@ pub mod block_placer;
 pub mod border;
 pub mod bossbar;
 pub mod custom_bossbar;
+pub mod custom_spawner;
 pub mod dragon_fight;
 pub mod end_podium;
 pub mod natural_spawner;
@@ -276,6 +277,8 @@ pub struct World {
     pub villager_poi: Mutex<villager_poi::VillagerPoiStorage>,
     /// End Dragon fight manager (only present in `THE_END` dimension).
     pub dragon_fight: Option<Mutex<dragon_fight::DragonFight>>,
+    /// Vanilla special spawners (phantoms & pillager patrols).
+    pub custom_spawners: Mutex<custom_spawner::CustomSpawners>,
     pub spawn_state: ArcSwap<SpawnState>,
     pub active_chunks: ArcSwap<FxHashSet<Vector2<i32>>>,
     pub forced_chunks: std::sync::Mutex<FxHashSet<Vector2<i32>>>,
@@ -394,6 +397,7 @@ impl World {
             portal_poi: Mutex::new(portal_poi),
             villager_poi: Mutex::new(villager_poi::VillagerPoiStorage::default()),
             dragon_fight,
+            custom_spawners: Mutex::new(custom_spawner::CustomSpawners::new()),
             spawn_state: ArcSwap::new(Arc::new(SpawnState::empty())),
             active_chunks: ArcSwap::new(Arc::new(FxHashSet::default())),
             forced_chunks: std::sync::Mutex::new(FxHashSet::default()),
@@ -1744,6 +1748,12 @@ impl World {
             spawn_enemies,
             spawn_passives,
         ));
+
+        self.custom_spawners
+            .lock()
+            .await
+            .tick(self, spawn_enemies)
+            .await;
 
         // 5. Spawn Chunk Spawners into the SAME JoinSet
         if !spawn_list.is_empty() {

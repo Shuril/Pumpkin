@@ -102,6 +102,18 @@ impl VillagerPoiStorage {
         sites.sort_unstable_by_key(|(distance, _)| *distance);
         sites.into_iter().map(|(_, position)| position).collect()
     }
+
+    #[must_use]
+    pub fn has_job_site_within(&self, origin: &BlockPos, radius: f64) -> bool {
+        let radius_squared = radius * radius;
+        self.job_sites.keys().any(|position| {
+            let delta = position.0 - origin.0;
+            let dx = f64::from(delta.x);
+            let dy = f64::from(delta.y);
+            let dz = f64::from(delta.z);
+            dx * dx + dy * dy + dz * dz <= radius_squared
+        })
+    }
 }
 
 #[must_use]
