@@ -5085,7 +5085,7 @@ impl World {
 
             if flags.contains(BlockFlags::NOTIFY_NEIGHBORS) {
                 self.update_neighbors(position, None).await;
-                // TODO: updateComparators
+                self.update_comparators(position, new_block).await;
             }
 
             if !flags.contains(BlockFlags::FORCE_STATE) {
@@ -5167,6 +5167,43 @@ impl World {
             .level
             .light_engine
             .set_sky_light_level(&self.level, position, light_level);
+    }
+
+    /// Port of `Level#updateComparators`: notify comparators adjacent to (or
+    /// behind a solid block of) a changed position so container signals update.
+    pub async fn update_comparators(self: &Arc<Self>, pos: &BlockPos, source_block: &Block) {
+        for direction in [
+            BlockDirection::North,
+            BlockDirection::South,
+            BlockDirection::West,
+            BlockDirection::East,
+        ] {
+            let step = direction.to_offset();
+            let mut neighbor_pos = pos.offset(step);
+            let mut neighbor_block = self.get_block(&neighbor_pos);
+            if *neighbor_block != Block::COMPARATOR {
+                let state = self.get_block_state(&neighbor_pos);
+                if !state.is_side_solid(BlockDirection::Up) {
+                    continue;
+                }
+                neighbor_pos = neighbor_pos.offset(step);
+                neighbor_block = self.get_block(&neighbor_pos);
+                if *neighbor_block != Block::COMPARATOR {
+                    continue;
+                }
+            }
+            if let Some(comparator) = self.block_registry.get_pumpkin_block(neighbor_block.id) {
+                comparator
+                    .on_neighbor_update(OnNeighborUpdateArgs {
+                        world: self,
+                        block: neighbor_block,
+                        position: &neighbor_pos,
+                        source_block,
+                        notify: false,
+                    })
+                    .await;
+            }
+        }
     }
 
     /// Port of `ServerLevel#findLightningTargetAround`.
