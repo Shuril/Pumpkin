@@ -1,4 +1,7 @@
-use std::{collections::HashMap, sync::Weak};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Weak,
+};
 
 use pumpkin_data::{Block, villager::VillagerProfession};
 use pumpkin_util::math::position::BlockPos;
@@ -13,6 +16,8 @@ struct JobSite {
 #[derive(Default)]
 pub struct VillagerPoiStorage {
     job_sites: HashMap<BlockPos, JobSite>,
+    meeting_points: HashSet<BlockPos>,
+    lightning_rods: HashSet<BlockPos>,
 }
 
 impl VillagerPoiStorage {
@@ -25,6 +30,22 @@ impl VillagerPoiStorage {
     }
 
     pub fn update_block(&mut self, position: BlockPos, block: &Block) {
+        match block {
+            block if *block == Block::BELL => {
+                self.meeting_points.insert(position);
+            }
+            block if *block == Block::LIGHTNING_ROD => {
+                self.lightning_rods.insert(position);
+            }
+            _ => {}
+        }
+        if *block != Block::BELL {
+            self.meeting_points.remove(&position);
+        }
+        if *block != Block::LIGHTNING_ROD {
+            self.lightning_rods.remove(&position);
+        }
+
         let Some(profession) = profession_for_block(block) else {
             self.job_sites.remove(&position);
             return;
@@ -113,6 +134,49 @@ impl VillagerPoiStorage {
             let dz = f64::from(delta.z);
             dx * dx + dy * dy + dz * dz <= radius_squared
         })
+    }
+
+    #[must_use]
+    pub fn is_village_point(&self, origin: &BlockPos, radius: f64) -> bool {
+        let radius_squared = radius * radius;
+        let within = |p: &BlockPos| {
+            let delta = p.0 - origin.0;
+            let dx = f64::from(delta.x);
+            let dy = f64::from(delta.y);
+            let dz = f64::from(delta.z);
+            dx * dx + dy * dy + dz * dz <= radius_squared
+        };
+        self.meeting_points.iter().any(within) || self.job_sites.keys().any(within)
+    }
+
+    #[must_use]
+    pub fn find_closest_meeting_point(&self, origin: &BlockPos, radius: f64) -> Option<BlockPos> {
+        let radius_squared = radius * radius;
+        self.meeting_points
+            .iter()
+            .filter_map(|position| {
+                let delta = position.0 - origin.0;
+                let distance_squared = i64::from(delta.x).pow(2)
+                    + i64::from(delta.y).pow(2)
+                    + i64::from(delta.z).pow(2);
+                (distance_squared as f64 <= radius_squared).then_some((distance_squared, *position))
+            })
+            .min_by_key(|(distance, _)| *distance)
+            .map(|(_, position)| position)
+    }
+
+    #[must_use]
+    pub fn find_closest_lightning_rod(&self, origin: &BlockPos, radius: i32) -> Option<BlockPos> {
+        let radius_squared = i64::from(radius).pow(2);
+        self.lightning_rods
+            .iter()
+            .filter_map(|position| {
+                let delta = position.0 - origin.0;
+                let distance_squared = i64::from(delta.x).pow(2) + i64::from(delta.z).pow(2);
+                (distance_squared <= radius_squared).then_some((distance_squared, *position))
+            })
+            .min_by_key(|(distance, _)| *distance)
+            .map(|(_, position)| position)
     }
 }
 

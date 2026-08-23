@@ -32,6 +32,15 @@ const MUSHROOM_FIELDS_REGISTRY_ID: &str = "mushroom_fields";
 pub struct CustomSpawners {
     phantom_next_tick: i32,
     patrol_next_tick: i32,
+    siege_tonight: bool,
+    siege_setup: bool,
+    siege_zombies_left: i32,
+    siege_next_spawn_time: i32,
+    siege_last_rolled_day: i64,
+    siege_center_x: i32,
+    siege_center_y: i32,
+    siege_center_z: i32,
+    trader_tick_delay: i32,
 }
 
 impl Default for CustomSpawners {
@@ -46,20 +55,36 @@ impl CustomSpawners {
         Self {
             phantom_next_tick: 0,
             patrol_next_tick: 0,
+            siege_tonight: false,
+            siege_setup: false,
+            siege_zombies_left: 0,
+            siege_next_spawn_time: 0,
+            siege_last_rolled_day: -1,
+            siege_center_x: 0,
+            siege_center_y: 0,
+            siege_center_z: 0,
+            trader_tick_delay: 1200,
         }
     }
 
     pub async fn tick(&mut self, world: &Arc<World>, spawn_enemies: bool) {
-        if !spawn_enemies {
-            return;
-        }
         let level_info = world.level_info.load();
-        self.tick_phantoms(world, &level_info.game_rules).await;
-        self.tick_patrols(world, &level_info.game_rules).await;
+        self.tick_phantoms(world, &level_info.game_rules, spawn_enemies)
+            .await;
+        self.tick_patrols(world, &level_info.game_rules, spawn_enemies)
+            .await;
+        self.tick_siege(world, spawn_enemies).await;
+        self.tick_wandering_trader(world, &level_info.game_rules)
+            .await;
     }
 
-    async fn tick_phantoms(&mut self, world: &Arc<World>, game_rules: &GameRuleRegistry) {
-        if !game_rules.spawn_phantoms {
+    async fn tick_phantoms(
+        &mut self,
+        world: &Arc<World>,
+        game_rules: &GameRuleRegistry,
+        spawn_enemies: bool,
+    ) {
+        if !spawn_enemies || !game_rules.spawn_phantoms {
             return;
         }
         self.phantom_next_tick -= 1;
@@ -109,8 +134,13 @@ impl CustomSpawners {
         }
     }
 
-    async fn tick_patrols(&mut self, world: &Arc<World>, game_rules: &GameRuleRegistry) {
-        if !game_rules.spawn_patrols {
+    async fn tick_patrols(
+        &mut self,
+        world: &Arc<World>,
+        game_rules: &GameRuleRegistry,
+        spawn_enemies: bool,
+    ) {
+        if !spawn_enemies || !game_rules.spawn_patrols {
             return;
         }
         self.patrol_next_tick -= 1;
@@ -265,6 +295,273 @@ fn has_chunks_loaded(world: &World, x: i32, z: i32, radius: i32) -> bool {
         }
     }
     true
+}
+
+impl CustomSpawners {
+    async fn tick_siege(&mut self, world: &Arc<World>, spawn_enemies: bool) {
+        if sky_darken(world) < 4 || !spawn_enemies {
+            self.siege_tonight = false;
+            self.siege_setup = false;
+            return;
+        }
+        let time_of_day = world
+            .level_time
+            .try_lock()
+            .map_or(0, |time| time.time_of_day);
+        let day = time_of_day.div_euclid(24_000);
+        if (18_000..18_050).contains(&time_of_day.rem_euclid(24_000))
+            && day != self.siege_last_rolled_day
+        {
+            self.siege_last_rolled_day = day;
+            self.siege_tonight = rand::rng().random_range(0..10) == 0;
+        }
+        if !self.siege_tonight {
+            return;
+        }
+        if !self.siege_setup && self.try_setup_siege(world).await {
+            self.siege_setup = true;
+        }
+        if !self.siege_setup {
+            return;
+        }
+        if self.siege_next_spawn_time > 0 {
+            self.siege_next_spawn_time -= 1;
+            return;
+        }
+        self.siege_next_spawn_time = 2;
+        if self.siege_zombies_left > 0 {
+            let center = BlockPos(Vector3::new(
+                self.siege_center_x,
+                self.siege_center_y,
+                self.siege_center_z,
+            ));
+            if let Some(pos) = find_random_siege_pos(world, center).await {
+                spawn_siege_zombie(world, pos).await;
+            }
+            self.siege_zombies_left -= 1;
+        } else {
+            self.siege_tonight = false;
+        }
+    }
+
+    async fn try_setup_siege(&mut self, world: &Arc<World>) -> bool {
+        for player in world.players.load().iter() {
+            if player.gamemode.load() == GameMode::Spectator {
+                continue;
+            }
+            let center = player.living_entity.entity.block_pos.load();
+            let poi = world.villager_poi.lock().await;
+            let is_village = poi.is_village_point(&center, 32.0);
+            drop(poi);
+            if !is_village {
+                continue;
+            }
+            if world.get_biome(&center).registry_id == MUSHROOM_FIELDS_REGISTRY_ID {
+                return true;
+            }
+            for _ in 0..10 {
+                let angle = rand::rng().random::<f32>() * std::f32::consts::TAU;
+                self.siege_center_x = center.0.x + (angle.cos() * 32.0).floor() as i32;
+                self.siege_center_y = center.0.y;
+                self.siege_center_z = center.0.z + (angle.sin() * 32.0).floor() as i32;
+                let probe = BlockPos(Vector3::new(
+                    self.siege_center_x,
+                    self.siege_center_y,
+                    self.siege_center_z,
+                ));
+                if find_random_siege_pos(world, probe).await.is_some() {
+                    self.siege_next_spawn_time = 0;
+                    self.siege_zombies_left = 20;
+                    return true;
+                }
+            }
+            return true;
+        }
+        false
+    }
+
+    async fn tick_wandering_trader(&mut self, world: &Arc<World>, game_rules: &GameRuleRegistry) {
+        if !game_rules.spawn_wandering_traders {
+            return;
+        }
+        self.trader_tick_delay -= 1;
+        if self.trader_tick_delay > 0 {
+            return;
+        }
+        self.trader_tick_delay = TRADER_TICK_DELAY;
+
+        let (delay, chance) = {
+            let mut custom_data = world
+                .custom_data
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let delay = custom_data
+                .get_int(TRADER_SPAWN_DELAY_KEY)
+                .unwrap_or(DEFAULT_TRADER_SPAWN_DELAY)
+                - TRADER_TICK_DELAY;
+            let chance = custom_data.get_int(TRADER_SPAWN_CHANCE_KEY).unwrap_or(25);
+            custom_data.put_int(TRADER_SPAWN_DELAY_KEY, delay.max(0));
+            (delay, chance)
+        };
+        if delay > 0 {
+            return;
+        }
+
+        let new_chance = (chance + 25).clamp(25, TRADER_MAX_SPAWN_CHANCE);
+        {
+            let mut custom_data = world
+                .custom_data
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            custom_data.put_int(TRADER_SPAWN_DELAY_KEY, DEFAULT_TRADER_SPAWN_DELAY);
+            custom_data.put_int(TRADER_SPAWN_CHANCE_KEY, new_chance);
+        }
+        if rand::rng().random_range(0..100) <= chance && spawn_wandering_trader(world).await {
+            let mut custom_data = world
+                .custom_data
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            custom_data.put_int(TRADER_SPAWN_CHANCE_KEY, 25);
+        }
+    }
+}
+
+async fn spawn_wandering_trader(world: &Arc<World>) -> bool {
+    let players = world.players.load();
+    if players.is_empty() {
+        return true;
+    }
+    let player_index = rand::rng().random_range(0..players.len());
+    let player_pos = players[player_index].living_entity.entity.block_pos.load();
+
+    if rand::rng().random_range(0..10) != 0 {
+        return false;
+    }
+
+    let reference = {
+        let poi = world.villager_poi.lock().await;
+        poi.find_closest_meeting_point(&player_pos, 48.0)
+            .unwrap_or(player_pos)
+    };
+    let Some(spawn_pos) = find_spawn_position_near(world, reference, 48).await else {
+        return false;
+    };
+    if !has_spawn_space(world, &spawn_pos) {
+        return false;
+    }
+    let trader = from_type(
+        &EntityType::WANDERING_TRADER,
+        bottom_center(&spawn_pos),
+        world,
+        uuid::Uuid::new_v4(),
+    );
+    world.spawn_entity(trader.clone()).await;
+
+    for _ in 0..2 {
+        if let Some(llama_pos) = find_spawn_position_near(world, spawn_pos, 4).await
+            && is_spawn_position_ok(world, &llama_pos, &EntityType::TRADER_LLAMA)
+        {
+            let llama = from_type(
+                &EntityType::TRADER_LLAMA,
+                bottom_center(&llama_pos),
+                world,
+                uuid::Uuid::new_v4(),
+            );
+            world.spawn_entity(llama.clone()).await;
+            llama.get_entity().leash_to(trader.clone()).await;
+        }
+    }
+    true
+}
+
+async fn find_spawn_position_near(
+    world: &Arc<World>,
+    reference: BlockPos,
+    radius: i32,
+) -> Option<BlockPos> {
+    let mut rng = rand::rng();
+    for _ in 0..10 {
+        let x = reference.0.x + rng.random_range(0..radius * 2) - radius;
+        let z = reference.0.z + rng.random_range(0..radius * 2) - radius;
+        let y = world.get_heightmap_height(ChunkHeightmapType::WorldSurface, x, z) + 1;
+        let pos = BlockPos(Vector3::new(x, y, z));
+        if is_spawn_position_ok(world, &pos, &EntityType::WANDERING_TRADER) {
+            return Some(pos);
+        }
+    }
+    None
+}
+
+fn has_spawn_space(world: &World, pos: &BlockPos) -> bool {
+    for dy in 0..3 {
+        for dx in 0..2 {
+            for dz in 0..2 {
+                let check = BlockPos(Vector3::new(pos.0.x + dx, pos.0.y + dy, pos.0.z + dz));
+                if world
+                    .get_block_state(&check)
+                    .get_block_collision_shapes_at(&check)
+                    .next()
+                    .is_some()
+                {
+                    return false;
+                }
+            }
+        }
+    }
+    true
+}
+
+fn bottom_center(pos: &BlockPos) -> Vector3<f64> {
+    Vector3::new(
+        f64::from(pos.0.x) + 0.5,
+        f64::from(pos.0.y),
+        f64::from(pos.0.z) + 0.5,
+    )
+}
+
+const SIEGE_RING_RADIUS: f32 = 32.0;
+const TRADER_TICK_DELAY: i32 = 1200;
+const TRADER_MAX_SPAWN_CHANCE: i32 = 75;
+const DEFAULT_TRADER_SPAWN_DELAY: i32 = 24_000;
+const TRADER_SPAWN_DELAY_KEY: &str = "wandering_trader_spawn_delay";
+const TRADER_SPAWN_CHANCE_KEY: &str = "wandering_trader_spawn_chance";
+
+async fn find_random_siege_pos(world: &Arc<World>, base: BlockPos) -> Option<Vector3<f64>> {
+    for _ in 0..10 {
+        let (x, z) = {
+            let mut rng = rand::rng();
+            (
+                base.0.x + rng.random_range(0..16) - 8,
+                base.0.z + rng.random_range(0..16) - 8,
+            )
+        };
+        let y = world.get_heightmap_height(ChunkHeightmapType::WorldSurface, x, z) + 1;
+        let pos = BlockPos(Vector3::new(x, y, z));
+        let poi = world.villager_poi.lock().await;
+        let in_village = poi.is_village_point(&pos, 32.0);
+        drop(poi);
+        if !in_village {
+            continue;
+        }
+        let dark_enough =
+            sky_darken(world) >= 8 && world.get_block_light_level(&pos).is_none_or(|l| l < 8);
+        if dark_enough && is_spawn_position_ok(world, &pos, &EntityType::ZOMBIE) {
+            return Some(Vector3::new(
+                f64::from(x) + 0.5,
+                f64::from(y),
+                f64::from(z) + 0.5,
+            ));
+        }
+    }
+    None
+}
+
+async fn spawn_siege_zombie(world: &Arc<World>, pos: Vector3<f64>) {
+    let entity = from_type(&EntityType::ZOMBIE, pos, world, uuid::Uuid::new_v4());
+    entity
+        .get_entity()
+        .set_rotation(rand::rng().random::<f32>() * 360.0, 0.0);
+    world.spawn_entity(entity).await;
 }
 
 /// Port of the overworld clock's `SKY_LIGHT_LEVEL` timeline (`Timelines.OVERWORLD_DAY`)

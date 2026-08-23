@@ -1,4 +1,5 @@
 use crate::block::entities::{BlockEntity, block_entity_from_nbt};
+use crate::entity::mob::equipment::RegionalDifficulty;
 use dashmap::DashMap;
 use pumpkin_data::attributes::Attributes;
 use pumpkin_data::chunk::Biome;
@@ -1772,10 +1773,11 @@ impl World {
                 let s_list = spawn_list.clone();
                 let s_state = spawn_state.clone();
 
+                let s_enemies = spawn_enemies;
                 chunk_tasks.spawn(async move {
                     for (pos, chunk) in batch {
                         world
-                            .tick_spawning_chunk(pos, &chunk, &s_list, &s_state)
+                            .tick_spawning_chunk(pos, &chunk, &s_list, &s_state, s_enemies)
                             .await;
                     }
                 });
@@ -2089,6 +2091,7 @@ impl World {
         chunk: &Arc<ChunkData>,
         spawn_list: &Vec<&'static MobCategory>,
         spawn_state: &Arc<SpawnState>,
+        spawn_enemies: bool,
     ) {
         // this.level.tickThunder(chunk);
         //TODO check in simulation distance
@@ -2099,43 +2102,27 @@ impl World {
 
         if is_raining && is_thundering && rng().random_range(0..100_000) == 0 {
             let rand_value = rng().random::<i32>() >> 2;
-            let delta = Vector3::new(rand_value & 15, rand_value >> 16 & 15, rand_value >> 8 & 15);
-            let random_pos = Vector3::new(
-                chunk_pos.x << 4,
-                chunk
-                    .heightmap
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .get(
-                        MotionBlocking,
-                        chunk_pos.x << 4,
-                        chunk_pos.y << 4,
-                        self.min_y,
-                    ),
-                chunk_pos.y << 4,
-            )
-            .add(&delta);
-            // TODO this.getBrightness(LightLayer.SKY, blockPos) >= 15;
-            // TODO heightmap
+            let strike_x = (chunk_pos.x << 4) + (rand_value & 15);
+            let strike_z = (chunk_pos.y << 4) + ((rand_value >> 8) & 15);
+            let target = self.find_lightning_target_around(strike_x, strike_z).await;
 
-            // TODO findLightningRod(blockPos)
-            // TODO encapsulatingFullBlocks
-            if true {
-                // TODO biome.getPrecipitationAt(pos, this.getSeaLevel()) == Biome.Precipitation.RAIN
-                // TODO this.getCurrentDifficultyAt(blockPos);
-                if rng().random::<f32>() < 0.0675
-                    && self.get_block(&random_pos.to_block_pos().down()) != &Block::LIGHTNING_ROD
+            if self.is_raining_at(&target).await {
+                if spawn_enemies
+                    && rng().random::<f64>()
+                        < f64::from(
+                            RegionalDifficulty::at(self, target.0.to_f64()).effective_difficulty,
+                        ) * 0.01
                 {
                     let entity = Entity::new(
                         self.clone(),
-                        random_pos.to_f64(),
+                        target.0.to_f64().add_raw(0.5, 0., 0.5),
                         &EntityType::SKELETON_HORSE,
                     );
                     self.spawn_entity(Arc::new(entity)).await;
                 }
                 let entity = Entity::new(
                     self.clone(),
-                    random_pos.to_f64().add_raw(0.5, 0., 0.5),
+                    target.0.to_f64().add_raw(0.5, 0., 0.5),
                     &EntityType::LIGHTNING_BOLT,
                 );
                 self.spawn_entity(Arc::new(entity)).await;
@@ -5180,6 +5167,69 @@ impl World {
             .level
             .light_engine
             .set_sky_light_level(&self.level, position, light_level);
+    }
+
+    /// Port of `ServerLevel#findLightningTargetAround`.
+    pub async fn find_lightning_target_around(&self, x: i32, z: i32) -> BlockPos {
+        let center_y = self.get_heightmap_height(MotionBlocking, x, z) + 1;
+        let center = BlockPos(Vector3::new(x, center_y, z));
+
+        {
+            let poi = self.villager_poi.lock().await;
+            if let Some(rod) = poi.find_closest_lightning_rod(&center, 128)
+                && rod.0.y
+                    == self.get_heightmap_height(ChunkHeightmapType::WorldSurface, rod.0.x, rod.0.z)
+            {
+                drop(poi);
+                return BlockPos(Vector3::new(rod.0.x, rod.0.y + 1, rod.0.z));
+            }
+        }
+
+        let min = Vector3::new(
+            f64::from(center.0.x - 3),
+            f64::from(center.0.y - 3),
+            f64::from(center.0.z - 3),
+        );
+        let max = Vector3::new(
+            f64::from(center.0.x + 4),
+            f64::from(self.min_y + 384 + 4),
+            f64::from(center.0.z + 4),
+        );
+        let mut candidates: Vec<BlockPos> = Vec::new();
+        for entity in self.entities.load().iter() {
+            let Some(_living) = entity.get_living_entity() else {
+                continue;
+            };
+            let pos = entity.get_entity().pos.load();
+            if pos.x < min.x
+                || pos.x > max.x
+                || pos.y < min.y
+                || pos.y > max.y
+                || pos.z < min.z
+                || pos.z > max.z
+            {
+                continue;
+            }
+            if entity
+                .get_living_entity()
+                .is_none_or(|living| living.health.load() <= 0.0)
+            {
+                continue;
+            }
+            let block_pos = entity.get_entity().block_pos.load();
+            if self.can_see_sky(&block_pos) {
+                candidates.push(block_pos);
+            }
+        }
+        if !candidates.is_empty() {
+            return candidates[rand::rng().random_range(0..candidates.len())];
+        }
+
+        if center.0.y == self.min_y - 1 {
+            BlockPos(center.0.add(&Vector3::new(0, 2, 0)))
+        } else {
+            center
+        }
     }
 
     pub fn get_biome(&self, position: &BlockPos) -> &'static Biome {
