@@ -264,6 +264,18 @@ async fn spawn_patrol_member(world: &Arc<World>, pos: BlockPos, leader: bool) ->
     let entity = from_type(&EntityType::PILLAGER, position, world, uuid::Uuid::new_v4());
     world.spawn_entity(entity.clone()).await;
 
+    if let Some(mob) = entity.get_mob() {
+        let target = {
+            let mut rng = rand::rng();
+            BlockPos(Vector3::new(
+                pos.0.x + rng.random_range(-500..500),
+                pos.0.y,
+                pos.0.z + rng.random_range(-500..500),
+            ))
+        };
+        *mob.get_mob_entity().patrol_target.lock().await = Some(target);
+    }
+
     if leader && let Some(living) = entity.get_living_entity() {
         living
             .entity_equipment

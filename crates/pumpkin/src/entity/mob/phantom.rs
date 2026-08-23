@@ -4,7 +4,11 @@ use pumpkin_data::entity::EntityType;
 
 use crate::entity::{
     Entity,
-    ai::goal::{look_around::RandomLookAroundGoal, look_at_entity::LookAtEntityGoal},
+    ai::goal::{
+        look_around::RandomLookAroundGoal,
+        look_at_entity::LookAtEntityGoal,
+        phantom_attack::{PhantomCirclingGoal, PhantomSweepAttackGoal},
+    },
     mob::{Mob, MobEntity},
 };
 
@@ -29,7 +33,8 @@ impl PhantomEntity {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
 
-            // TODO: PhantomCircleAroundAnchorGoal, PhantomSweepAttackGoal
+            goal_selector.add_goal(2, Box::new(PhantomSweepAttackGoal::default()));
+            goal_selector.add_goal(3, Box::new(PhantomCirclingGoal::default()));
             goal_selector.add_goal(
                 6,
                 LookAtEntityGoal::with_default(mob_weak, &EntityType::PLAYER, 8.0),

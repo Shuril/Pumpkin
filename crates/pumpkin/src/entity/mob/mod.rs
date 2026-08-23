@@ -75,6 +75,8 @@ pub struct MobEntity {
     pub move_control: std::sync::Mutex<Box<dyn MoveControlTrait>>,
     pub position_target: AtomicCell<BlockPos>,
     pub position_target_range: AtomicI32,
+    /// Distant patrol destination for patrolling mobs (vanilla `PatrollingMonster`).
+    pub patrol_target: tokio::sync::Mutex<Option<BlockPos>>,
     pub love_ticks: AtomicI32,
     pub breeding_cooldown: AtomicI32,
     pub breeder: AtomicCell<Option<Uuid>>,
@@ -112,6 +114,7 @@ impl MobEntity {
             move_control: std::sync::Mutex::new(Box::new(MoveControl::default())),
             position_target: AtomicCell::new(BlockPos::ZERO),
             position_target_range: AtomicI32::new(-1),
+            patrol_target: tokio::sync::Mutex::new(None),
             love_ticks: AtomicI32::new(0),
             breeding_cooldown: AtomicI32::new(0),
             breeder: AtomicCell::new(None),

@@ -23,6 +23,8 @@ pub struct BowAttackGoal {
     cooldown: i32,
     draw_ticks: i32,
     drawing: bool,
+    held_item_id: u16,
+    instant_fire: bool,
 }
 
 impl BowAttackGoal {
@@ -41,6 +43,20 @@ impl BowAttackGoal {
             cooldown: -1,
             draw_ticks: 0,
             drawing: false,
+            held_item_id: Item::BOW.id,
+            instant_fire: false,
+        }
+    }
+
+    /// Crossbow variant used by pillagers: no draw animation, the shot is
+    /// released as soon as the cooldown elapses (vanilla
+    /// `RangedCrossbowAttackGoal`).
+    #[must_use]
+    pub fn new_crossbow(speed: f64, attack_interval: i32, range: f32) -> Self {
+        Self {
+            held_item_id: Item::CROSSBOW.id,
+            instant_fire: true,
+            ..Self::new(speed, attack_interval, range)
         }
     }
 
@@ -53,8 +69,8 @@ impl BowAttackGoal {
             .get(&EquipmentSlot::MAIN_HAND)
     }
 
-    async fn is_holding_bow(mob: &dyn Mob) -> bool {
-        Self::main_hand_item(mob).await.item.id == Item::BOW.id
+    async fn is_holding_bow(&self, mob: &dyn Mob) -> bool {
+        Self::main_hand_item(mob).await.item.id == self.held_item_id
     }
 
     async fn stop_drawing(&mut self, mob: &dyn Mob) {
@@ -126,7 +142,7 @@ impl Goal for BowAttackGoal {
             if !target.get_entity().is_alive() {
                 return false;
             }
-            Self::is_holding_bow(mob).await
+            self.is_holding_bow(mob).await
         })
     }
 
@@ -136,7 +152,7 @@ impl Goal for BowAttackGoal {
             let Some(target) = target else {
                 return false;
             };
-            target.get_entity().is_alive() && Self::is_holding_bow(mob).await
+            target.get_entity().is_alive() && self.is_holding_bow(mob).await
         })
     }
 
@@ -193,6 +209,15 @@ impl Goal for BowAttackGoal {
                 } else {
                     navigator.stop();
                 }
+            }
+
+            if self.instant_fire {
+                self.cooldown -= 1;
+                if self.cooldown <= 0 && distance_sq <= self.squared_range {
+                    Self::shoot(mob, &target).await;
+                    self.cooldown = self.attack_interval;
+                }
+                return;
             }
 
             if self.drawing {

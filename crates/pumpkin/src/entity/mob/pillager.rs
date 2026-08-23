@@ -5,9 +5,9 @@ use pumpkin_data::entity::EntityType;
 use crate::entity::{
     Entity,
     ai::goal::{
-        active_target::ActiveTargetGoal, look_around::RandomLookAroundGoal,
-        look_at_entity::LookAtEntityGoal, melee_attack::MeleeAttackGoal, swim::SwimGoal,
-        wander_around::WanderAroundGoal,
+        active_target::ActiveTargetGoal, bow_attack::BowAttackGoal,
+        long_distance_patrol::LongDistancePatrolGoal, look_around::RandomLookAroundGoal,
+        look_at_entity::LookAtEntityGoal, swim::SwimGoal, wander_around::WanderAroundGoal,
     },
     mob::{Mob, MobEntity},
 };
@@ -34,8 +34,8 @@ impl PillagerEntity {
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
 
             goal_selector.add_goal(0, Box::new(SwimGoal::default()));
-            // Pillagers use crossbows, but for now we give them melee
-            goal_selector.add_goal(2, Box::new(MeleeAttackGoal::new(1.0, true)));
+            goal_selector.add_goal(2, Box::new(BowAttackGoal::new_crossbow(1.0, 60, 15.0)));
+            goal_selector.add_goal(4, Box::new(LongDistancePatrolGoal::new(0.7)));
             goal_selector.add_goal(5, Box::new(WanderAroundGoal::new(1.0)));
             goal_selector.add_goal(
                 6,
