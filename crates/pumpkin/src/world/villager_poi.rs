@@ -3,6 +3,7 @@ use std::{
     sync::Weak,
 };
 
+use pumpkin_data::tag::{Block as BlockTag, Taggable};
 use pumpkin_data::{Block, villager::VillagerProfession};
 use pumpkin_util::math::position::BlockPos;
 
@@ -18,6 +19,7 @@ pub struct VillagerPoiStorage {
     job_sites: HashMap<BlockPos, JobSite>,
     meeting_points: HashSet<BlockPos>,
     lightning_rods: HashSet<BlockPos>,
+    home_points: HashSet<BlockPos>,
 }
 
 impl VillagerPoiStorage {
@@ -38,6 +40,11 @@ impl VillagerPoiStorage {
                 self.lightning_rods.insert(position);
             }
             _ => {}
+        }
+        if block.has_tag(&BlockTag::MINECRAFT_BEDS) {
+            self.home_points.insert(position);
+        } else {
+            self.home_points.remove(&position);
         }
         if *block != Block::BELL {
             self.meeting_points.remove(&position);
@@ -163,6 +170,21 @@ impl VillagerPoiStorage {
             })
             .min_by_key(|(distance, _)| *distance)
             .map(|(_, position)| position)
+    }
+
+    #[must_use]
+    pub fn count_home_points_within(&self, origin: &BlockPos, radius: f64) -> usize {
+        let radius_squared = radius * radius;
+        self.home_points
+            .iter()
+            .filter(|position| {
+                let delta = position.0 - origin.0;
+                let dx = f64::from(delta.x);
+                let dy = f64::from(delta.y);
+                let dz = f64::from(delta.z);
+                dx * dx + dy * dy + dz * dz <= radius_squared
+            })
+            .count()
     }
 
     #[must_use]

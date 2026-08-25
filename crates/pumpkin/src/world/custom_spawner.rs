@@ -41,6 +41,7 @@ pub struct CustomSpawners {
     siege_center_y: i32,
     siege_center_z: i32,
     trader_tick_delay: i32,
+    cat_next_tick: i32,
 }
 
 impl Default for CustomSpawners {
@@ -64,6 +65,7 @@ impl CustomSpawners {
             siege_center_y: 0,
             siege_center_z: 0,
             trader_tick_delay: 1200,
+            cat_next_tick: 1200,
         }
     }
 
@@ -74,6 +76,7 @@ impl CustomSpawners {
         self.tick_patrols(world, &level_info.game_rules, spawn_enemies)
             .await;
         self.tick_siege(world, spawn_enemies).await;
+        self.tick_cats(world).await;
         self.tick_wandering_trader(world, &level_info.game_rules)
             .await;
     }
@@ -392,6 +395,71 @@ impl CustomSpawners {
         false
     }
 
+    async fn tick_cats(&mut self, world: &Arc<World>) {
+        self.cat_next_tick -= 1;
+        if self.cat_next_tick > 0 {
+            return;
+        }
+        self.cat_next_tick = CAT_TICK_DELAY;
+
+        let players = world.players.load();
+        if players.is_empty() {
+            return;
+        }
+        let player_index = rand::rng().random_range(0..players.len());
+        let player_pos = players[player_index].living_entity.entity.block_pos.load();
+
+        let (offset_x, offset_z) = {
+            let mut rng = rand::rng();
+            let sign_x = if rng.random_bool(0.5) { 1 } else { -1 };
+            let sign_z = if rng.random_bool(0.5) { 1 } else { -1 };
+            (
+                (8 + rng.random_range(0..24)) * sign_x,
+                (8 + rng.random_range(0..24)) * sign_z,
+            )
+        };
+        let spawn_pos = BlockPos(Vector3::new(
+            player_pos.0.x + offset_x,
+            player_pos.0.y,
+            player_pos.0.z + offset_z,
+        ));
+        if !has_chunks_loaded(world, spawn_pos.0.x, spawn_pos.0.z, 10)
+            || !is_spawn_position_ok(world, &spawn_pos, &EntityType::CAT)
+        {
+            return;
+        }
+
+        let poi = world.villager_poi.lock().await;
+        let near_village = poi.is_village_point(&spawn_pos, 32.0)
+            && poi.count_home_points_within(&spawn_pos, 48.0) > 4;
+        drop(poi);
+        if !near_village {
+            return;
+        }
+
+        let cat_count = world
+            .entities
+            .load()
+            .iter()
+            .filter(|entity| {
+                entity.get_entity().entity_type == &EntityType::CAT && {
+                    let pos = entity.get_entity().pos.load();
+                    let delta = pos.sub(&spawn_pos.0.to_f64());
+                    delta.x * delta.x + delta.z * delta.z <= 48.0 * 48.0 && delta.y.abs() <= 8.0
+                }
+            })
+            .count();
+        if cat_count < 5 {
+            let position = Vector3::new(
+                f64::from(spawn_pos.0.x) + 0.5,
+                f64::from(spawn_pos.0.y),
+                f64::from(spawn_pos.0.z) + 0.5,
+            );
+            let cat = from_type(&EntityType::CAT, position, world, uuid::Uuid::new_v4());
+            world.spawn_entity(cat).await;
+        }
+    }
+
     async fn tick_wandering_trader(&mut self, world: &Arc<World>, game_rules: &GameRuleRegistry) {
         if !game_rules.spawn_wandering_traders {
             return;
@@ -533,6 +601,7 @@ const TRADER_MAX_SPAWN_CHANCE: i32 = 75;
 const DEFAULT_TRADER_SPAWN_DELAY: i32 = 24_000;
 const TRADER_SPAWN_DELAY_KEY: &str = "wandering_trader_spawn_delay";
 const TRADER_SPAWN_CHANCE_KEY: &str = "wandering_trader_spawn_chance";
+const CAT_TICK_DELAY: i32 = 1200;
 
 async fn find_random_siege_pos(world: &Arc<World>, base: BlockPos) -> Option<Vector3<f64>> {
     for _ in 0..10 {
