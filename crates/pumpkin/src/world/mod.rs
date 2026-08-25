@@ -2129,6 +2129,12 @@ impl World {
             }
         }
 
+        if rng().random_range(0..48) == 0 {
+            let px = (chunk_pos.x << 4) + rng().random_range(0..16);
+            let pz = (chunk_pos.y << 4) + rng().random_range(0..16);
+            self.tick_precipitation(px, pz).await;
+        }
+
         if spawn_list.is_empty() {
             return;
         }
@@ -5203,6 +5209,48 @@ impl World {
                     })
                     .await;
             }
+        }
+    }
+
+    /// Port of `ServerLevel#tickPrecipitation`: freezes water and accumulates
+    /// snow in cold biomes.
+    pub async fn tick_precipitation(self: &Arc<Self>, x: i32, z: i32) {
+        let top_block_y = self.get_heightmap_height(MotionBlocking, x, z);
+        let below_pos = BlockPos(Vector3::new(x, top_block_y, z));
+        let top_pos = BlockPos(Vector3::new(x, top_block_y + 1, z));
+        let biome = self.get_biome(&top_pos);
+        let warm_enough_to_rain =
+            biome
+                .weather
+                .warm_enough_to_rain(x, top_pos.0.y, z, self.sea_level);
+
+        if !warm_enough_to_rain && self.get_fluid(&below_pos) != &Fluid::EMPTY {
+            self.set_block_state(
+                &below_pos,
+                Block::ICE.default_state.id,
+                BlockFlags::NOTIFY_ALL,
+            )
+            .await;
+        }
+
+        let raining = self.weather.blocking_lock().raining;
+        if !raining || warm_enough_to_rain || !self.can_see_sky(&top_pos) {
+            return;
+        }
+        if self
+            .get_block_light_level(&top_pos)
+            .is_some_and(|light| light >= 10)
+        {
+            return;
+        }
+        let top_state = self.get_block_state(&top_pos);
+        if *Block::from_state_id(top_state.id) != Block::SNOW {
+            self.set_block_state(
+                &top_pos,
+                Block::SNOW.default_state.id,
+                BlockFlags::NOTIFY_ALL,
+            )
+            .await;
         }
     }
 
