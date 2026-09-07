@@ -817,6 +817,7 @@ impl DispenserBlock {
         let yaw = wrap_degrees(rng().random::<f32>() * 360.0) % 360.0;
         mob.get_entity().set_rotation(yaw, 0.0);
         apply_entity_variant(item, mob.as_ref());
+        crate::item::items::spawn_egg::apply_entity_data(item, mob.as_ref()).await;
 
         ctx.world.spawn_entity(mob).await;
 
@@ -1098,8 +1099,7 @@ impl DispenserBlock {
                 let center = match offset {
                     0 => candidate,
                     1 => candidate.offset(opposite.to_offset()),
-                    2 => candidate.offset(dir.to_offset()),
-                    _ => unreachable!(),
+                    _ => candidate.offset(dir.to_offset()),
                 };
                 let top_middle = center.down();
                 let base = top_middle.down();

@@ -8,9 +8,9 @@ use crate::entity::r#type::from_type;
 use crate::item::{ItemBehaviour, ItemMetadata};
 use crate::server::Server;
 use pumpkin_data::data_component_impl::{
-    AxolotlVariantImpl, CatVariantImpl, ChickenVariantImpl, CowVariantImpl, FoxVariantImpl,
-    FrogVariantImpl, HorseVariantImpl, LlamaVariantImpl, MooshroomVariantImpl, PigVariantImpl,
-    RabbitVariantImpl, SheepColorImpl, ShulkerColorImpl, TropicalFishBaseColorImpl,
+    AxolotlVariantImpl, CatVariantImpl, ChickenVariantImpl, CowVariantImpl, EntityDataImpl,
+    FoxVariantImpl, FrogVariantImpl, HorseVariantImpl, LlamaVariantImpl, MooshroomVariantImpl,
+    PigVariantImpl, RabbitVariantImpl, SheepColorImpl, ShulkerColorImpl, TropicalFishBaseColorImpl,
     TropicalFishPatternColorImpl, TropicalFishPatternImpl, VillagerVariantImpl, WolfVariantImpl,
 };
 use pumpkin_data::entity::entity_from_egg;
@@ -76,6 +76,21 @@ pub(crate) fn apply_entity_variant(item: &ItemStack, mob: &dyn EntityBase) {
     }
 }
 
+/// Applies custom `minecraft:entity_data` after the server creates the mob.
+/// Runtime identity and placement are server-owned and cannot be overridden by
+/// item NBT, which prevents duplicate UUIDs and cross-world teleports.
+pub(crate) async fn apply_entity_data(item: &ItemStack, mob: &dyn EntityBase) {
+    let Some(EntityDataImpl::Compound(data)) = item.get_data_component::<EntityDataImpl>() else {
+        return;
+    };
+
+    let mut safe_data = data.clone();
+    for key in ["Pos", "Motion", "Rotation", "UUID", "id"] {
+        safe_data.child_tags.remove(key);
+    }
+    mob.read_nbt_non_mut(&safe_data).await;
+}
+
 impl ItemBehaviour for SpawnEggItem {
     fn use_on_block<'a>(
         &'a self,
@@ -116,6 +131,7 @@ impl ItemBehaviour for SpawnEggItem {
                 mob.get_entity().set_rotation(yaw, 0.0);
 
                 apply_entity_variant(item, mob.as_ref());
+                apply_entity_data(item, mob.as_ref()).await;
 
                 // Broadcast the new mob to all players
                 world.spawn_entity(mob).await;

@@ -546,6 +546,7 @@ pub fn read_data(id: DataComponent, data: &NbtTag) -> Option<Box<dyn DataCompone
             Some(ChargedProjectilesImpl::read_data(data)?.to_dyn())
         }
         DataComponent::BlockEntityData => Some(BlockEntityDataImpl::read_data(data)?.to_dyn()),
+        DataComponent::EntityData => Some(EntityDataImpl::read_data(data)?.to_dyn()),
         DataComponent::BucketEntityData => Some(BucketEntityDataImpl::read_data(data)?.to_dyn()),
         DataComponent::BundleContents => Some(BundleContentsImpl::read_data(data)?.to_dyn()),
         DataComponent::Container => Some(ContainerImpl::read_data(data)?.to_dyn()),

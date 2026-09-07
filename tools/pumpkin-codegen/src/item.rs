@@ -770,7 +770,7 @@ impl ToTokens for ItemComponents {
             );
         }
         if self.entity_data.is_some() {
-            tokens.extend(quote! { (EntityData, &EntityDataImpl), });
+            tokens.extend(quote! { (EntityData, &EntityDataImpl::EMPTY), });
         }
         if let Some(fireworks) = &self.fireworks {
             let flight_duration = if let serde_json::Value::Object(map) = fireworks

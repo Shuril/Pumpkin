@@ -21,9 +21,36 @@ impl DataComponentImpl for BlockEntityDataImpl {
     default_impl!(BlockEntityData);
 }
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct EntityDataImpl;
+/// Custom NBT carried by an entity-data component.
+///
+/// The concrete entity type is already resolved from the spawn-egg item in
+/// Pumpkin. The empty variant is used by generated item definitions, while a
+/// compound stores custom data from an item-stack patch.
+#[derive(Clone, Debug, PartialEq)]
+pub enum EntityDataImpl {
+    Empty,
+    Compound(NbtCompound),
+}
+
+impl EntityDataImpl {
+    pub const EMPTY: Self = Self::Empty;
+
+    pub fn read_data(tag: &NbtTag) -> Option<Self> {
+        match tag {
+            NbtTag::Compound(compound) => Some(Self::Compound(compound.clone())),
+            _ => None,
+        }
+    }
+}
+
 impl DataComponentImpl for EntityDataImpl {
+    fn write_data(&self) -> NbtTag {
+        match self {
+            Self::Empty => NbtTag::Compound(NbtCompound::new()),
+            Self::Compound(compound) => NbtTag::Compound(compound.clone()),
+        }
+    }
+
     default_impl!(EntityData);
 }
 
@@ -77,6 +104,28 @@ mod bucket_entity_data_tests {
     #[test]
     fn bucket_entity_data_rejects_non_compound_payload() {
         assert!(BucketEntityDataImpl::read_data(&NbtTag::Int(1)).is_none());
+    }
+}
+
+#[cfg(test)]
+mod entity_data_tests {
+    use super::*;
+
+    #[test]
+    fn entity_data_round_trips_custom_nbt() {
+        let mut nbt = NbtCompound::new();
+        nbt.put_byte("NoAI", 1);
+        nbt.put_string("CustomName", "test".to_string());
+        let value = EntityDataImpl::Compound(nbt.clone());
+        let restored = EntityDataImpl::read_data(&value.write_data())
+            .expect("compound entity data must decode");
+        assert_eq!(restored, value);
+        assert_eq!(restored.write_data(), NbtTag::Compound(nbt));
+    }
+
+    #[test]
+    fn entity_data_rejects_non_compound_payload() {
+        assert!(EntityDataImpl::read_data(&NbtTag::Int(1)).is_none());
     }
 }
 
