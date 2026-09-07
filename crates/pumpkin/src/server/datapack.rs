@@ -161,9 +161,9 @@ impl TagSnapshot {
             for value in &definition.values {
                 match value {
                     TagValue::Element { id, .. } => {
-                        if !is_known_vanilla_element(registry, id) {
-                            result.insert(id.clone());
-                        } else if known_element_exists(registry, id) {
+                        if !is_known_vanilla_element(registry, id)
+                            || known_element_exists(registry, id)
+                        {
                             result.insert(id.clone());
                         }
                     }
@@ -231,9 +231,7 @@ impl DataPackLoader {
             })?;
             let path = entry.path();
             let name = entry.file_name().to_string_lossy().into_owned();
-            if path.is_dir() {
-                available.insert(name, path);
-            } else if path.extension().is_some_and(|extension| extension == "zip") {
+            if path.is_dir() || path.extension().is_some_and(|extension| extension == "zip") {
                 available.insert(name, path);
             }
         }
@@ -1632,7 +1630,7 @@ fn function_id_from_path(path: &Path) -> Result<String, DataPackError> {
     let mut name = resource_parts.to_vec();
     let last_index = name.len() - 1;
     name[last_index] = last.trim_end_matches(".mcfunction").to_owned();
-    Identifier::new(components[namespace_index].to_owned(), name.join("/"))
+    Identifier::new(components[namespace_index].clone(), name.join("/"))
         .map(|identifier| identifier.to_string())
         .map_err(|error| invalid_function(path, error.to_string()))
 }

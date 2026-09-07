@@ -133,7 +133,7 @@ impl CommandExecutor for SetExecutor {
                                     ))
                                     .await;
                             }
-                            _ => unreachable!(),
+                            _ => {}
                         }
                     }
                 }

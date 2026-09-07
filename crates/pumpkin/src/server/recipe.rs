@@ -166,7 +166,7 @@ impl RecipeManager {
     /// cannot unlock a recipe that no longer exists.
     pub async fn valid_recipe_ids(&self) -> HashSet<String> {
         let mut ids = Self::built_in_recipe_ids();
-        for recipe in self.runtime.read().await.dynamic_recipes.iter() {
+        for recipe in &self.runtime.read().await.dynamic_recipes {
             ids.insert(recipe_id(recipe));
         }
         ids

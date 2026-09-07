@@ -41,17 +41,15 @@ pub const fn retrieval_damage(
     has_catch: bool,
     on_ground: bool,
 ) -> i32 {
-    let mut damage = if hooked {
+    if on_ground {
+        2
+    } else if hooked {
         if hooked_item_entity { 3 } else { 5 }
     } else if has_catch {
         1
     } else {
         0
-    };
-    if on_ground {
-        damage = 2;
     }
-    damage
 }
 
 impl FishingBobberEntity {

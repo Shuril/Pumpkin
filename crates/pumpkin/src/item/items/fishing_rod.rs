@@ -83,7 +83,7 @@ impl ItemBehaviour for FishingRodItem {
 
     fn normal_use_with_hand<'a>(
         &'a self,
-        _item: &'a Item,
+        item: &'a Item,
         player: &'a Player,
         hand: pumpkin_util::Hand,
     ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
@@ -91,7 +91,7 @@ impl ItemBehaviour for FishingRodItem {
             let world = player.world();
             let bobber_id = player.fishing_bobber.load(Ordering::Relaxed);
             if bobber_id == -1 {
-                self.normal_use(_item, player).await;
+                self.normal_use(item, player).await;
                 return;
             }
 

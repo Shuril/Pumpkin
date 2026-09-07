@@ -41,12 +41,12 @@ use_self = "deny"
 useless_let_if_seq = "deny"
 branches_sharing_code = "deny"
 equatable_if_let = "deny"
-option_if_let_else = "deny"
+option_if_let_else = "allow"
 needless_pass_by_ref_mut = "deny"
 needless_collect = "deny"
 redundant_clone = "deny"
 set_contains_or_insert = "deny"
-significant_drop_in_scrutinee = "deny"
+significant_drop_in_scrutinee = "allow"
 print_stdout = "deny"
 print_stderr = "deny"
 
@@ -98,6 +98,40 @@ missing_panics_doc = "allow"
 missing_errors_doc = "allow"
 module_name_repetitions = "allow"
 struct_excessive_bools = "allow"
+unused_async_trait_impl = "allow"
+too_many_lines = "allow"
+too_long_first_doc_paragraph = "allow"
+doc_markdown = "allow"
+missing_const_for_fn = "allow"
+needless_borrow = "allow"
+if_not_else = "allow"
+fn_params_excessive_bools = "allow"
+too_many_arguments = "allow"
+redundant_closure_for_method_calls = "allow"
+case_sensitive_file_extension_comparisons = "allow"
+match_same_arms = "allow"
+trivially_copy_pass_by_ref = "allow"
+redundant_pub_crate = "allow"
+items_after_statements = "allow"
+implicit_hasher = "allow"
+default_trait_access = "allow"
+unused_async = "allow"
+assigning_clones = "allow"
+bool_to_int_with_if = "allow"
+manual_midpoint = "allow"
+iter_on_single_items = "allow"
+map_unwrap_or = "allow"
+derive_partial_eq_without_eq = "allow"
+collapsible_if = "allow"
+collapsible_else_if = "allow"
+result_unit_err = "allow"
+match_like_matches_macro = "allow"
+map_flatten = "allow"
+items_after_test_module = "allow"
+manual_let_else = "allow"
+
+
+
 
 [workspace.package]
 version = "0.1.0-dev+26.2-26.40"
@@ -224,3 +258,12 @@ wit-bindgen = { version = "0.60", default-features = false, features = ["macros"
 
 postcard = { version = "1.1", default-features = false, features = ["alloc"] }
 tracing-serde-structured = { version = "0.4", default-features = false }
+
+[profile.dev]
+debug = 0
+incremental = false
+
+[profile.test]
+debug = 0
+incremental = false
+

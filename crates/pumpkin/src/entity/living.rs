@@ -2130,11 +2130,9 @@ impl LivingEntity {
 
         for (effect_type, promoted) in effects_to_promote {
             self.remove_effect_internal(effect_type, false).await;
+            self.hidden_effects.lock().await.remove(&effect_type);
             if let Some(promoted) = promoted {
-                self.hidden_effects.lock().await.remove(&effect_type);
                 self.add_effect(promoted).await;
-            } else {
-                self.hidden_effects.lock().await.remove(&effect_type);
             }
         }
 

@@ -1555,7 +1555,7 @@ impl World {
         let tick_data = self.level.get_tick_data_with_random_tick_speed_seeded(
             &active_chunks,
             random_tick_speed,
-            self.level.seed.0 as u64,
+            self.level.seed.0,
             world_age,
         );
 
@@ -5301,7 +5301,7 @@ impl World {
     /// Moves a non-player entity between dimensions without marking it as
     /// removed. A world-pointer-only teleport leaves a stale copy in the
     /// source world's entity list and the destination never ticks the entity.
-    pub async fn transfer_entity_to(&self, entity_uuid: Uuid, destination: &Arc<World>) {
+    pub async fn transfer_entity_to(&self, entity_uuid: Uuid, destination: &Arc<Self>) {
         if std::ptr::eq(self, destination.as_ref()) {
             return;
         }
@@ -6288,7 +6288,7 @@ impl World {
                 return;
             }
             queue.push_back((*block_pos, except));
-        }
+        };
 
         // A callback may call `update_neighbors` again.  It only appends to
         // the queue; the worker below drains it after finishing the current
@@ -6389,7 +6389,7 @@ impl World {
                 return;
             }
             queue.push_back((*block_pos, flags));
-        }
+        };
 
         if self
             .shape_updates_running

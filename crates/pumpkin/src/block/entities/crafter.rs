@@ -50,7 +50,7 @@ impl BlockEntity for CrafterBlockEntity {
     {
         let mut items = from_fn(|_| ItemStack::EMPTY.clone());
         pumpkin_world::inventory::sync_read_items_from_nbt(nbt, &mut items);
-        let crafter = Self {
+        Self {
             position,
             items: tokio::sync::RwLock::new(items),
             crafting_ticks_remaining: AtomicI32::new(
@@ -59,9 +59,7 @@ impl BlockEntity for CrafterBlockEntity {
             disabled_slots: std::sync::atomic::AtomicU16::new(Self::read_disabled_slots(nbt)),
             triggered: AtomicBool::new(nbt.get_bool("triggered").unwrap_or(false)),
             dirty: AtomicBool::new(false),
-        };
-
-        crafter
+        }
     }
 
     fn resource_location(&self) -> &'static str {

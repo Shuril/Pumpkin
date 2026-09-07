@@ -781,7 +781,7 @@ pub fn spawn_category_for_position(
     category: &'static MobCategory,
     world: &Arc<World>,
     pos: BlockPos,
-    _chunk_pos: &Vector2<i32>,
+    chunk_pos: &Vector2<i32>,
     spawn_state: &SpawnState,
     is_thundering: bool,
     random: &mut RandomGenerator,
@@ -836,7 +836,7 @@ pub fn spawn_category_for_position(
                 world,
                 &new_pos,
                 player_distance,
-                Some(*_chunk_pos),
+                Some(*chunk_pos),
             ) {
                 inc += 1;
                 continue;

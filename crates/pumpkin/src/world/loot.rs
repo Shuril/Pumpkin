@@ -1004,7 +1004,11 @@ fn weighted_fishing_item<'a>(rng: &mut Xoroshiro, entries: &[(&'a Item, i32)]) -
             return item;
         }
     }
-    entries.last().expect("fishing pool is non-empty").0
+    if let Some((item, _)) = entries.last() {
+        item
+    } else {
+        &Item::AIR
+    }
 }
 
 /// The nested `gameplay/fishing/fish` table is also referenced by guardian

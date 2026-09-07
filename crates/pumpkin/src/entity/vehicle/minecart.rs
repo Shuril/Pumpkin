@@ -316,7 +316,7 @@ impl MinecartEntity {
             MinecartKind::Rideable(_) | MinecartKind::Command(_) | MinecartKind::Spawner(_) => {
                 Some(&Item::MINECART)
             }
-            _ => None,
+            MinecartKind::Other => None,
         }
     }
 }

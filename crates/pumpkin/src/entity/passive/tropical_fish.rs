@@ -63,7 +63,7 @@ impl TropicalFishEntity {
         let base_id = dye_color_id(base_color);
         let pattern_color_id = dye_color_id(pattern_color);
         self.variant.store(
-            (pattern_id | (base_id << 16) | (pattern_color_id << 24)) as i32,
+            pattern_id | (base_id << 16) | (pattern_color_id << 24),
             Ordering::Relaxed,
         );
     }
@@ -108,12 +108,12 @@ impl Mob for TropicalFishEntity {
 
 fn tropical_pattern_id(value: &str) -> i32 {
     match value.strip_prefix("minecraft:").unwrap_or(value) {
-        "sunstreak" => 1 | (0 << 8),
-        "snooper" => 2 | (0 << 8),
-        "dasher" => 3 | (0 << 8),
-        "brinely" => 4 | (0 << 8),
-        "spotty" => 5 | (0 << 8),
-        "flopper" => 0 | (1 << 8),
+        "sunstreak" => 1,
+        "snooper" => 2,
+        "dasher" => 3,
+        "brinely" => 4,
+        "spotty" => 5,
+        "flopper" => 1 << 8,
         "stripey" => 1 | (1 << 8),
         "glitter" => 2 | (1 << 8),
         "blockfish" => 3 | (1 << 8),

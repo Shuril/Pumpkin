@@ -239,11 +239,11 @@ impl BeehiveBlockEntity {
         let front = self
             .position
             .offset(facing.to_block_direction().to_offset());
-        let front_blocked = !world
+        let front_blocked = world
             .get_block_state(&front)
             .get_block_collision_shapes()
             .next()
-            .is_none();
+            .is_some();
         if front_blocked && !emergency {
             return false;
         }
