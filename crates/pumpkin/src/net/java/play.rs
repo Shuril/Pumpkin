@@ -2540,7 +2540,15 @@ impl JavaClient {
                 )
                 .await;
             if result.consumes_action() {
-                // TODO: Trigger ANY_BLOCK_USE Criteria
+                player
+                    .trigger_advancement(
+                        crate::entity::player::advancement::trigger::AdvancementTrigger::AnyBlockUse {
+                            block_id: format!("minecraft:{}", block.name),
+                            item_id: (!item.is_empty()).then(|| format!("minecraft:{}", item.item.registry_key)),
+                            location: position,
+                        },
+                    )
+                    .await;
 
                 if matches!(result, BlockActionResult::SuccessServer) {
                     player.swing_hand(hand, true).await;
@@ -2601,9 +2609,31 @@ impl JavaClient {
             );
         }
 
-        if !after.are_equal(&before) {
+        let item_changed = !after.are_equal(&before);
+        if item_changed {
             player.sync_hand_slot(slot_index, after.clone()).await;
             inventory.set_stack_in_hand(hand, after).await;
+        }
+
+        if item_changed || should_try_decrement {
+            player
+                .trigger_advancement(
+                    crate::entity::player::advancement::trigger::AdvancementTrigger::ItemUsedOnBlock {
+                        block_id: format!("minecraft:{}", block.name),
+                        item_id: format!("minecraft:{}", before.item.registry_key),
+                        location: position,
+                    },
+                )
+                .await;
+            player
+                .trigger_advancement(
+                    crate::entity::player::advancement::trigger::AdvancementTrigger::AnyBlockUse {
+                        block_id: format!("minecraft:{}", block.name),
+                        item_id: Some(format!("minecraft:{}", before.item.registry_key)),
+                        location: position,
+                    },
+                )
+                .await;
         }
 
         Ok(())
@@ -2637,7 +2667,15 @@ impl JavaClient {
             .await;
 
         if result.consumes_action() {
-            // TODO: Trigger ITEM_USED_ON_BLOCK Criteria
+            player
+                .trigger_advancement(
+                    crate::entity::player::advancement::trigger::AdvancementTrigger::ItemUsedOnBlock {
+                        block_id: format!("minecraft:{}", block.name),
+                        item_id: format!("minecraft:{}", held_item.item.registry_key),
+                        location: *position,
+                    },
+                )
+                .await;
             return result;
         }
 
@@ -2655,7 +2693,14 @@ impl JavaClient {
                 .await;
 
             if result.consumes_action() {
-                // TODO: Trigger DEFAULT_BLOCK_USE Criteria
+                player
+                    .trigger_advancement(
+                        crate::entity::player::advancement::trigger::AdvancementTrigger::DefaultBlockUse {
+                            block_id: format!("minecraft:{}", block.name),
+                            location: *position,
+                        },
+                    )
+                    .await;
                 return result;
             }
         }

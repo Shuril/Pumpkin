@@ -61,6 +61,9 @@ impl DaylightDetectorBlockEntity {
 
     pub async fn update_power(world: &Arc<World>, block_pos: &BlockPos) {
         let (block, state) = world.get_block_and_state(block_pos);
+        if block != &pumpkin_data::Block::DAYLIGHT_DETECTOR {
+            return;
+        }
         let mut props = DaylightDetectorProperties::from_state_id(state.id, block);
 
         let inverted = props.inverted;
@@ -79,6 +82,11 @@ impl DaylightDetectorBlockEntity {
                 .await;
         }
     }
+
+    #[must_use]
+    pub fn calculate_power(sky_brightness: u8, time: i64, inverted: bool) -> u8 {
+        signal_strength(sky_brightness, time, inverted)
+    }
 }
 
 /// Vanilla's `EnvironmentAttributes.SUN_ANGLE` track uses a symmetric cubic
@@ -86,7 +94,8 @@ impl DaylightDetectorBlockEntity {
 /// The duplicate keyframe at tick 6000 makes the angle wrap from 360 to 0 at
 /// noon; the two segments below reproduce that wrap without a discontinuity at
 /// midnight.
-fn sun_angle_radians(time: i64) -> f32 {
+#[must_use]
+pub fn sun_angle_radians(time: i64) -> f32 {
     use std::f32::consts::PI;
 
     let tick = time.rem_euclid(24_000) as f32;
@@ -148,7 +157,8 @@ fn symmetric_cubic_bezier(x: f32) -> f32 {
     curve(Y1, Y2, t)
 }
 
-fn signal_strength(sky_brightness: u8, time: i64, inverted: bool) -> u8 {
+#[must_use]
+pub fn signal_strength(sky_brightness: u8, time: i64, inverted: bool) -> u8 {
     use std::f32::consts::PI;
 
     let mut target = i32::from(sky_brightness);
@@ -183,5 +193,98 @@ mod tests {
         assert_eq!(signal_strength(15, 18_000, false), 0);
         assert_eq!(signal_strength(15, 6_000, true), 0);
         assert_eq!(signal_strength(0, 12_000, false), 0);
+    }
+
+    #[test]
+    fn daylight_detector_outputs_under_clear_rain_and_thunder() {
+        use crate::world::effective_sky_brightness_for_time_and_weather;
+
+        const NOON: i64 = 6_000;
+        const MIDNIGHT: i64 = 18_000;
+        const MAX_SKY_LIGHT: u8 = 15;
+
+        // --- NOON ---
+        // 1. Clear: sky_darken = 0 -> effective sky brightness = 15
+        let clear_noon_brightness =
+            effective_sky_brightness_for_time_and_weather(MAX_SKY_LIGHT, NOON, 0.0, 0.0);
+        assert_eq!(clear_noon_brightness, 15);
+        assert_eq!(signal_strength(clear_noon_brightness, NOON, false), 15);
+        assert_eq!(signal_strength(clear_noon_brightness, NOON, true), 0);
+
+        // 2. Rain: sky_darken = 3 -> effective sky brightness = 12
+        let rain_noon_brightness =
+            effective_sky_brightness_for_time_and_weather(MAX_SKY_LIGHT, NOON, 1.0, 0.0);
+        assert_eq!(rain_noon_brightness, 12);
+        assert_eq!(signal_strength(rain_noon_brightness, NOON, false), 12);
+        assert_eq!(signal_strength(rain_noon_brightness, NOON, true), 3);
+
+        // 3. Thunder: sky_darken = 5 -> effective sky brightness = 10
+        let thunder_noon_brightness =
+            effective_sky_brightness_for_time_and_weather(MAX_SKY_LIGHT, NOON, 1.0, 1.0);
+        assert_eq!(thunder_noon_brightness, 10);
+        assert_eq!(signal_strength(thunder_noon_brightness, NOON, false), 10);
+        assert_eq!(signal_strength(thunder_noon_brightness, NOON, true), 5);
+
+        // --- MIDNIGHT ---
+        // 1. Clear: sky_darken = 11 -> effective sky brightness = 4
+        let clear_midnight_brightness =
+            effective_sky_brightness_for_time_and_weather(MAX_SKY_LIGHT, MIDNIGHT, 0.0, 0.0);
+        assert_eq!(clear_midnight_brightness, 4);
+        assert_eq!(
+            signal_strength(clear_midnight_brightness, MIDNIGHT, false),
+            0
+        );
+        assert_eq!(
+            signal_strength(clear_midnight_brightness, MIDNIGHT, true),
+            11
+        );
+
+        // 2. Rain: base is 4.0, rain doesn't darken further -> sky_darken = 11, effective = 4
+        let rain_midnight_brightness =
+            effective_sky_brightness_for_time_and_weather(MAX_SKY_LIGHT, MIDNIGHT, 1.0, 0.0);
+        assert_eq!(rain_midnight_brightness, 4);
+        assert_eq!(
+            signal_strength(rain_midnight_brightness, MIDNIGHT, false),
+            0
+        );
+        assert_eq!(
+            signal_strength(rain_midnight_brightness, MIDNIGHT, true),
+            11
+        );
+
+        // 3. Thunder: sky_darken = 11, effective = 4
+        let thunder_midnight_brightness =
+            effective_sky_brightness_for_time_and_weather(MAX_SKY_LIGHT, MIDNIGHT, 1.0, 1.0);
+        assert_eq!(thunder_midnight_brightness, 4);
+        assert_eq!(
+            signal_strength(thunder_midnight_brightness, MIDNIGHT, false),
+            0
+        );
+        assert_eq!(
+            signal_strength(thunder_midnight_brightness, MIDNIGHT, true),
+            11
+        );
+    }
+
+    #[test]
+    fn daylight_detector_outputs_under_weather_transitions() {
+        use crate::world::effective_sky_brightness_for_time_and_weather;
+
+        const NOON: i64 = 6_000;
+        const MAX_SKY_LIGHT: u8 = 15;
+
+        // 50% rain transition at noon
+        let partial_rain_brightness =
+            effective_sky_brightness_for_time_and_weather(MAX_SKY_LIGHT, NOON, 0.5, 0.0);
+        assert_eq!(partial_rain_brightness, 14);
+        assert_eq!(signal_strength(partial_rain_brightness, NOON, false), 14);
+        assert_eq!(signal_strength(partial_rain_brightness, NOON, true), 1);
+
+        // Completely occluded / covered detector (sky light = 0)
+        let occluded_noon_brightness =
+            effective_sky_brightness_for_time_and_weather(0, NOON, 0.0, 0.0);
+        assert_eq!(occluded_noon_brightness, 0);
+        assert_eq!(signal_strength(occluded_noon_brightness, NOON, false), 0);
+        assert_eq!(signal_strength(occluded_noon_brightness, NOON, true), 15);
     }
 }

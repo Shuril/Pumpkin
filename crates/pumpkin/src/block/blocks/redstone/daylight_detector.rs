@@ -8,9 +8,10 @@ use pumpkin_world::world::BlockFlags;
 
 use crate::block::{
     BlockActionResult, BlockBehaviour, BlockFuture, BrokenArgs, EmitsRedstonePowerArgs,
-    GetRedstonePowerArgs, NormalUseArgs, PlacedArgs,
+    GetRedstonePowerArgs, NormalUseArgs, OnScheduledTickArgs, PlacedArgs, RandomTickArgs,
 };
 use crate::world::World;
+use crate::world::game_event::GameEventKind;
 
 type DaylightDetectorProperties = pumpkin_data::block_properties::DaylightDetectorLikeProperties;
 
@@ -22,6 +23,9 @@ impl BlockBehaviour for DaylightDetectorBlock {
         Box::pin(async move {
             args.world
                 .add_block_entity(Arc::new(DaylightDetectorBlockEntity::new(*args.position)));
+            if args.world.dimension.has_skylight {
+                DaylightDetectorBlockEntity::update_power(args.world, args.position).await;
+            }
         })
     }
 
@@ -38,10 +42,17 @@ impl BlockBehaviour for DaylightDetectorBlock {
                 return BlockActionResult::Pass;
             }
 
-            let state = args.world.get_block_state(args.position);
-            let props = DaylightDetectorProperties::from_state_id(state.id, args.block);
+            let (block, state) = args.world.get_block_and_state(args.position);
+            if block != &Block::DAYLIGHT_DETECTOR {
+                return BlockActionResult::Pass;
+            }
+            let props = DaylightDetectorProperties::from_state_id(state.id, block);
 
-            self.update_inverted(props, args.world, args.position, args.block)
+            self.update_inverted(props, args.world, args.position, block)
+                .await;
+
+            args.world
+                .emit_game_event(*args.position, GameEventKind::BlockChange)
                 .await;
 
             DaylightDetectorBlockEntity::update_power(args.world, args.position).await;
@@ -66,6 +77,22 @@ impl BlockBehaviour for DaylightDetectorBlock {
         _args: EmitsRedstonePowerArgs<'a>,
     ) -> BlockFuture<'a, bool> {
         Box::pin(async move { true })
+    }
+
+    fn random_tick<'a>(&'a self, args: RandomTickArgs<'a>) -> BlockFuture<'a, ()> {
+        Box::pin(async move {
+            if args.world.dimension.has_skylight {
+                DaylightDetectorBlockEntity::update_power(args.world, args.position).await;
+            }
+        })
+    }
+
+    fn on_scheduled_tick<'a>(&'a self, args: OnScheduledTickArgs<'a>) -> BlockFuture<'a, ()> {
+        Box::pin(async move {
+            if args.world.dimension.has_skylight {
+                DaylightDetectorBlockEntity::update_power(args.world, args.position).await;
+            }
+        })
     }
 }
 

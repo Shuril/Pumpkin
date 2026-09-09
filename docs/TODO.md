@@ -10,8 +10,10 @@
   insertion/ejection, cooldown, comparator output, NBT и client updates уже
   реализованы. Component-bearing datapack results и player-facing recipe
   remainders теперь сохраняются/возвращаются. Ejection учитывает face-aware
-  `WorldlyContainer` insertion и merge vetoes; остаются точный порядок hopper
-  операций, advancement hooks и специальные vanilla recipe handlers.
+  `WorldlyContainer` insertion и merge vetoes; advancement hook
+  (`adventure/crafters_crafting_crafters`) и criteria dispatching
+  для игроков в радиусе 17 блоков подключены; остаются точный порядок hopper
+  операций и специальные vanilla recipe handlers.
   Reference: `Minecraft/decompiled_src/sources/
   net/minecraft/world/level/block/CrafterBlock.java` и
   `.../block/entity/CrafterBlockEntity.java`.

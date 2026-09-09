@@ -2104,6 +2104,13 @@ impl World {
         let mut level_time = self.level_time.lock().await;
         level_time.set_time(time);
         level_time.send_time(self).await;
+        if self.dimension == Dimension::OVERWORLD {
+            self.level_info.rcu(|info| {
+                let mut updated = (**info).clone();
+                updated.day_time = time;
+                updated
+            });
+        }
     }
 
     pub async fn is_raining(&self) -> bool {
@@ -5702,11 +5709,13 @@ impl World {
             return 15;
         }
         let day_time = self.level_info.load().day_time;
-        let base = sky_light_level_for_time(day_time);
-        let level = self.weather.try_lock().map_or(base, |weather| {
-            sky_light_level_with_weather(base, weather.rain_level, weather.thunder_level)
+        let (rain_level, thunder_level) = self.weather.try_lock().map_or((0.0, 0.0), |weather| {
+            (
+                weather.rain_level,
+                weather.thunder_level * weather.rain_level,
+            )
         });
-        (15.0 - level).floor().clamp(0.0, 15.0) as u8
+        sky_darken_for_time_and_weather(day_time, rain_level, thunder_level)
     }
 
     /// Sky brightness used by daylight detectors and spawn checks. This is
@@ -7186,11 +7195,32 @@ impl World {
     }
 }
 
+#[must_use]
+pub fn sky_darken_for_time_and_weather(time: i64, rain_level: f32, thunder_level: f32) -> u8 {
+    let base = sky_light_level_for_time(time);
+    let level = sky_light_level_with_weather(base, rain_level, thunder_level);
+    (15.0 - level).floor().clamp(0.0, 15.0) as u8
+}
+
+#[must_use]
+pub fn effective_sky_brightness_for_time_and_weather(
+    sky_light: u8,
+    time: i64,
+    rain_level: f32,
+    thunder_level: f32,
+) -> u8 {
+    sky_light.saturating_sub(sky_darken_for_time_and_weather(
+        time,
+        rain_level,
+        thunder_level,
+    ))
+}
+
 /// Vanilla `Level#getSkyDarken` for the overworld day timeline.  The 26.2
 /// data uses keyframes at 11867/13670 and 22330/24133 (the latter is 133 ticks
 /// into the next period).  Linear interpolation is the timeline's default
 /// easing; Java then truncates `(15 - sky_light_level)` to an integer.
-fn sky_light_level_for_time(time: i64) -> f32 {
+pub(crate) fn sky_light_level_for_time(time: i64) -> f32 {
     let tick = time.rem_euclid(24_000);
     let tick = if tick < 133 { tick + 24_000 } else { tick };
     if tick < 11_867 {
@@ -7208,7 +7238,7 @@ fn sky_light_level_for_time(time: i64) -> f32 {
 /// light attribute.  Rain is applied first using alpha `0.3125`, followed by
 /// thunder using alpha `0.52734375`; thunder's level is removed from rain so
 /// the two transitions do not double-count their overlap.
-fn sky_light_level_with_weather(base: f32, rain_level: f32, thunder_level: f32) -> f32 {
+pub(crate) fn sky_light_level_with_weather(base: f32, rain_level: f32, thunder_level: f32) -> f32 {
     let rain_only = (rain_level - thunder_level).max(0.0);
     let mut level = base + (4.0 - base) * (rain_only * 0.3125).clamp(0.0, 1.0);
     level += (4.0 - level) * (thunder_level * 0.52734375).clamp(0.0, 1.0);

@@ -22,6 +22,7 @@ use pumpkin_inventory::screen_handler::{
     BoxFuture, InventoryPlayer, ScreenHandlerFactory, SharedScreenHandler,
 };
 use pumpkin_macros::pumpkin_block;
+use pumpkin_util::math::boundingbox::BoundingBox;
 use pumpkin_util::math::position::BlockPos;
 use pumpkin_util::math::vector3::Vector3;
 use pumpkin_util::text::TextComponent;
@@ -180,7 +181,7 @@ impl BlockBehaviour for CrafterBlock {
             };
 
             let output_position = Self::output_position(args.position, props.orientation);
-            if let Some(stacks) = result {
+            if let Some(craft_result) = result {
                 // Java enters the visible crafting state only after a recipe
                 // was selected; failed redstone pulses never set CRAFTING.
                 props.crafting = true;
@@ -191,7 +192,7 @@ impl BlockBehaviour for CrafterBlock {
                         BlockFlags::NOTIFY_LISTENERS,
                     )
                     .await;
-                for mut stack in stacks {
+                for mut stack in craft_result.items {
                     if let Some(entity) = args.world.get_block_entity(&output_position)
                         && let Some(inventory) = entity.get_inventory()
                     {
@@ -210,6 +211,31 @@ impl BlockBehaviour for CrafterBlock {
                         args.world.drop_stack(&output_position, stack).await;
                     }
                 }
+
+                let center = args.position.to_centered_f64();
+                let half_size = 17.0 / 2.0;
+                let aabb = BoundingBox::new(
+                    Vector3::new(
+                        center.x - half_size,
+                        center.y - half_size,
+                        center.z - half_size,
+                    ),
+                    Vector3::new(
+                        center.x + half_size,
+                        center.y + half_size,
+                        center.z + half_size,
+                    ),
+                );
+                for player in args.world.get_players_at_box(&aabb) {
+                    player
+                        .trigger_advancement(
+                            crate::entity::player::advancement::trigger::AdvancementTrigger::CrafterRecipeCrafted {
+                                recipe_id: craft_result.recipe_id.clone(),
+                            },
+                        )
+                        .await;
+                }
+
                 args.world.play_sound(
                     Sound::BlockCrafterCraft,
                     pumpkin_data::sound::SoundCategory::Blocks,

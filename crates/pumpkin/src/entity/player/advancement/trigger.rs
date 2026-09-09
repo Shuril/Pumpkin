@@ -1,26 +1,59 @@
+use pumpkin_util::math::position::BlockPos;
+
 use crate::entity::player::Player;
 
 #[derive(Debug, Clone)]
 pub enum AdvancementTrigger {
     InventoryChanged,
-    PlayerKilledEntity { entity_type_resource: String },
-    EnterBlock { block_id: String },
-    PlacedBlock { block_id: String },
-    ConsumeItem { item_id: String },
+    PlayerKilledEntity {
+        entity_type_resource: String,
+    },
+    EnterBlock {
+        block_id: String,
+    },
+    PlacedBlock {
+        block_id: String,
+    },
+    ConsumeItem {
+        item_id: String,
+    },
     SleptInBed,
-    FishedItem { item_id: String },
-    EnterDimension { dimension: String },
+    FishedItem {
+        item_id: String,
+    },
+    EnterDimension {
+        dimension: String,
+    },
     PlayerKilled,
     DeflectedDamage,
     LaunchedEyeOfEnder,
     GlowedSign,
-    BredAnimal { parent_type: String },
+    BredAnimal {
+        parent_type: String,
+    },
     DealtOverkillDamage,
     SniperDuel,
     TwoBirdsOneArrow,
     Arbalistic,
     Bullseye,
     CuredZombieVillager,
+    AnyBlockUse {
+        block_id: String,
+        item_id: Option<String>,
+        location: BlockPos,
+    },
+    ItemUsedOnBlock {
+        block_id: String,
+        item_id: String,
+        location: BlockPos,
+    },
+    DefaultBlockUse {
+        block_id: String,
+        location: BlockPos,
+    },
+    CrafterRecipeCrafted {
+        recipe_id: String,
+    },
 }
 
 impl Player {
@@ -738,6 +771,190 @@ impl Player {
                     .await;
                 }
             }
+            AdvancementTrigger::CrafterRecipeCrafted { recipe_id } => {
+                let normalized = recipe_id.strip_prefix("minecraft:").unwrap_or(&recipe_id);
+                if normalized == "crafter"
+                    && !self
+                        .has_advancement(Advancement::ADVENTURE_CRAFTERS_CRAFTING_CRAFTERS)
+                        .await
+                {
+                    self.trigger_advancement_criterion(
+                        Advancement::ADVENTURE_CRAFTERS_CRAFTING_CRAFTERS,
+                        "crafter_crafted_crafter",
+                    )
+                    .await;
+                }
+            }
+            AdvancementTrigger::ItemUsedOnBlock {
+                block_id,
+                item_id,
+                location: _,
+            } => {
+                let item_norm = item_id.strip_prefix("minecraft:").unwrap_or(&item_id);
+                let block_norm = block_id.strip_prefix("minecraft:").unwrap_or(&block_id);
+
+                if item_norm == "honeycomb"
+                    && !self.has_advancement(Advancement::HUSBANDRY_WAX_ON).await
+                {
+                    self.trigger_advancement_criterion(Advancement::HUSBANDRY_WAX_ON, "wax_on")
+                        .await;
+                }
+
+                if item_norm.ends_with("_axe")
+                    && block_norm.contains("waxed")
+                    && !self.has_advancement(Advancement::HUSBANDRY_WAX_OFF).await
+                {
+                    self.trigger_advancement_criterion(Advancement::HUSBANDRY_WAX_OFF, "wax_off")
+                        .await;
+                }
+
+                if item_norm == "glow_ink_sac"
+                    && block_norm.ends_with("_sign")
+                    && !self
+                        .has_advancement(Advancement::HUSBANDRY_MAKE_A_SIGN_GLOW)
+                        .await
+                {
+                    self.trigger_advancement_criterion(
+                        Advancement::HUSBANDRY_MAKE_A_SIGN_GLOW,
+                        "make_a_sign_glow",
+                    )
+                    .await;
+                }
+
+                if item_norm == "glowstone"
+                    && block_norm == "respawn_anchor"
+                    && !self
+                        .has_advancement(Advancement::NETHER_CHARGE_RESPAWN_ANCHOR)
+                        .await
+                {
+                    self.trigger_advancement_criterion(
+                        Advancement::NETHER_CHARGE_RESPAWN_ANCHOR,
+                        "charge_respawn_anchor",
+                    )
+                    .await;
+                }
+
+                if item_norm == "compass"
+                    && block_norm == "lodestone"
+                    && !self
+                        .has_advancement(Advancement::ADVENTURE_USE_LODESTONE)
+                        .await
+                {
+                    self.trigger_advancement_criterion(
+                        Advancement::ADVENTURE_USE_LODESTONE,
+                        "use_lodestone",
+                    )
+                    .await;
+                }
+
+                if item_norm == "trial_key"
+                    && block_norm == "vault"
+                    && !self
+                        .has_advancement(Advancement::ADVENTURE_UNDER_LOCK_AND_KEY)
+                        .await
+                {
+                    self.trigger_advancement_criterion(
+                        Advancement::ADVENTURE_UNDER_LOCK_AND_KEY,
+                        "under_lock_and_key",
+                    )
+                    .await;
+                }
+
+                if item_norm == "ominous_trial_key"
+                    && block_norm == "vault"
+                    && !self
+                        .has_advancement(Advancement::ADVENTURE_REVAULTING)
+                        .await
+                {
+                    self.trigger_advancement_criterion(
+                        Advancement::ADVENTURE_REVAULTING,
+                        "revaulting",
+                    )
+                    .await;
+                }
+
+                if item_norm.ends_with("_axe")
+                    && block_norm.contains("copper_bulb")
+                    && !self
+                        .has_advancement(Advancement::ADVENTURE_LIGHTEN_UP)
+                        .await
+                {
+                    self.trigger_advancement_criterion(
+                        Advancement::ADVENTURE_LIGHTEN_UP,
+                        "lighten_up",
+                    )
+                    .await;
+                }
+
+                if item_norm == "glass_bottle"
+                    && (block_norm == "beehive" || block_norm == "bee_nest")
+                    && !self
+                        .has_advancement(Advancement::HUSBANDRY_SAFELY_HARVEST_HONEY)
+                        .await
+                {
+                    self.trigger_advancement_criterion(
+                        Advancement::HUSBANDRY_SAFELY_HARVEST_HONEY,
+                        "safely_harvest_honey",
+                    )
+                    .await;
+                }
+
+                if item_norm.contains("music_disc")
+                    && block_norm == "jukebox"
+                    && !self
+                        .has_advancement(Advancement::ADVENTURE_PLAY_JUKEBOX_IN_MEADOWS)
+                        .await
+                {
+                    self.trigger_advancement_criterion(
+                        Advancement::ADVENTURE_PLAY_JUKEBOX_IN_MEADOWS,
+                        "play_jukebox_in_meadows",
+                    )
+                    .await;
+                }
+            }
+            AdvancementTrigger::AnyBlockUse { .. } => {}
+            AdvancementTrigger::DefaultBlockUse { .. } => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use pumpkin_data::advancement::Advancement;
+
+    #[test]
+    fn crafter_advancement_criteria_matches() {
+        assert!(
+            Advancement::ADVENTURE_CRAFTERS_CRAFTING_CRAFTERS
+                .criteria
+                .contains(&"crafter_crafted_crafter")
+        );
+        assert_eq!(
+            Advancement::ADVENTURE_CRAFTERS_CRAFTING_CRAFTERS
+                .id
+                .to_string(),
+            "minecraft:adventure/crafters_crafting_crafters"
+        );
+    }
+
+    #[test]
+    fn item_used_on_block_criteria_match() {
+        assert!(Advancement::HUSBANDRY_WAX_ON.criteria.contains(&"wax_on"));
+        assert!(Advancement::HUSBANDRY_WAX_OFF.criteria.contains(&"wax_off"));
+        assert!(
+            Advancement::HUSBANDRY_MAKE_A_SIGN_GLOW
+                .criteria
+                .contains(&"make_a_sign_glow")
+        );
+        assert!(
+            Advancement::NETHER_CHARGE_RESPAWN_ANCHOR
+                .criteria
+                .contains(&"charge_respawn_anchor")
+        );
+        assert!(
+            Advancement::ADVENTURE_USE_LODESTONE
+                .criteria
+                .contains(&"use_lodestone")
+        );
     }
 }

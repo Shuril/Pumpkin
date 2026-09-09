@@ -15,6 +15,12 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 
+#[derive(Clone)]
+pub struct CrafterCraftResult {
+    pub recipe_id: String,
+    pub items: Vec<ItemStack>,
+}
+
 pub struct CrafterBlockEntity {
     pub position: BlockPos,
     pub items: tokio::sync::RwLock<[ItemStack; Self::INVENTORY_SIZE]>,
@@ -169,7 +175,7 @@ impl CrafterBlockEntity {
     /// silently putting them back into their source slots, is important for
     /// milk buckets, honey bottles, decorated-pot ingredients, and any future
     /// component-defined `use_remainder` item.
-    pub async fn craft_once(&self, provider: &dyn RecipeProvider) -> Option<Vec<ItemStack>> {
+    pub async fn craft_once(&self, provider: &dyn RecipeProvider) -> Option<CrafterCraftResult> {
         // Recipe matching is asynchronous because the shared matcher also
         // serves player menus.  Capture the complete input transaction first,
         // then validate that snapshot while holding the write lock before
@@ -225,7 +231,10 @@ impl CrafterBlockEntity {
         drop(items);
         self.mark_dirty();
 
-        Some(outputs)
+        Some(CrafterCraftResult {
+            recipe_id: result.recipe_id,
+            items: outputs,
+        })
     }
 
     fn result_stack(
@@ -542,5 +551,75 @@ mod tests {
             .expect("component remainder should be selected");
         assert_eq!(remainder.item.id, Item::BUCKET.id);
         assert_eq!(remainder.item_count, 2);
+    }
+
+    #[tokio::test]
+    async fn crafter_craft_once_identifies_recipe_and_output() {
+        use crate::server::recipe::RecipeManager;
+
+        let crafter = CrafterBlockEntity::new(BlockPos::new(0, 64, 0));
+        crafter
+            .set_stack(0, ItemStack::new(1, &Item::OAK_LOG))
+            .await;
+
+        let recipe_manager = RecipeManager::default();
+        let craft_result = crafter
+            .craft_once(&recipe_manager)
+            .await
+            .expect("oak log should craft into oak planks");
+
+        assert_eq!(craft_result.recipe_id, "minecraft:oak_planks");
+        assert_eq!(craft_result.items.len(), 1);
+        assert_eq!(craft_result.items[0].item.id, Item::OAK_PLANKS.id);
+        assert_eq!(craft_result.items[0].item_count, 4);
+    }
+
+    #[tokio::test]
+    async fn crafter_crafting_crafter_recipe_id_matches() {
+        use crate::server::recipe::RecipeManager;
+
+        let crafter = CrafterBlockEntity::new(BlockPos::new(0, 64, 0));
+        // Recipe for Crafter:
+        // Iron Ingot, Iron Ingot, Iron Ingot
+        // Iron Ingot, Crafting Table, Iron Ingot
+        // Redstone Dust, Dropper, Redstone Dust
+        crafter
+            .set_stack(0, ItemStack::new(1, &Item::IRON_INGOT))
+            .await;
+        crafter
+            .set_stack(1, ItemStack::new(1, &Item::IRON_INGOT))
+            .await;
+        crafter
+            .set_stack(2, ItemStack::new(1, &Item::IRON_INGOT))
+            .await;
+        crafter
+            .set_stack(3, ItemStack::new(1, &Item::IRON_INGOT))
+            .await;
+        crafter
+            .set_stack(4, ItemStack::new(1, &Item::CRAFTING_TABLE))
+            .await;
+        crafter
+            .set_stack(5, ItemStack::new(1, &Item::IRON_INGOT))
+            .await;
+        crafter
+            .set_stack(6, ItemStack::new(1, &Item::REDSTONE))
+            .await;
+        crafter
+            .set_stack(7, ItemStack::new(1, &Item::DROPPER))
+            .await;
+        crafter
+            .set_stack(8, ItemStack::new(1, &Item::REDSTONE))
+            .await;
+
+        let recipe_manager = RecipeManager::default();
+        let craft_result = crafter
+            .craft_once(&recipe_manager)
+            .await
+            .expect("ingredients should craft into a crafter");
+
+        assert_eq!(craft_result.recipe_id, "minecraft:crafter");
+        assert_eq!(craft_result.items.len(), 1);
+        assert_eq!(craft_result.items[0].item.id, Item::CRAFTER.id);
+        assert_eq!(craft_result.items[0].item_count, 1);
     }
 }
