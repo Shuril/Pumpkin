@@ -107,7 +107,8 @@
   are implemented (record insertion and removal update neighbors, comparators and emit
   `BlockChange`; playback emits periodic 20-tick `JukeboxPlay` and stops sound with
   neighbor/comparator refresh upon song completion without ejecting the record).
-- Bell raid hearing and respawn-anchor edge cases remain. Conduit frame refresh,
+- Bell raid hearing, glowing raider resonance, projectile ring detection and respawn-anchor
+  comparator scaling, charge retention and neighbor updates are implemented. Conduit frame refresh,
   conduit power, wet-player effects, hostile selection/attack, ambient timing
   and NBT target persistence are implemented; remaining conduit work is an
   exact `Enemy`-marker predicate (the current runtime exposes
