@@ -165,7 +165,7 @@
 - Удалить magic numbers в inventory/window properties и scheduler limits.
 - Убрать `TODO: ugly` adapters из mob spawner, infested blocks and command args.
 - Unit tests для `pumpkin-util` random implementations (gaussian generator, decorator, slime chunk, carver and population seeds) and noise helpers (gradient vectors and dot product) реализованы.
-- Добавить inventory NBT load tests, bundle/max-stack tests beyond quick-craft,
+- Inventory NBT load/roundtrip unit tests для player inventory и ender chest inventory реализованы; остаются bundle/max-stack tests beyond quick-craft,
   and disconnect cleanup.
 - Player autosaves now retain unknown root NBT fields, and weather/game-rule
   data files merge recognized values into the existing extensible document;
