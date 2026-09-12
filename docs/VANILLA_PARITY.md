@@ -110,7 +110,7 @@ Pumpkin API.
 
 | Область | Pumpkin | Vanilla reference | Статус / что сделать |
 |---|---|---|---|
-| `/data` command | `command/commands/data.rs` | `DataCommands`, `BlockDataAccessor`, `EntityDataAccessor` | mostly; `data get entity`, `data get block <pos>`, `data merge block <pos> <nbt>` (with recursive compound merge, no-change detection and block-entity re-indexing) and `data merge entity <entity> <nbt>` are implemented; path argument resolution and `data modify` operations remain |
+| `/data` command | `command/commands/data.rs` | `DataCommands`, `BlockDataAccessor`, `EntityDataAccessor` | mostly; `data get {entity,block} [path] [scale]`, `data merge {entity,block}` (with recursive compound merge, no-change detection and block-entity re-indexing) and `data remove {entity,block} <path>` are implemented; `data modify` operations remain |
 
 ## How to close a parity row
 
