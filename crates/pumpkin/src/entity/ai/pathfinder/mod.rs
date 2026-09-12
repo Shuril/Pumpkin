@@ -458,6 +458,11 @@ impl Navigator {
         self.is_idle.load(Ordering::Relaxed)
     }
 
+    #[must_use]
+    pub fn get_path(&self) -> Option<&Path> {
+        self.current_path.as_ref()
+    }
+
     pub fn set_avoid_sun(&self, avoid_sun: bool) {
         self.avoid_sun.store(avoid_sun, Ordering::Relaxed);
     }
@@ -465,5 +470,24 @@ impl Navigator {
     #[must_use]
     pub fn avoid_sun(&self) -> bool {
         self.avoid_sun.load(Ordering::Relaxed)
+    }
+
+    pub fn set_can_open_doors(&mut self, can_open: bool) {
+        self.evaluator.set_can_open_doors(can_open);
+        self.evaluator.set_can_pass_doors(can_open);
+    }
+
+    #[must_use]
+    pub fn can_open_doors(&self) -> bool {
+        self.evaluator.can_open_doors()
+    }
+
+    pub fn set_can_pass_doors(&mut self, can_pass: bool) {
+        self.evaluator.set_can_pass_doors(can_pass);
+    }
+
+    #[must_use]
+    pub fn can_pass_doors(&self) -> bool {
+        self.evaluator.can_pass_doors()
     }
 }

@@ -1,4 +1,5 @@
 use super::{Mob, MobEntity};
+use crate::entity::ai::goal::break_door::BreakDoorGoal;
 use crate::entity::ai::goal::destroy_egg::DestroyEggGoal;
 use crate::entity::ai::goal::look_around::RandomLookAroundGoal;
 use crate::entity::ai::goal::revenge::RevengeGoal;
@@ -11,6 +12,7 @@ use crate::entity::{
 };
 use pumpkin_data::entity::EntityType;
 use pumpkin_nbt::compound::NbtCompound;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 
 pub mod drowned;
@@ -21,12 +23,16 @@ pub mod zombie_villager;
 
 pub struct ZombieEntityBase {
     pub mob_entity: MobEntity,
+    pub can_break_doors: AtomicBool,
 }
 
 impl ZombieEntityBase {
     pub fn new(entity: Entity) -> Arc<Self> {
         let mob_entity = MobEntity::new(entity);
-        let zombie = Self { mob_entity };
+        let zombie = Self {
+            mob_entity,
+            can_break_doors: AtomicBool::new(false),
+        };
         let mob_arc = Arc::new(zombie);
         let mob_weak: Weak<dyn Mob> = {
             let mob_arc: Arc<dyn Mob> = mob_arc.clone();
@@ -46,6 +52,7 @@ impl ZombieEntityBase {
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
 
             goal_selector.add_goal(0, Box::new(SwimGoal::default()));
+            goal_selector.add_goal(1, Box::new(BreakDoorGoal::new(mob_weak.clone())));
             goal_selector.add_goal(2, ZombieAttackGoal::new(1.0, false));
             goal_selector.add_goal(4, DestroyEggGoal::new(1.0, 3));
             goal_selector.add_goal(7, Box::new(WanderAroundGoal::new(1.0)));
@@ -76,20 +83,93 @@ impl ZombieEntityBase {
 
         mob_arc
     }
+
+    #[must_use]
+    pub fn can_break_doors(&self) -> bool {
+        self.can_break_doors.load(Ordering::Relaxed)
+    }
+
+    pub fn set_can_break_doors(&self, can_break: bool) {
+        self.can_break_doors.store(can_break, Ordering::Relaxed);
+        let mut navigator = self
+            .mob_entity
+            .navigator
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        navigator.set_can_open_doors(can_break);
+    }
 }
 
 impl NBTStorage for ZombieEntityBase {
     fn write_nbt<'a>(&'a self, nbt: &'a mut NbtCompound) -> NbtFuture<'a, ()> {
-        self.mob_entity.living_entity.write_nbt(nbt)
+        Box::pin(async move {
+            self.mob_entity.living_entity.write_nbt(nbt).await;
+            nbt.put_bool("CanBreakDoors", self.can_break_doors());
+        })
     }
 
     fn read_nbt_non_mut<'a>(&'a self, nbt: &'a NbtCompound) -> NbtFuture<'a, ()> {
-        self.mob_entity.living_entity.read_nbt_non_mut(nbt)
+        Box::pin(async move {
+            self.mob_entity.living_entity.read_nbt_non_mut(nbt).await;
+            if let Some(can_break) = nbt.get_bool("CanBreakDoors") {
+                self.set_can_break_doors(can_break);
+            }
+        })
     }
 }
 
 impl Mob for ZombieEntityBase {
     fn get_mob_entity(&self) -> &MobEntity {
         &self.mob_entity
+    }
+
+    fn can_break_doors(&self) -> bool {
+        self.can_break_doors()
+    }
+
+    fn set_can_break_doors(&self, can_break: bool) {
+        self.set_can_break_doors(can_break);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_zombie_can_break_doors_flag() {
+        let flag = AtomicBool::new(false);
+        assert!(!flag.load(Ordering::Relaxed));
+        flag.store(true, Ordering::Relaxed);
+        assert!(flag.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn test_zombie_can_break_doors_nbt_serialization() {
+        let mut compound = NbtCompound::new();
+        compound.put_bool("CanBreakDoors", true);
+        assert_eq!(compound.get_bool("CanBreakDoors"), Some(true));
+
+        let flag = AtomicBool::new(false);
+        if let Some(can_break) = compound.get_bool("CanBreakDoors") {
+            flag.store(can_break, Ordering::Relaxed);
+        }
+        assert!(flag.load(Ordering::Relaxed));
+
+        let mut roundtrip = NbtCompound::new();
+        roundtrip.put_bool("CanBreakDoors", flag.load(Ordering::Relaxed));
+        assert_eq!(roundtrip.get_bool("CanBreakDoors"), Some(true));
+    }
+
+    #[test]
+    fn test_navigator_can_open_doors_toggle() {
+        use crate::entity::ai::pathfinder::Navigator;
+        let mut navigator = Navigator::default();
+        assert!(!navigator.can_open_doors());
+        navigator.set_can_open_doors(true);
+        assert!(navigator.can_open_doors());
+        assert!(navigator.can_pass_doors());
+        navigator.set_can_open_doors(false);
+        assert!(!navigator.can_open_doors());
     }
 }

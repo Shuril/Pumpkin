@@ -841,6 +841,12 @@ pub trait Mob: EntityBase + Send + Sync {
         self.get_mob_entity().is_on_fire()
     }
 
+    fn can_break_doors(&self) -> bool {
+        false
+    }
+
+    fn set_can_break_doors(&self, _can_break: bool) {}
+
     fn get_job_site(&self) -> Option<BlockPos> {
         None
     }
@@ -1031,16 +1037,24 @@ impl<T: Mob + Send + 'static> EntityBase for T {
                 .await;
 
             let entity_name = self.get_entity().entity_type.resource_name;
+            let difficulty = crate::entity::mob::equipment::RegionalDifficulty::at(
+                &world,
+                self.get_entity().pos.load(),
+            );
+
             if let Some(def) = crate::entity::mob::equipment::EQUIPMENT_REGISTRY.get(entity_name)
                 && def.can_pick_up_loot
             {
-                let difficulty = crate::entity::mob::equipment::RegionalDifficulty::at(
-                    &world,
-                    self.get_entity().pos.load(),
-                );
                 let pickup_chance = 0.55 * difficulty.special_multiplier;
                 self.get_mob_entity()
                     .set_can_pick_up_loot(rand::random::<f32>() < pickup_chance);
+            }
+
+            if matches!(entity_name, "zombie" | "husk" | "zombie_villager") {
+                let break_door_chance = difficulty.special_multiplier * 0.1;
+                if rand::random::<f32>() < break_door_chance {
+                    self.set_can_break_doors(true);
+                }
             }
         })
     }
