@@ -688,7 +688,37 @@ impl MobEntity {
         if !self.is_sun_burn_tick().await {
             return;
         }
-        self.apply_sun_burn();
+        let has_helmet = {
+            let mut equipment = self.living_entity.entity_equipment.lock().await;
+            let mut head_item = equipment.get(&EquipmentSlot::HEAD);
+            if !head_item.is_empty() {
+                if rand::rng().random_range(0..2) == 0 {
+                    let result = head_item.damage_item(1);
+                    if result == pumpkin_data::item_stack::DamageResult::Broken {
+                        head_item = ItemStack::EMPTY.clone();
+                        equipment.put(&EquipmentSlot::HEAD, head_item.clone());
+                        drop(equipment);
+                        let entity = &self.living_entity.entity;
+                        let world = entity.world.load();
+                        world.send_entity_status(
+                            entity,
+                            pumpkin_data::entity::EntityStatus::HeadBreak,
+                            None,
+                        );
+                        self.living_entity
+                            .send_equipment_changes(&[(EquipmentSlot::HEAD, head_item)]);
+                    } else {
+                        equipment.put(&EquipmentSlot::HEAD, head_item);
+                    }
+                }
+                true
+            } else {
+                false
+            }
+        };
+        if !has_helmet {
+            self.apply_sun_burn();
+        }
     }
 
     async fn is_sun_burn_tick(&self) -> bool {
