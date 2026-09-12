@@ -55,6 +55,17 @@ impl PistonBlock {
         {
             return false;
         }
+        Self::is_pushable(block, state, dir, can_break, piston_dir)
+    }
+
+    #[must_use]
+    pub fn is_pushable(
+        block: &Block,
+        state: &BlockState,
+        dir: BlockDirection,
+        can_break: bool,
+        piston_dir: BlockDirection,
+    ) -> bool {
         if state.is_air() {
             return true;
         }
@@ -311,10 +322,6 @@ async fn should_extend(world: &World, block_pos: &BlockPos, piston_dir: BlockDir
         }
         return true;
     }
-    let (block, state) = world.get_block_and_state(block_pos);
-    if is_emitting_redstone_power(block, state, world, block_pos, BlockDirection::Down).await {
-        return true;
-    }
     for dir in BlockDirection::all() {
         let neighbor_pos = block_pos.up().offset(dir.to_offset());
         let (block, state) = world.get_block_and_state(&neighbor_pos);
@@ -557,4 +564,111 @@ async fn move_piston(
     }
 
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_immovable_blocks() {
+        let dir = BlockDirection::North;
+        let piston_dir = BlockDirection::North;
+
+        // Obsidian family
+        assert!(!PistonBlock::is_pushable(
+            &Block::OBSIDIAN,
+            &Block::OBSIDIAN.default_state,
+            dir,
+            false,
+            piston_dir
+        ));
+        assert!(!PistonBlock::is_pushable(
+            &Block::CRYING_OBSIDIAN,
+            &Block::CRYING_OBSIDIAN.default_state,
+            dir,
+            false,
+            piston_dir
+        ));
+        assert!(!PistonBlock::is_pushable(
+            &Block::RESPAWN_ANCHOR,
+            &Block::RESPAWN_ANCHOR.default_state,
+            dir,
+            false,
+            piston_dir
+        ));
+        assert!(!PistonBlock::is_pushable(
+            &Block::REINFORCED_DEEPSLATE,
+            &Block::REINFORCED_DEEPSLATE.default_state,
+            dir,
+            false,
+            piston_dir
+        ));
+
+        // Bedrock (hardness -1.0)
+        assert!(!PistonBlock::is_pushable(
+            &Block::BEDROCK,
+            &Block::BEDROCK.default_state,
+            dir,
+            false,
+            piston_dir
+        ));
+
+        // Container / block entity
+        assert!(!PistonBlock::is_pushable(
+            &Block::CHEST,
+            &Block::CHEST.default_state,
+            dir,
+            false,
+            piston_dir
+        ));
+    }
+
+    #[test]
+    fn test_movable_blocks() {
+        let dir = BlockDirection::North;
+        let piston_dir = BlockDirection::North;
+
+        // Air is movable
+        assert!(PistonBlock::is_pushable(
+            &Block::AIR,
+            &Block::AIR.default_state,
+            dir,
+            false,
+            piston_dir
+        ));
+
+        // Stone is movable
+        assert!(PistonBlock::is_pushable(
+            &Block::STONE,
+            &Block::STONE.default_state,
+            dir,
+            false,
+            piston_dir
+        ));
+
+        // Non-extended piston is movable
+        let mut unextended_props = PistonProps::default(&Block::PISTON);
+        unextended_props.extended = false;
+        let unextended_state = BlockState::from_id(unextended_props.to_state_id(&Block::PISTON));
+        assert!(PistonBlock::is_pushable(
+            &Block::PISTON,
+            &unextended_state,
+            dir,
+            false,
+            piston_dir
+        ));
+
+        // Extended piston is NOT movable
+        let mut extended_props = PistonProps::default(&Block::PISTON);
+        extended_props.extended = true;
+        let extended_state = BlockState::from_id(extended_props.to_state_id(&Block::PISTON));
+        assert!(!PistonBlock::is_pushable(
+            &Block::PISTON,
+            &extended_state,
+            dir,
+            false,
+            piston_dir
+        ));
+    }
 }
