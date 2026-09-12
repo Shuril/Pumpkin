@@ -145,6 +145,21 @@ impl Mob for SheepEntity {
     fn on_eating_grass(&self) -> EntityBaseFuture<'_, ()> {
         Box::pin(async {
             self.set_sheared(false);
+            let age = self
+                .mob_entity
+                .living_entity
+                .entity
+                .age
+                .load(std::sync::atomic::Ordering::Relaxed);
+            if age < 0 {
+                // Vanilla Sheep.ate() calls ageUp(60), accelerating baby growth by 60 seconds (1200 ticks)
+                let new_age = (age + 1200).min(0);
+                self.mob_entity
+                    .living_entity
+                    .entity
+                    .age
+                    .store(new_age, std::sync::atomic::Ordering::Relaxed);
+            }
         })
     }
 

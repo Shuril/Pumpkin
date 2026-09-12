@@ -87,7 +87,7 @@ pub trait Goal: Send + Sync {
     }
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
 // We actually only use the first 4 bits ;)
 pub struct Controls(u8);
 
