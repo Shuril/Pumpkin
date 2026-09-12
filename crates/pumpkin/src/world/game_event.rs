@@ -73,7 +73,11 @@ pub const fn item_allows_vibrations(interact_vibrations: Option<bool>) -> bool {
     }
 }
 
+pub use GameEventKind as GameEvent;
+
 impl GameEventKind {
+    pub const EQUIP: Self = Self::Equip;
+
     /// Mojang's vibration frequency table (1..=15).  Unknown extension events
     /// must choose a deterministic value instead of silently dropping a pulse.
     #[must_use]

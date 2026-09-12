@@ -404,6 +404,10 @@ impl DispenserBlock {
                 if !Self::dispense_shulker_box(ctx, item).await {
                     Self::drop_item(ctx, item).await;
                 }
+            } else if item.item.id == Item::CHEST.id {
+                if !Self::dispense_chest(ctx, item).await {
+                    Self::drop_item(ctx, item).await;
+                }
             } else if entity_from_egg(item.item.id).is_some() {
                 // Spawn eggs
                 if !Self::dispense_spawn_egg(ctx, item).await {
@@ -1822,6 +1826,133 @@ impl DispenserBlock {
             )
             .await;
             return true;
+        }
+
+        false
+    }
+
+    async fn dispense_chest(ctx: &DispenseContext<'_>, item: &mut ItemStack) -> bool {
+        let target = Self::target_position(ctx).to_f64();
+        let bounds = BoundingBox::new_from_pos(
+            target.x,
+            target.y,
+            target.z,
+            &EntityDimensions::new(1.0, 1.0, 1.0),
+        );
+        for entity in ctx.world.get_entities_at_box(&bounds) {
+            let Some(mob) = entity.get_mob() else {
+                continue;
+            };
+
+            if let Some(donkey) = mob.get_donkey() {
+                let is_adult = donkey
+                    .mob_entity
+                    .living_entity
+                    .entity
+                    .age
+                    .load(std::sync::atomic::Ordering::Relaxed)
+                    >= 0;
+                if is_adult && donkey.is_tamed() && !donkey.has_chest() {
+                    donkey.set_has_chest(true);
+                    let pos = donkey.mob_entity.living_entity.entity.pos.load();
+                    ctx.world
+                        .play_sound(Sound::EntityDonkeyChest, SoundCategory::Neutral, &pos);
+                    item.decrement(1);
+                    if item.item_count == 0 {
+                        item.clear();
+                    }
+                    Self::play_dispense_effects(ctx, WorldEvent::SoundDispenserDispense);
+                    Self::emit_item_game_event(
+                        ctx,
+                        Self::target_position(ctx),
+                        crate::world::game_event::GameEventKind::Equip,
+                        item,
+                    )
+                    .await;
+                    return true;
+                }
+            } else if let Some(mule) = mob.get_mule() {
+                let is_adult = mule
+                    .mob_entity
+                    .living_entity
+                    .entity
+                    .age
+                    .load(std::sync::atomic::Ordering::Relaxed)
+                    >= 0;
+                if is_adult && mule.is_tamed() && !mule.has_chest() {
+                    mule.set_has_chest(true);
+                    let pos = mule.mob_entity.living_entity.entity.pos.load();
+                    ctx.world
+                        .play_sound(Sound::EntityMuleChest, SoundCategory::Neutral, &pos);
+                    item.decrement(1);
+                    if item.item_count == 0 {
+                        item.clear();
+                    }
+                    Self::play_dispense_effects(ctx, WorldEvent::SoundDispenserDispense);
+                    Self::emit_item_game_event(
+                        ctx,
+                        Self::target_position(ctx),
+                        crate::world::game_event::GameEventKind::Equip,
+                        item,
+                    )
+                    .await;
+                    return true;
+                }
+            } else if let Some(llama) = mob.get_llama() {
+                let is_adult = llama
+                    .mob_entity
+                    .living_entity
+                    .entity
+                    .age
+                    .load(std::sync::atomic::Ordering::Relaxed)
+                    >= 0;
+                if is_adult && llama.is_tamed() && !llama.has_chest() {
+                    llama.set_has_chest(true);
+                    let pos = llama.mob_entity.living_entity.entity.pos.load();
+                    ctx.world
+                        .play_sound(Sound::EntityLlamaChest, SoundCategory::Neutral, &pos);
+                    item.decrement(1);
+                    if item.item_count == 0 {
+                        item.clear();
+                    }
+                    Self::play_dispense_effects(ctx, WorldEvent::SoundDispenserDispense);
+                    Self::emit_item_game_event(
+                        ctx,
+                        Self::target_position(ctx),
+                        crate::world::game_event::GameEventKind::Equip,
+                        item,
+                    )
+                    .await;
+                    return true;
+                }
+            } else if let Some(trader_llama) = mob.get_trader_llama() {
+                let is_adult = trader_llama
+                    .mob_entity
+                    .living_entity
+                    .entity
+                    .age
+                    .load(std::sync::atomic::Ordering::Relaxed)
+                    >= 0;
+                if is_adult && trader_llama.is_tamed() && !trader_llama.has_chest() {
+                    trader_llama.set_has_chest(true);
+                    let pos = trader_llama.mob_entity.living_entity.entity.pos.load();
+                    ctx.world
+                        .play_sound(Sound::EntityLlamaChest, SoundCategory::Neutral, &pos);
+                    item.decrement(1);
+                    if item.item_count == 0 {
+                        item.clear();
+                    }
+                    Self::play_dispense_effects(ctx, WorldEvent::SoundDispenserDispense);
+                    Self::emit_item_game_event(
+                        ctx,
+                        Self::target_position(ctx),
+                        crate::world::game_event::GameEventKind::Equip,
+                        item,
+                    )
+                    .await;
+                    return true;
+                }
+            }
         }
 
         false
