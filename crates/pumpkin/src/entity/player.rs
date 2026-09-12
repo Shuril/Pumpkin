@@ -2043,6 +2043,11 @@ impl Player {
                         pumpkin_world::world::BlockFlags::NOTIFY_ALL,
                     )
                     .await;
+                world.update_neighbors(pos, None).await;
+                world.update_comparators(pos, block).await;
+                world
+                    .emit_game_event(*pos, crate::world::game_event::GameEventKind::BlockChange)
+                    .await;
 
                 return Some(CalculatedRespawnPoint {
                     position: spawn_pos,

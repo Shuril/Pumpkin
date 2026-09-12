@@ -7,7 +7,9 @@ use pumpkin_macros::pumpkin_block;
 use pumpkin_world::world::BlockFlags;
 
 use crate::block::registry::BlockActionResult;
-use crate::block::{BlockBehaviour, BlockFuture, NormalUseArgs, UseWithItemArgs};
+use crate::block::{
+    BlockBehaviour, BlockFuture, GetComparatorOutputArgs, NormalUseArgs, UseWithItemArgs,
+};
 use crate::entity::EntityBase;
 
 #[pumpkin_block("minecraft:respawn_anchor")]
@@ -37,7 +39,7 @@ impl BlockBehaviour for RespawnAnchorBlock {
     fn normal_use<'a>(&'a self, args: NormalUseArgs<'a>) -> BlockFuture<'a, BlockActionResult> {
         Box::pin(async move {
             let state_id = args.world.get_block_state_id(args.position);
-            let mut props = RespawnAnchorLikeProperties::from_state_id(state_id, args.block);
+            let props = RespawnAnchorLikeProperties::from_state_id(state_id, args.block);
 
             if args.world.dimension != Dimension::THE_NETHER {
                 args.world
@@ -70,15 +72,6 @@ impl BlockBehaviour for RespawnAnchorBlock {
                 )
                 .await
             {
-                props.charges -= 1;
-                args.world
-                    .set_block_state(
-                        args.position,
-                        props.to_state_id(args.block),
-                        BlockFlags::NOTIFY_ALL,
-                    )
-                    .await;
-
                 args.world.play_sound(
                     Sound::BlockRespawnAnchorSetSpawn,
                     SoundCategory::Blocks,
@@ -96,9 +89,33 @@ impl BlockBehaviour for RespawnAnchorBlock {
             BlockActionResult::SuccessServer
         })
     }
+
+    fn get_comparator_output<'a>(
+        &'a self,
+        args: GetComparatorOutputArgs<'a>,
+    ) -> BlockFuture<'a, Option<u8>> {
+        Box::pin(async move {
+            let state_id = args.world.get_block_state_id(args.position);
+            let props = RespawnAnchorLikeProperties::from_state_id(state_id, args.block);
+            Some(Self::get_scaled_charge_level(props.charges))
+        })
+    }
 }
 
 impl RespawnAnchorBlock {
+    #[must_use]
+    pub const fn get_scaled_charge_level(charges: u8) -> u8 {
+        // Vanilla: floor((charges / 4.0) * 15)
+        // 0 -> 0, 1 -> 3, 2 -> 7, 3 -> 11, 4 -> 15
+        match charges {
+            0 => 0,
+            1 => 3,
+            2 => 7,
+            3 => 11,
+            _ => 15,
+        }
+    }
+
     /// Applies the block-only part of `GlowstoneBlock`'s dispenser behavior.
     /// The item is consumed by the caller only after this returns true, so a
     /// full anchor, another dimension, or a missing target is a normal failed
@@ -120,11 +137,33 @@ impl RespawnAnchorBlock {
         world
             .set_block_state(position, props.to_state_id(block), BlockFlags::NOTIFY_ALL)
             .await;
+        world.update_neighbors(position, None).await;
+        world.update_comparators(position, block).await;
+        world
+            .emit_game_event(
+                *position,
+                crate::world::game_event::GameEventKind::BlockChange,
+            )
+            .await;
         world.play_sound(
             Sound::BlockRespawnAnchorCharge,
             SoundCategory::Blocks,
             &position.to_f64(),
         );
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_respawn_anchor_comparator_levels() {
+        assert_eq!(RespawnAnchorBlock::get_scaled_charge_level(0), 0);
+        assert_eq!(RespawnAnchorBlock::get_scaled_charge_level(1), 3);
+        assert_eq!(RespawnAnchorBlock::get_scaled_charge_level(2), 7);
+        assert_eq!(RespawnAnchorBlock::get_scaled_charge_level(3), 11);
+        assert_eq!(RespawnAnchorBlock::get_scaled_charge_level(4), 15);
     }
 }
