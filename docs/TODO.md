@@ -99,7 +99,10 @@
   armor/tool durability, binding curse и mob pickup persistence; player-menu
   armor/off-hand click и shift-click теперь публикуют итоговый
   `onEquipStack`-эквивалент через authoritative menu slot, а shield blocking
-  корректно повреждает активный щит и синхронизирует break/non-break state.
+  корректно повреждает активный щит и синхронизирует break/non-break state. Стрижка
+  ножницами снежных големов (снятие тыквы, выпадение вырезанной тыквы, звук,
+  геймивент `Shear`, синхронизация флагов метаданных и сохранение в NBT `Pumpkin`)
+  реализована для игроков и раздатчиков.
 - Name tags now reject non-living/dead/non-serializable targets, set
   `PersistenceRequired` for mobs and consume only for a valid custom-name
   application; a dedicated despawn/save fixture is still pending.
