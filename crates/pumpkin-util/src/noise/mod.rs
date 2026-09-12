@@ -115,3 +115,28 @@ impl Gradient {
         self.x * x + self.y * y + self.z * z
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_gradients_length_and_magnitudes() {
+        assert_eq!(GRADIENTS.len(), 16);
+        for g in &GRADIENTS {
+            let mag_sq = g.x * g.x + g.y * g.y + g.z * g.z;
+            assert!((mag_sq - 2.0).abs() < 1e-9);
+        }
+    }
+
+    #[test]
+    fn test_gradient_dot_product() {
+        let g = Gradient {
+            x: 1.0,
+            y: -1.0,
+            z: 0.0,
+        };
+        assert_eq!(g.dot(2.0, 3.0, 4.0), -1.0);
+    }
+}
+
