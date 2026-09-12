@@ -108,10 +108,10 @@ impl BlockEntity for ConduitBlockEntity {
                     if frame_size >= MIN_KILL_SIZE {
                         self.update_and_attack_target(world).await;
                     } else {
-                        *self.target.lock().await = None;
+                        self.clear_target(world).await;
                     }
                 } else {
-                    *self.target.lock().await = None;
+                    self.clear_target(world).await;
                 }
             }
 
@@ -153,6 +153,17 @@ impl ConduitBlockEntity {
             active: Mutex::new(false),
             target: Mutex::new(None),
             next_ambient_sound: AtomicI64::new(0),
+        }
+    }
+
+    async fn clear_target(&self, world: &Arc<World>) {
+        let mut target_lock = self.target.lock().await;
+        if target_lock.is_some() {
+            *target_lock = None;
+            drop(target_lock);
+            if let Some(be) = world.get_block_entity(&self.position) {
+                world.update_block_entity(&be);
+            }
         }
     }
 
@@ -260,12 +271,23 @@ impl ConduitBlockEntity {
             candidates.choose(&mut rand::rng()).cloned()
         };
 
+        let new_target = target.as_ref().map(|t| t.get_entity().entity_uuid);
+        let target_changed = {
+            let mut target_lock = self.target.lock().await;
+            let changed = *target_lock != new_target;
+            *target_lock = new_target;
+            changed
+        };
+
+        if target_changed {
+            if let Some(be) = world.get_block_entity(&self.position) {
+                world.update_block_entity(&be);
+            }
+        }
+
         let Some(target) = target else {
-            *self.target.lock().await = None;
             return;
         };
-        let target_uuid = target.get_entity().entity_uuid;
-        *self.target.lock().await = Some(target_uuid);
         if let Some(living) = target.get_living_entity() {
             world.play_sound(
                 Sound::BlockConduitAttackTarget,
@@ -282,8 +304,8 @@ fn is_water(fluid: &Fluid) -> bool {
 }
 
 /// Java's conduit target predicate uses the `Enemy` marker interface rather
-/// than the broad mob-category value.  Pumpkin's generated registry does not
-/// carry marker traits, so keep the registry mapping explicit here.  This is
+/// than the broad mob-category value. Pumpkin's generated registry does not
+/// carry marker traits, so keep the registry mapping explicit here. This is
 /// deliberately an allow-list: projectiles, vehicles, undead mounts and
 /// future non-hostile `MONSTER` category entries must not become conduit
 /// targets merely because their category happens to match.
@@ -293,6 +315,7 @@ fn is_conduit_enemy(entity_type: &EntityType) -> bool {
         id if id == EntityType::BLAZE.id
             || id == EntityType::BOGGED.id
             || id == EntityType::BREEZE.id
+            || id == EntityType::CAVE_SPIDER.id
             || id == EntityType::CREAKING.id
             || id == EntityType::CREEPER.id
             || id == EntityType::DROWNED.id
@@ -302,10 +325,13 @@ fn is_conduit_enemy(entity_type: &EntityType) -> bool {
             || id == EntityType::ENDERMITE.id
             || id == EntityType::EVOKER.id
             || id == EntityType::GHAST.id
+            || id == EntityType::GIANT.id
             || id == EntityType::GUARDIAN.id
             || id == EntityType::HOGLIN.id
             || id == EntityType::HUSK.id
+            || id == EntityType::ILLUSIONER.id
             || id == EntityType::MAGMA_CUBE.id
+            || id == EntityType::PARCHED.id
             || id == EntityType::PHANTOM.id
             || id == EntityType::PIGLIN.id
             || id == EntityType::PIGLIN_BRUTE.id
@@ -368,6 +394,10 @@ mod tests {
         assert!(is_conduit_enemy(&EntityType::CREEPER));
         assert!(is_conduit_enemy(&EntityType::BOGGED));
         assert!(is_conduit_enemy(&EntityType::CREAKING));
+        assert!(is_conduit_enemy(&EntityType::CAVE_SPIDER));
+        assert!(is_conduit_enemy(&EntityType::GIANT));
+        assert!(is_conduit_enemy(&EntityType::ILLUSIONER));
+        assert!(is_conduit_enemy(&EntityType::PARCHED));
         assert!(!is_conduit_enemy(&EntityType::ZOMBIE_HORSE));
         assert!(!is_conduit_enemy(&EntityType::SHULKER_BULLET));
     }
