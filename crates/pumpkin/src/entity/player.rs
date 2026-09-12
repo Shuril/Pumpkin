@@ -6983,4 +6983,83 @@ mod tests {
             false, true, true, 0.8, 0.4, true, false, false, false
         ));
     }
+
+    #[tokio::test]
+    async fn test_player_inventory_nbt_roundtrip() {
+        use crate::entity::NBTStorage;
+
+        let equipment = Arc::new(Mutex::new(EntityEquipment::default()));
+        let slots = Arc::new(build_equipment_slots());
+        let inv = PlayerInventory::new(equipment, slots);
+
+        // Put an item in hotbar slot 0
+        inv.set_stack(0, ItemStack::new(5, &Item::DIAMOND)).await;
+        // Put an item in main inventory slot 15
+        inv.set_stack(15, ItemStack::new(12, &Item::APPLE)).await;
+        // Put armor in slot 39 (helmet)
+        inv.set_stack(39, ItemStack::new(1, &Item::IRON_HELMET)).await;
+        // Put offhand in slot 40
+        inv.set_stack(PlayerInventory::OFF_HAND_SLOT, ItemStack::new(1, &Item::SHIELD)).await;
+        inv.set_selected_slot(3);
+
+        let mut nbt = NbtCompound::new();
+        inv.write_nbt(&mut nbt).await;
+
+        assert_eq!(nbt.get_int("SelectedItemSlot"), Some(3));
+        let list = nbt.get_list("Inventory").expect("Inventory tag must be present");
+        assert_eq!(list.len(), 4);
+
+        // Create a new empty inventory and load from NBT
+        let equipment2 = Arc::new(Mutex::new(EntityEquipment::default()));
+        let slots2 = Arc::new(build_equipment_slots());
+        let loaded = PlayerInventory::new(equipment2, slots2);
+
+        loaded.read_nbt_non_mut(&nbt).await;
+
+        assert_eq!(loaded.get_selected_slot(), 3);
+        let s0 = loaded.get_stack(0).await;
+        assert_eq!(s0.item.id, Item::DIAMOND.id);
+        assert_eq!(s0.item_count, 5);
+
+        let s15 = loaded.get_stack(15).await;
+        assert_eq!(s15.item.id, Item::APPLE.id);
+        assert_eq!(s15.item_count, 12);
+
+        let helmet = loaded.get_stack(39).await;
+        assert_eq!(helmet.item.id, Item::IRON_HELMET.id);
+        assert_eq!(helmet.item_count, 1);
+
+        let offhand = loaded.get_stack(PlayerInventory::OFF_HAND_SLOT).await;
+        assert_eq!(offhand.item.id, Item::SHIELD.id);
+        assert_eq!(offhand.item_count, 1);
+    }
+
+    #[tokio::test]
+    async fn test_ender_chest_inventory_nbt_roundtrip() {
+        use crate::entity::NBTStorage;
+
+        let ec = EnderChestInventory::default();
+        ec.set_stack(2, ItemStack::new(64, &Item::OBSIDIAN)).await;
+        ec.set_stack(26, ItemStack::new(1, &Item::NETHER_STAR)).await;
+
+        let mut nbt = NbtCompound::new();
+        ec.write_nbt(&mut nbt).await;
+
+        let list = nbt.get_list("EnderItems").expect("EnderItems tag must be present");
+        assert_eq!(list.len(), 2);
+
+        let loaded = EnderChestInventory::default();
+        loaded.read_nbt_non_mut(&nbt).await;
+
+        let s2 = loaded.get_stack(2).await;
+        assert_eq!(s2.item.id, Item::OBSIDIAN.id);
+        assert_eq!(s2.item_count, 64);
+
+        let s26 = loaded.get_stack(26).await;
+        assert_eq!(s26.item.id, Item::NETHER_STAR.id);
+        assert_eq!(s26.item_count, 1);
+
+        let empty = loaded.get_stack(0).await;
+        assert!(empty.is_empty());
+    }
 }
