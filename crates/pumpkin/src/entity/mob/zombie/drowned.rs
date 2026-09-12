@@ -33,4 +33,21 @@ impl Mob for DrownedEntity {
     fn get_mob_entity(&self) -> &MobEntity {
         &self.entity.mob_entity
     }
+
+    fn can_break_doors(&self) -> bool {
+        self.entity.can_break_doors()
+    }
+
+    fn set_can_break_doors(&self, can_break: bool) {
+        self.entity.set_can_break_doors(can_break);
+    }
+
+    fn mob_drop_custom_death_loot<'a>(
+        &'a self,
+        damage_type: pumpkin_data::damage::DamageType,
+        source: Option<&'a dyn crate::entity::EntityBase>,
+        cause: Option<&'a dyn crate::entity::EntityBase>,
+    ) -> crate::entity::EntityBaseFuture<'a, ()> {
+        self.entity.mob_drop_custom_death_loot(damage_type, source, cause)
+    }
 }

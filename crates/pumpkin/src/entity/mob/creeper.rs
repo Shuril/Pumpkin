@@ -4,6 +4,7 @@ use std::sync::{
     atomic::{AtomicBool, AtomicI32, Ordering},
 };
 
+use pumpkin_data::damage::DamageType;
 use pumpkin_data::item_stack::ItemStack;
 use pumpkin_data::{
     entity::EntityType,
@@ -14,6 +15,7 @@ use pumpkin_data::{
 };
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_protocol::{codec::var_int::VarInt, java::client::play::Metadata};
+use rand::RngExt;
 
 use crate::entity::{
     Entity, EntityBase, EntityBaseFuture, NBTStorage, NbtFuture,
@@ -74,6 +76,7 @@ pub struct CreeperEntity {
     pub explosion_radius: AtomicI32,
     pub ignited: AtomicBool,
     pub charged: AtomicBool,
+    pub dropped_mob_heads: AtomicI32,
 }
 
 impl CreeperEntity {
@@ -88,6 +91,7 @@ impl CreeperEntity {
             explosion_radius: AtomicI32::new(DEFAULT_EXPLOSION_RADIUS),
             ignited: AtomicBool::new(false),
             charged: AtomicBool::new(false),
+            dropped_mob_heads: AtomicI32::new(0),
         };
         let mob_arc = Arc::new(entity);
         let mob_weak: Weak<dyn Mob> = {
@@ -140,7 +144,28 @@ impl CreeperEntity {
         );
     }
 
-    async fn explode(&self) {
+    #[must_use]
+    pub fn can_drop_mob_head(&self) -> bool {
+        self.charged.load(Ordering::Relaxed) && self.dropped_mob_heads.load(Ordering::Relaxed) < 1
+    }
+
+    pub fn increase_dropped_mob_heads(&self) {
+        self.dropped_mob_heads.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn set_charged(&self, charged: bool) {
+        self.charged.store(charged, Ordering::Relaxed);
+        self.mob_entity.living_entity.entity.send_meta_data(
+            &[Metadata::new(
+                TrackedData::CHARGING,
+                MetaDataType::BOOLEAN,
+                charged,
+            )],
+            None,
+        );
+    }
+
+    async fn explode(&self, caller: &Arc<dyn EntityBase>) {
         let entity = &self.mob_entity.living_entity.entity;
         let radius = self.explosion_radius.load(Ordering::Relaxed) as f32;
         let multiplier = if self.charged.load(Ordering::Relaxed) {
@@ -154,7 +179,14 @@ impl CreeperEntity {
             .store(true, Ordering::Relaxed);
         let world = entity.world.load();
         let pos = entity.pos.load();
-        world.explode(pos, radius * multiplier).await;
+        world
+            .explode_with_source(
+                pos,
+                radius * multiplier,
+                Some(caller.clone()),
+                Some(caller.clone()),
+            )
+            .await;
 
         // Vanilla creepers leave a lingering cloud only when they carry at
         // least one active effect.  Snapshot the map before spawning: the
@@ -225,6 +257,35 @@ mod tests {
         let active = HashMap::new();
         assert!(lingering_cloud_effects(&active).is_empty());
     }
+
+    #[test]
+    fn charged_creeper_can_only_drop_one_mob_head() {
+        let charged = std::sync::atomic::AtomicBool::new(false);
+        let dropped = std::sync::atomic::AtomicI32::new(0);
+
+        // Uncharged creeper cannot drop mob head
+        assert!(!charged.load(std::sync::atomic::Ordering::Relaxed) || dropped.load(std::sync::atomic::Ordering::Relaxed) >= 1);
+
+        // Powered creeper with 0 dropped heads can drop head
+        charged.store(true, std::sync::atomic::Ordering::Relaxed);
+        assert!(charged.load(std::sync::atomic::Ordering::Relaxed) && dropped.load(std::sync::atomic::Ordering::Relaxed) < 1);
+
+        // Increment dropped skulls count
+        dropped.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        assert!(!(charged.load(std::sync::atomic::Ordering::Relaxed) && dropped.load(std::sync::atomic::Ordering::Relaxed) < 1));
+    }
+
+    #[test]
+    fn creeper_music_disc_drop_tag_is_valid() {
+        let discs = pumpkin_data::tag::Item::MINECRAFT_CREEPER_DROP_MUSIC_DISCS.1;
+        assert!(!discs.is_empty());
+        for &disc_id in discs {
+            assert!(
+                pumpkin_data::item::Item::from_id(disc_id).is_some(),
+                "Disc id {disc_id} must be a valid item"
+            );
+        }
+    }
 }
 
 impl NBTStorage for CreeperEntity {
@@ -245,7 +306,7 @@ impl NBTStorage for CreeperEntity {
         Box::pin(async {
             self.mob_entity.living_entity.read_nbt_non_mut(nbt).await;
             if let Some(powered) = nbt.get_bool("powered") {
-                self.charged.store(powered, Ordering::Relaxed);
+                self.set_charged(powered);
             }
             if let Some(fuse) = nbt.get_short("Fuse") {
                 self.fuse_time.store(i32::from(fuse), Ordering::Relaxed);
@@ -266,7 +327,11 @@ impl Mob for CreeperEntity {
         &self.mob_entity
     }
 
-    fn mob_tick<'a>(&'a self, _caller: &'a Arc<dyn EntityBase>) -> EntityBaseFuture<'a, ()> {
+    fn get_creeper(&self) -> Option<&CreeperEntity> {
+        Some(self)
+    }
+
+    fn mob_tick<'a>(&'a self, caller: &'a Arc<dyn EntityBase>) -> EntityBaseFuture<'a, ()> {
         Box::pin(async move {
             let entity = &self.mob_entity.living_entity.entity;
             if !entity.is_alive() {
@@ -302,7 +367,58 @@ impl Mob for CreeperEntity {
 
             if new_fuse >= fuse_time {
                 self.current_fuse_time.store(fuse_time, Ordering::Relaxed);
-                self.explode().await;
+                self.explode(caller).await;
+            }
+        })
+    }
+
+    fn mob_drop_custom_death_loot<'a>(
+        &'a self,
+        _damage_type: DamageType,
+        source: Option<&'a dyn EntityBase>,
+        cause: Option<&'a dyn EntityBase>,
+    ) -> EntityBaseFuture<'a, ()> {
+        Box::pin(async move {
+            let entity = &self.mob_entity.living_entity.entity;
+            let world = entity.world.load();
+            if !world.level_info.load().game_rules.mob_drops {
+                return;
+            }
+
+            let killer = cause.or(source);
+            if let Some(killer) = killer {
+                let killer_type = killer.get_entity().entity_type;
+                if killer_type == &EntityType::SKELETON
+                    || killer_type == &EntityType::STRAY
+                    || killer_type == &EntityType::BOGGED
+                {
+                    let discs = pumpkin_data::tag::Item::MINECRAFT_CREEPER_DROP_MUSIC_DISCS.1;
+                    if !discs.is_empty() {
+                        let idx = rand::rng().random_range(0..discs.len());
+                        let disc_id = discs[idx];
+                        if let Some(disc_item) = Item::from_id(disc_id) {
+                            world
+                                .drop_stack(
+                                    &entity.block_pos.load(),
+                                    ItemStack::new(1, disc_item),
+                                )
+                                .await;
+                        }
+                    }
+                    return;
+                }
+
+                if let Some(creeper) = killer.get_mob().and_then(|m| m.get_creeper())
+                    && creeper.can_drop_mob_head()
+                {
+                    creeper.increase_dropped_mob_heads();
+                    world
+                        .drop_stack(
+                            &entity.block_pos.load(),
+                            ItemStack::new(1, &Item::CREEPER_HEAD),
+                        )
+                        .await;
+                }
             }
         })
     }

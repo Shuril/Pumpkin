@@ -151,7 +151,7 @@ impl Goal for BreakDoorGoal {
             mob.get_entity().head_yaw.store(target_yaw);
 
             // Play knocking/banging sound and swing hand periodically
-            if self.break_progress % 20 == 0 {
+            if self.break_progress.is_multiple_of(20) {
                 world.sync_world_event(WorldEvent::SoundZombieWoodenDoor, door_pos, 0);
                 mob.get_mob_entity().living_entity.swing_hand().await;
             }

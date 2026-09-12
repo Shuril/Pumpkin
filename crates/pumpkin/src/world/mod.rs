@@ -3926,7 +3926,19 @@ impl World {
     }
 
     pub async fn explode(self: &Arc<Self>, position: Vector3<f64>, power: f32) {
-        let explosion = Explosion::new(power, position);
+        self.explode_with_source(position, power, None, None).await;
+    }
+
+    pub async fn explode_with_source(
+        self: &Arc<Self>,
+        position: Vector3<f64>,
+        power: f32,
+        source: Option<Arc<dyn EntityBase>>,
+        cause: Option<Arc<dyn EntityBase>>,
+    ) {
+        let explosion = Explosion::new(power, position)
+            .with_source(source)
+            .with_cause(cause);
         self.run_explosion(explosion, position, power).await;
     }
 

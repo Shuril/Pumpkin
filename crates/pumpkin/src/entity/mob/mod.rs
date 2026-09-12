@@ -883,7 +883,12 @@ pub trait Mob: EntityBase + Send + Sync {
     /// `Mob#dropCustomDeathLoot`; keeping it as a hook avoids downcasts from
     /// the shared `LivingEntity` death pipeline and lets entities such as the
     /// Enderman drop their carried block with the same world context.
-    fn mob_drop_custom_death_loot(&self) -> EntityBaseFuture<'_, ()> {
+    fn mob_drop_custom_death_loot<'a>(
+        &'a self,
+        _damage_type: DamageType,
+        _source: Option<&'a dyn EntityBase>,
+        _cause: Option<&'a dyn EntityBase>,
+    ) -> EntityBaseFuture<'a, ()> {
         Box::pin(async {})
     }
 
@@ -1011,6 +1016,10 @@ pub trait Mob: EntityBase + Send + Sync {
     }
 
     fn get_trader_llama(&self) -> Option<&crate::entity::passive::trader_llama::TraderLlamaEntity> {
+        None
+    }
+
+    fn get_creeper(&self) -> Option<&crate::entity::mob::creeper::CreeperEntity> {
         None
     }
 

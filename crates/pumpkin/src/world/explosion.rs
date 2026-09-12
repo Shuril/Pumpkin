@@ -26,6 +26,8 @@ pub struct Explosion {
     pos: Vector3<f64>,
     preserve_rails: bool,
     causes_fire: bool,
+    source: Option<Arc<dyn EntityBase>>,
+    cause: Option<Arc<dyn EntityBase>>,
 }
 
 impl Explosion {
@@ -36,7 +38,21 @@ impl Explosion {
             pos,
             preserve_rails: false,
             causes_fire: false,
+            source: None,
+            cause: None,
         }
+    }
+
+    #[must_use]
+    pub fn with_source(mut self, source: Option<Arc<dyn EntityBase>>) -> Self {
+        self.source = source;
+        self
+    }
+
+    #[must_use]
+    pub fn with_cause(mut self, cause: Option<Arc<dyn EntityBase>>) -> Self {
+        self.cause = cause;
+        self
     }
 
     #[must_use]
@@ -228,8 +244,15 @@ impl Explosion {
                 * self.power as f64
                 + 1.0) as f32;
 
-            entity
-                .damage(entity_base.as_ref(), damage, DamageType::EXPLOSION)
+            entity_base
+                .damage_with_context(
+                    entity_base.as_ref(),
+                    damage,
+                    DamageType::EXPLOSION,
+                    Some(self.pos),
+                    self.source.as_deref(),
+                    self.cause.as_deref().or(self.source.as_deref()),
+                )
                 .await;
 
             // Calculate and apply knockback

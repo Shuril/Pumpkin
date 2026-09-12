@@ -483,7 +483,12 @@ impl Mob for EndermanEntity {
     }
 
     // TODO: angerable system, ambient sound override
-    fn mob_drop_custom_death_loot(&self) -> crate::entity::EntityBaseFuture<'_, ()> {
+    fn mob_drop_custom_death_loot<'a>(
+        &'a self,
+        _damage_type: DamageType,
+        _source: Option<&'a dyn EntityBase>,
+        _cause: Option<&'a dyn EntityBase>,
+    ) -> crate::entity::EntityBaseFuture<'a, ()> {
         Box::pin(async move {
             let Some(carried_state) = self.carried_block.take() else {
                 return;

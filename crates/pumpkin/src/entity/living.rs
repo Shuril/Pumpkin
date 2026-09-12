@@ -1889,7 +1889,8 @@ impl LivingEntity {
             // custom drops (for example an Enderman's carried block) obey the
             // same gamerules, context position and deterministic RNG policy.
             if let Some(mob) = dyn_self.get_mob() {
-                mob.mob_drop_custom_death_loot().await;
+                mob.mob_drop_custom_death_loot(damage_type, source, cause)
+                    .await;
             }
 
             // Award experience

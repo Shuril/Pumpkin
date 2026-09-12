@@ -52,6 +52,7 @@ fn ring_bell(position: BlockPos, world: &Arc<World>, hit_direction: Option<Horiz
     });
 }
 
+#[must_use]
 pub fn is_direction_on_bell(
     face: &BlockDirection,
     attachment: BellAttachment,

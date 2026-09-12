@@ -7,10 +7,13 @@ use crate::entity::ai::goal::swim::SwimGoal;
 use crate::entity::ai::goal::wander_around::WanderAroundGoal;
 use crate::entity::ai::goal::zombie_attack::ZombieAttackGoal;
 use crate::entity::{
-    Entity, NBTStorage, NbtFuture,
+    Entity, EntityBase, EntityBaseFuture, NBTStorage, NbtFuture,
     ai::goal::{active_target::ActiveTargetGoal, look_at_entity::LookAtEntityGoal},
 };
+use pumpkin_data::damage::DamageType;
 use pumpkin_data::entity::EntityType;
+use pumpkin_data::item::Item;
+use pumpkin_data::item_stack::ItemStack;
 use pumpkin_nbt::compound::NbtCompound;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
@@ -98,6 +101,33 @@ impl ZombieEntityBase {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         navigator.set_can_open_doors(can_break);
     }
+    pub fn handle_creeper_drop_mob_head<'a>(
+        &'a self,
+        source: Option<&'a dyn EntityBase>,
+        cause: Option<&'a dyn EntityBase>,
+    ) -> EntityBaseFuture<'a, ()> {
+        Box::pin(async move {
+            let entity = &self.mob_entity.living_entity.entity;
+            let world = entity.world.load();
+            if !world.level_info.load().game_rules.mob_drops {
+                return;
+            }
+
+            let killer = cause.or(source);
+            if let Some(killer) = killer
+                && let Some(creeper) = killer.get_mob().and_then(|m| m.get_creeper())
+                && creeper.can_drop_mob_head()
+            {
+                creeper.increase_dropped_mob_heads();
+                world
+                    .drop_stack(
+                        &entity.block_pos.load(),
+                        ItemStack::new(1, &Item::ZOMBIE_HEAD),
+                    )
+                    .await;
+            }
+        })
+    }
 }
 
 impl NBTStorage for ZombieEntityBase {
@@ -129,6 +159,15 @@ impl Mob for ZombieEntityBase {
 
     fn set_can_break_doors(&self, can_break: bool) {
         self.set_can_break_doors(can_break);
+    }
+
+    fn mob_drop_custom_death_loot<'a>(
+        &'a self,
+        _damage_type: DamageType,
+        source: Option<&'a dyn EntityBase>,
+        cause: Option<&'a dyn EntityBase>,
+    ) -> EntityBaseFuture<'a, ()> {
+        self.handle_creeper_drop_mob_head(source, cause)
     }
 }
 
@@ -171,5 +210,10 @@ mod tests {
         assert!(navigator.can_pass_doors());
         navigator.set_can_open_doors(false);
         assert!(!navigator.can_open_doors());
+    }
+
+    #[test]
+    fn test_zombie_head_item_is_valid() {
+        assert!(Item::from_id(Item::ZOMBIE_HEAD.id).is_some());
     }
 }
