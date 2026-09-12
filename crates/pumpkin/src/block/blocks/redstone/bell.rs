@@ -5,7 +5,7 @@ use crate::block::entities::bell::BellBlockEntity;
 use crate::block::registry::BlockActionResult;
 use crate::block::{
     BlockBehaviour, BlockFuture, BlockHitResult, BrokenArgs, CanPlaceAtArgs, NormalUseArgs,
-    OnNeighborUpdateArgs, OnPlaceArgs, PlacedArgs,
+    OnNeighborUpdateArgs, OnPlaceArgs, OnProjectileHitArgs, PlacedArgs,
 };
 use crate::world::World;
 use pumpkin_data::BlockStateId;
@@ -52,24 +52,30 @@ fn ring_bell(position: BlockPos, world: &Arc<World>, hit_direction: Option<Horiz
     });
 }
 
+pub fn is_direction_on_bell(
+    face: &BlockDirection,
+    attachment: BellAttachment,
+    block_face: HorizontalFacing,
+) -> bool {
+    if face == &BlockDirection::Up || face == &BlockDirection::Down {
+        return false;
+    }
+    match attachment {
+        BellAttachment::Floor => face.to_axis() == block_face.to_block_direction().to_axis(),
+        BellAttachment::SingleWall | BellAttachment::DoubleWall => {
+            face.to_axis() != block_face.to_block_direction().to_axis()
+        }
+        BellAttachment::Ceiling => true,
+    }
+}
+
 fn is_point_on_bell(
     hit: &BlockHitResult,
     attachment: BellAttachment,
     block_face: HorizontalFacing,
 ) -> bool {
-    if hit.face == &BlockDirection::Up || hit.face == &BlockDirection::Down {
-        return false;
-    }
     if hit.cursor_pos.y <= 0.8124f32 {
-        match attachment {
-            BellAttachment::Floor => {
-                hit.face.to_axis() == block_face.to_block_direction().to_axis()
-            }
-            BellAttachment::SingleWall | BellAttachment::DoubleWall => {
-                hit.face.to_axis() != block_face.to_block_direction().to_axis()
-            }
-            BellAttachment::Ceiling => true,
-        }
+        is_direction_on_bell(hit.face, attachment, block_face)
     } else {
         false
     }
@@ -215,4 +221,102 @@ impl BlockBehaviour for BellBlock {
             }
         })
     }
+
+    fn on_projectile_hit<'a>(&'a self, args: OnProjectileHitArgs<'a>) -> BlockFuture<'a, ()> {
+        Box::pin(async move {
+            let crate::entity::projectile::ProjectileHit::Block { face, .. } = args.hit else {
+                return;
+            };
+
+            let props = BellLikeProperties::from_state_id(args.state.id, args.block);
+            if !is_direction_on_bell(face, props.attachment, props.facing) {
+                return;
+            }
+
+            ring_bell(
+                *args.position,
+                args.world,
+                face.to_horizontal_facing(),
+            );
+
+            if let Some(owner_id) = args.projectile.projectile_owner_id()
+                && let Some(player) = args.world.get_player_by_id(owner_id)
+            {
+                player
+                    .increment_stat(
+                        pumpkin_data::statistic::StatisticCategory::Custom,
+                        pumpkin_data::statistic::CustomStatistic::BellRing as i32,
+                        1,
+                    )
+                    .await;
+            }
+        })
+    }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_bell_direction_detection() {
+        // Vertical hit directions are never valid
+        assert!(!is_direction_on_bell(
+            &BlockDirection::Up,
+            BellAttachment::Floor,
+            HorizontalFacing::North
+        ));
+        assert!(!is_direction_on_bell(
+            &BlockDirection::Down,
+            BellAttachment::Ceiling,
+            HorizontalFacing::North
+        ));
+
+        // Floor: hit face axis must match block facing axis
+        assert!(is_direction_on_bell(
+            &BlockDirection::North,
+            BellAttachment::Floor,
+            HorizontalFacing::North
+        ));
+        assert!(is_direction_on_bell(
+            &BlockDirection::South,
+            BellAttachment::Floor,
+            HorizontalFacing::North
+        ));
+        assert!(!is_direction_on_bell(
+            &BlockDirection::East,
+            BellAttachment::Floor,
+            HorizontalFacing::North
+        ));
+
+        // Wall: hit face axis must NOT match block facing axis
+        assert!(is_direction_on_bell(
+            &BlockDirection::East,
+            BellAttachment::SingleWall,
+            HorizontalFacing::North
+        ));
+        assert!(is_direction_on_bell(
+            &BlockDirection::West,
+            BellAttachment::DoubleWall,
+            HorizontalFacing::North
+        ));
+        assert!(!is_direction_on_bell(
+            &BlockDirection::North,
+            BellAttachment::SingleWall,
+            HorizontalFacing::North
+        ));
+
+        // Ceiling: any horizontal direction is valid
+        assert!(is_direction_on_bell(
+            &BlockDirection::North,
+            BellAttachment::Ceiling,
+            HorizontalFacing::North
+        ));
+        assert!(is_direction_on_bell(
+            &BlockDirection::East,
+            BellAttachment::Ceiling,
+            HorizontalFacing::North
+        ));
+    }
+}
+
