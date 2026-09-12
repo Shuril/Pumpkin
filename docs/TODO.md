@@ -164,7 +164,7 @@
 - Сократить дублирование async piston/neighbor update code.
 - Удалить magic numbers в inventory/window properties и scheduler limits.
 - Убрать `TODO: ugly` adapters из mob spawner, infested blocks and command args.
-- Добавить unit tests для `pumpkin-util` random implementations and noise helpers.
+- Unit tests для `pumpkin-util` random implementations (gaussian generator, decorator, slime chunk, carver and population seeds) and noise helpers (gradient vectors and dot product) реализованы.
 - Добавить inventory NBT load tests, bundle/max-stack tests beyond quick-craft,
   and disconnect cleanup.
 - Player autosaves now retain unknown root NBT fields, and weather/game-rule
