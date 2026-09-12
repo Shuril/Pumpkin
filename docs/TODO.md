@@ -103,9 +103,10 @@
 - Name tags now reject non-living/dead/non-serializable targets, set
   `PersistenceRequired` for mobs and consume only for a valid custom-name
   application; a dedicated despawn/save fixture is still pending.
-- Campfire cooking and projectile ignition are implemented; для jukebox осталось проверить
-  game-event/comparator edge cases (окончание песни теперь останавливает звук и
-  уведомляет соседей, не удаляя пластинку).
+- Campfire cooking, projectile ignition and jukebox game-event/comparator updates
+  are implemented (record insertion and removal update neighbors, comparators and emit
+  `BlockChange`; playback emits periodic 20-tick `JukeboxPlay` and stops sound with
+  neighbor/comparator refresh upon song completion without ejecting the record).
 - Bell raid hearing and respawn-anchor edge cases remain. Conduit frame refresh,
   conduit power, wet-player effects, hostile selection/attack, ambient timing
   and NBT target persistence are implemented; remaining conduit work is an
