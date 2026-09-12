@@ -46,7 +46,6 @@ pub enum RandomDeriver {
     Legacy(LegacySplitter),
 }
 
-// TODO: Write unit test for this
 #[macro_export]
 macro_rules! population_seed_fn {
     () => {
@@ -87,7 +86,6 @@ macro_rules! population_seed_fn {
 ///
 /// # Returns
 /// A decorator seed for the given parameters.
-// TODO: Write unit test for this
 #[inline]
 #[must_use]
 pub const fn get_decorator_seed(population_seed: u64, index: u64, step: u64) -> u64 {
@@ -391,5 +389,29 @@ mod tests {
         for ((x, y, z), value) in values {
             assert_eq!(hash_block_pos(x, y, z), value);
         }
+    }
+
+    #[test]
+    fn decorator_seed() {
+        let seed = super::get_decorator_seed(100, 5, 3);
+        assert_eq!(seed, 30105);
+    }
+
+    #[test]
+    fn slime_chunk_seed() {
+        let seed = super::seed_slime_chunk(0, 0, 12345, 987234911);
+        assert_eq!(seed, 12345 ^ 987234911);
+
+        let seed2 = super::seed_slime_chunk(5, -3, 12345678, 987234911);
+        assert_ne!(seed2, 0);
+    }
+
+    #[test]
+    fn carver_and_population_seed() {
+        let carver = super::get_carver_seed(123456789, 4, 7);
+        assert_ne!(carver, 0);
+
+        let pop = super::legacy_rand::LegacyRand::get_population_seed(123456789, 4 * 16, 7 * 16);
+        assert_ne!(pop, 0);
     }
 }
