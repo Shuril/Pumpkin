@@ -2969,6 +2969,16 @@ impl Entity {
         }
     }
 
+    #[must_use]
+    pub fn is_on_fire(&self) -> bool {
+        self.fire_ticks.load(Ordering::Relaxed) > 0 || self.has_visual_fire.load(Ordering::Relaxed)
+    }
+
+    #[must_use]
+    pub fn is_baby(&self) -> bool {
+        self.age.load(Ordering::Relaxed) < 0
+    }
+
     pub fn get_horizontal_facing(&self) -> HorizontalFacing {
         let yaw = self.yaw.load();
         // Use vanilla's formula: floor(angle / 90.0 + 0.5) & 3

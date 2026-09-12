@@ -248,6 +248,11 @@ impl MobEntity {
         self.target.lock().await.clone()
     }
 
+    #[must_use]
+    pub fn is_on_fire(&self) -> bool {
+        self.living_entity.is_on_fire()
+    }
+
     fn set_mob_flag(&self, flag: u8, value: bool) {
         let old_b = self.mob_flags.load(Ordering::Relaxed);
 
@@ -832,6 +837,10 @@ pub trait Mob: EntityBase + Send + Sync {
 
     fn get_mob_entity(&self) -> &MobEntity;
 
+    fn is_on_fire(&self) -> bool {
+        self.get_mob_entity().is_on_fire()
+    }
+
     fn get_job_site(&self) -> Option<BlockPos> {
         None
     }
@@ -980,6 +989,22 @@ pub trait Mob: EntityBase + Send + Sync {
     }
 
     fn get_snow_golem(&self) -> Option<&crate::entity::passive::snow_golem::SnowGolemEntity> {
+        None
+    }
+
+    fn get_donkey(&self) -> Option<&crate::entity::passive::donkey::DonkeyEntity> {
+        None
+    }
+
+    fn get_mule(&self) -> Option<&crate::entity::passive::mule::MuleEntity> {
+        None
+    }
+
+    fn get_llama(&self) -> Option<&crate::entity::passive::llama::LlamaEntity> {
+        None
+    }
+
+    fn get_trader_llama(&self) -> Option<&crate::entity::passive::trader_llama::TraderLlamaEntity> {
         None
     }
 

@@ -228,6 +228,11 @@ impl LivingEntity {
         }
     }
 
+    #[must_use]
+    pub fn is_on_fire(&self) -> bool {
+        self.entity.is_on_fire()
+    }
+
     pub fn send_equipment_changes(&self, equipment: &[(EquipmentSlot, ItemStack)]) {
         if equipment.is_empty() {
             return;

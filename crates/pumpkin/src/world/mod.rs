@@ -5740,6 +5740,11 @@ impl World {
     }
 
     #[must_use]
+    pub fn is_day_time(&self) -> bool {
+        self.dimension.has_skylight && self.get_sky_darken() < 4
+    }
+
+    #[must_use]
     pub fn can_see_sky(&self, position: &BlockPos) -> bool {
         position.0.y >= self.dimension.min_y
             && position.0.y < self.dimension.min_y + self.dimension.height

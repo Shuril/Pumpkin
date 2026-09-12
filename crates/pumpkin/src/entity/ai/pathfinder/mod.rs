@@ -64,6 +64,7 @@ pub struct Navigator {
     /// Thread-safe status check to avoid deadlocks when components (like `LookControl`) need to
     /// check navigation status.
     pub is_idle: AtomicBool,
+    pub avoid_sun: AtomicBool,
 }
 
 impl Default for Navigator {
@@ -83,6 +84,7 @@ impl Default for Navigator {
             open_set: BinaryHeap::new(),
             neighbors_buf: Vec::new(),
             is_idle: AtomicBool::new(true),
+            avoid_sun: AtomicBool::new(false),
         }
     }
 }
@@ -454,5 +456,14 @@ impl Navigator {
     #[must_use]
     pub fn is_idle(&self) -> bool {
         self.is_idle.load(Ordering::Relaxed)
+    }
+
+    pub fn set_avoid_sun(&self, avoid_sun: bool) {
+        self.avoid_sun.store(avoid_sun, Ordering::Relaxed);
+    }
+
+    #[must_use]
+    pub fn avoid_sun(&self) -> bool {
+        self.avoid_sun.load(Ordering::Relaxed)
     }
 }
