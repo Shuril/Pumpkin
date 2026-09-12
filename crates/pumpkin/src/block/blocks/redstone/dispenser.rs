@@ -1798,6 +1798,32 @@ impl DispenserBlock {
             return true;
         }
 
+        if let Some(entity) = ctx
+            .world
+            .get_entities_at_box(&bounds)
+            .into_iter()
+            .find(|e| {
+                e.get_mob()
+                    .and_then(|mob| mob.get_snow_golem())
+                    .is_some_and(|golem| golem.has_pumpkin())
+            })
+        {
+            let Some(snow_golem) = entity.get_mob().and_then(|mob| mob.get_snow_golem()) else {
+                return false;
+            };
+            snow_golem.shear(SoundCategory::Neutral).await;
+            let _ = item.damage_item(1);
+            Self::play_dispense_effects(ctx, WorldEvent::SoundDispenserDispense);
+            Self::emit_item_game_event(
+                ctx,
+                Self::target_position(ctx),
+                crate::world::game_event::GameEventKind::Shear,
+                &source_item,
+            )
+            .await;
+            return true;
+        }
+
         false
     }
 

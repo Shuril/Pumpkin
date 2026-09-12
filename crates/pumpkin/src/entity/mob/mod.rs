@@ -949,6 +949,10 @@ pub trait Mob: EntityBase + Send + Sync {
         None
     }
 
+    fn get_snow_golem(&self) -> Option<&crate::entity::passive::snow_golem::SnowGolemEntity> {
+        None
+    }
+
     fn wake_from_bed(&self) {}
 }
 impl<T: Mob + Send + 'static> EntityBase for T {

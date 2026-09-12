@@ -102,6 +102,11 @@ impl ItemBehaviour for ShearsItem {
                 ));
                 world.spawn_entity(item_entity).await;
                 player.damage_held_item(1).await;
+            } else if let Some(snow_golem) = entity.get_mob().and_then(|m| m.get_snow_golem())
+                && snow_golem.has_pumpkin()
+            {
+                snow_golem.shear(SoundCategory::Players).await;
+                player.damage_held_item(1).await;
             }
         })
     }
