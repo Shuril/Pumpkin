@@ -107,6 +107,13 @@ impl BlockEntity for JukeboxBlockEntity {
                     world
                         .update_comparators(&self.position, &Block::JUKEBOX)
                         .await;
+                } else if ticks > 0 && ticks.is_multiple_of(20) {
+                    world
+                        .emit_game_event(
+                            self.position,
+                            crate::world::game_event::GameEventKind::JukeboxPlay,
+                        )
+                        .await;
                 }
             }
         })

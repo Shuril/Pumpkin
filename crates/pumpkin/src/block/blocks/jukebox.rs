@@ -44,7 +44,15 @@ impl JukeboxBlock {
             .set_block_state(
                 position,
                 new_state.to_state_id(block),
-                BlockFlags::NOTIFY_LISTENERS,
+                BlockFlags::NOTIFY_ALL,
+            )
+            .await;
+        world.update_neighbors(position, None).await;
+        world.update_comparators(position, block).await;
+        world
+            .emit_game_event(
+                *position,
+                crate::world::game_event::GameEventKind::BlockChange,
             )
             .await;
     }
@@ -275,5 +283,31 @@ impl BlockBehaviour for JukeboxBlock {
             }
             Some(0)
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_has_record_state() {
+        let block = &Block::JUKEBOX;
+        let props_empty = JukeboxLikeProperties { has_record: false };
+        let state_empty = props_empty.to_state_id(block);
+        assert!(!JukeboxBlock::has_record_state(block, state_empty));
+
+        let props_full = JukeboxLikeProperties { has_record: true };
+        let state_full = props_full.to_state_id(block);
+        assert!(JukeboxBlock::has_record_state(block, state_full));
+    }
+
+    #[test]
+    fn test_jukebox_song_comparator_output() {
+        let song_13 = JukeboxSong::from_name("13").expect("13 song exists");
+        assert_eq!(song_13.comparator_output(), 1);
+
+        let song_cat = JukeboxSong::from_name("cat").expect("cat song exists");
+        assert_eq!(song_cat.comparator_output(), 2);
     }
 }

@@ -331,7 +331,10 @@ impl DispenserBlock {
                 Self::dispense_tnt(ctx, item).await;
             } else if item.item.id == Item::SNOWBALL.id {
                 Self::dispense_snowball(ctx, item).await;
-            } else if item.item.id == Item::EGG.id {
+            } else if item.item.id == Item::EGG.id
+                || item.item.id == Item::BLUE_EGG.id
+                || item.item.id == Item::BROWN_EGG.id
+            {
                 Self::dispense_egg(ctx, item).await;
             } else if item.item.id == Item::EXPERIENCE_BOTTLE.id {
                 Self::dispense_experience_bottle(ctx, item).await;
