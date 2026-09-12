@@ -543,22 +543,22 @@ impl EntityBase for ArrowEntity {
                         target.get_entity().set_on_fire_for_ticks(100);
                     }
 
+                    let shooter = self.owner_id.and_then(|id| world.get_entity_by_id(id));
                     let damage_succeeded = target
                         .damage_with_context(
                             &*target,
                             damage as f32,
                             DamageType::ARROW,
                             Some(hit_pos),
-                            None,
                             Some(self),
+                            shooter.as_deref().or(Some(self)),
                         )
                         .await;
 
                     if let Some(living) = target.get_living_entity() {
                         let punch = self.punch_level.load(Ordering::Relaxed);
                         if punch > 0
-                            && let Some(owner_id) = self.owner_id
-                            && let Some(owner_entity) = world.get_entity_by_id(owner_id)
+                            && let Some(owner_entity) = &shooter
                         {
                             crate::entity::combat::handle_knockback(
                                 owner_entity.get_entity(),
