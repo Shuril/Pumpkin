@@ -1,9 +1,12 @@
+use crate::block::entities::block_entity_from_nbt;
 use crate::command::CommandResult;
 use crate::command::args::entity::EntityArgumentConsumer;
+use crate::command::args::nbt::NbtCompoundArgumentConsumer;
+use crate::command::args::position_block::BlockPosArgumentConsumer;
 use crate::command::tree::builder::literal;
 use crate::command::{
     CommandError, CommandExecutor, CommandSender,
-    args::{Arg, ConsumedArgs},
+    args::{Arg, ConsumedArgs, FindArg},
     tree::{CommandTree, builder::argument},
 };
 use crate::entity::NBTStorage;
@@ -18,6 +21,8 @@ const NAMES: [&str; 1] = ["data"];
 const DESCRIPTION: &str = "Query and modify data of entities and blocks";
 
 const ARG_ENTITY: &str = "entity";
+const ARG_BLOCK_POS: &str = "targetPos";
+const ARG_NBT: &str = "nbt";
 
 struct GetEntityDataExecutor;
 
@@ -275,11 +280,264 @@ fn get_i32_result(tag: &NbtTag) -> Result<i32, CommandError> {
     }
 }
 
+pub fn merge_nbt_compound(target: &mut NbtCompound, other: &NbtCompound) {
+    for (key, other_tag) in &other.child_tags {
+        match other_tag {
+            NbtTag::Compound(other_child) => {
+                if let Some(NbtTag::Compound(target_child)) = target.child_tags.get_mut(key) {
+                    merge_nbt_compound(target_child, other_child);
+                } else {
+                    target.child_tags.insert(key.clone(), other_tag.clone());
+                }
+            }
+            _ => {
+                target.child_tags.insert(key.clone(), other_tag.clone());
+            }
+        }
+    }
+}
+
+struct GetBlockDataExecutor;
+
+impl CommandExecutor for GetBlockDataExecutor {
+    fn execute<'a>(
+        &'a self,
+        sender: &'a CommandSender,
+        server: &'a crate::server::Server,
+        args: &'a ConsumedArgs<'a>,
+    ) -> CommandResult<'a> {
+        Box::pin(async move {
+            let world = sender
+                .world_or_first(server)
+                .ok_or(CommandError::InvalidRequirement)?;
+            let pos = BlockPosArgumentConsumer::find_loaded_arg(args, ARG_BLOCK_POS, &world)?;
+            let Some(block_entity) = world.get_block_entity(&pos) else {
+                return Err(CommandError::CommandFailed(TextComponent::translate_cross(
+                    translation::java::COMMANDS_DATA_BLOCK_INVALID,
+                    translation::java::COMMANDS_DATA_BLOCK_INVALID,
+                    [],
+                )));
+            };
+
+            let mut nbt = NbtCompound::new();
+            block_entity.write_internal(&mut nbt).await;
+            let tag = NbtTag::Compound(nbt);
+
+            let result = get_i32_result(&tag)?;
+            let display = snbt_colorful_display(&tag, 0)
+                .map_err(|string| CommandError::CommandFailed(TextComponent::text(string)))?;
+
+            sender
+                .send_message(TextComponent::translate_cross(
+                    translation::java::COMMANDS_DATA_BLOCK_QUERY,
+                    translation::java::COMMANDS_DATA_BLOCK_QUERY,
+                    [
+                        TextComponent::text(pos.0.x.to_string()),
+                        TextComponent::text(pos.0.y.to_string()),
+                        TextComponent::text(pos.0.z.to_string()),
+                        display,
+                    ],
+                ))
+                .await;
+
+            Ok(result)
+        })
+    }
+}
+
+struct MergeBlockDataExecutor;
+
+impl CommandExecutor for MergeBlockDataExecutor {
+    fn execute<'a>(
+        &'a self,
+        sender: &'a CommandSender,
+        server: &'a crate::server::Server,
+        args: &'a ConsumedArgs<'a>,
+    ) -> CommandResult<'a> {
+        Box::pin(async move {
+            let world = sender
+                .world_or_first(server)
+                .ok_or(CommandError::InvalidRequirement)?;
+            let pos = BlockPosArgumentConsumer::find_loaded_arg(args, ARG_BLOCK_POS, &world)?;
+            let nbt_to_merge = NbtCompoundArgumentConsumer::find_arg(args, ARG_NBT)?;
+
+            let Some(block_entity) = world.get_block_entity(&pos) else {
+                return Err(CommandError::CommandFailed(TextComponent::translate_cross(
+                    translation::java::COMMANDS_DATA_BLOCK_INVALID,
+                    translation::java::COMMANDS_DATA_BLOCK_INVALID,
+                    [],
+                )));
+            };
+
+            let mut old_nbt = NbtCompound::new();
+            block_entity.write_internal(&mut old_nbt).await;
+
+            let mut merged_nbt = old_nbt.clone();
+            merge_nbt_compound(&mut merged_nbt, &nbt_to_merge);
+
+            if old_nbt == merged_nbt {
+                return Err(CommandError::CommandFailed(TextComponent::translate_cross(
+                    translation::java::COMMANDS_DATA_MERGE_FAILED,
+                    translation::java::COMMANDS_DATA_MERGE_FAILED,
+                    [],
+                )));
+            }
+
+            if let Some(new_block_entity) = block_entity_from_nbt(&merged_nbt) {
+                world.add_block_entity(new_block_entity);
+            } else {
+                world.add_block_entity_nbt(pos, &merged_nbt);
+            }
+
+            sender
+                .send_message(TextComponent::translate_cross(
+                    translation::java::COMMANDS_DATA_BLOCK_MODIFIED,
+                    translation::java::COMMANDS_DATA_BLOCK_MODIFIED,
+                    [
+                        TextComponent::text(pos.0.x.to_string()),
+                        TextComponent::text(pos.0.y.to_string()),
+                        TextComponent::text(pos.0.z.to_string()),
+                    ],
+                ))
+                .await;
+
+            Ok(1)
+        })
+    }
+}
+
+struct MergeEntityDataExecutor;
+
+impl CommandExecutor for MergeEntityDataExecutor {
+    fn execute<'a>(
+        &'a self,
+        sender: &'a CommandSender,
+        _server: &'a crate::server::Server,
+        args: &'a ConsumedArgs<'a>,
+    ) -> CommandResult<'a> {
+        Box::pin(async move {
+            let Some(Arg::Entity(entity)) = args.get(&ARG_ENTITY) else {
+                return Err(InvalidConsumption(Some(ARG_ENTITY.into())));
+            };
+            let nbt_to_merge = NbtCompoundArgumentConsumer::find_arg(args, ARG_NBT)?;
+
+            let storage = entity.as_nbt_storage();
+            let mut old_nbt = NbtCompound::new();
+            storage.write_nbt(&mut old_nbt).await;
+
+            let mut merged_nbt = old_nbt.clone();
+            merge_nbt_compound(&mut merged_nbt, &nbt_to_merge);
+
+            if old_nbt == merged_nbt {
+                return Err(CommandError::CommandFailed(TextComponent::translate_cross(
+                    translation::java::COMMANDS_DATA_MERGE_FAILED,
+                    translation::java::COMMANDS_DATA_MERGE_FAILED,
+                    [],
+                )));
+            }
+
+            storage.read_nbt_non_mut(&merged_nbt).await;
+
+            let display_name = entity.get_display_name().await;
+            sender
+                .send_message(TextComponent::translate_cross(
+                    translation::java::COMMANDS_DATA_ENTITY_MODIFIED,
+                    translation::java::COMMANDS_DATA_ENTITY_MODIFIED,
+                    [display_name],
+                ))
+                .await;
+
+            Ok(1)
+        })
+    }
+}
+
 pub fn init_command_tree() -> CommandTree {
-    CommandTree::new(NAMES, DESCRIPTION).then(
-        literal("get").then(
-            literal("entity")
-                .then(argument(ARG_ENTITY, EntityArgumentConsumer).execute(GetEntityDataExecutor)),
-        ),
-    )
+    CommandTree::new(NAMES, DESCRIPTION)
+        .then(
+            literal("get")
+                .then(literal("entity").then(
+                    argument(ARG_ENTITY, EntityArgumentConsumer).execute(GetEntityDataExecutor),
+                ))
+                .then(literal("block").then(
+                    argument(ARG_BLOCK_POS, BlockPosArgumentConsumer).execute(GetBlockDataExecutor),
+                )),
+        )
+        .then(
+            literal("merge")
+                .then(
+                    literal("entity").then(
+                        argument(ARG_ENTITY, EntityArgumentConsumer).then(
+                            argument(ARG_NBT, NbtCompoundArgumentConsumer)
+                                .execute(MergeEntityDataExecutor),
+                        ),
+                    ),
+                )
+                .then(
+                    literal("block").then(
+                        argument(ARG_BLOCK_POS, BlockPosArgumentConsumer).then(
+                            argument(ARG_NBT, NbtCompoundArgumentConsumer)
+                                .execute(MergeBlockDataExecutor),
+                        ),
+                    ),
+                ),
+        )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pumpkin_nbt::tag::NbtTag;
+
+    #[test]
+    fn test_merge_nbt_compound_scalar_overwrite_and_insert() {
+        let mut target = NbtCompound::new();
+        target.put("a", NbtTag::Int(1));
+        target.put("b", NbtTag::String("original".into()));
+
+        let mut incoming = NbtCompound::new();
+        incoming.put("b", NbtTag::String("updated".into()));
+        incoming.put("c", NbtTag::Byte(42));
+
+        merge_nbt_compound(&mut target, &incoming);
+
+        assert_eq!(target.get("a"), Some(&NbtTag::Int(1)));
+        assert_eq!(target.get("b"), Some(&NbtTag::String("updated".into())));
+        assert_eq!(target.get("c"), Some(&NbtTag::Byte(42)));
+    }
+
+    #[test]
+    fn test_merge_nbt_compound_recursive() {
+        let mut target_inner = NbtCompound::new();
+        target_inner.put("x", NbtTag::Int(10));
+        target_inner.put("y", NbtTag::Int(20));
+
+        let mut target = NbtCompound::new();
+        target.put("inner", NbtTag::Compound(target_inner));
+
+        let mut incoming_inner = NbtCompound::new();
+        incoming_inner.put("y", NbtTag::Int(99));
+        incoming_inner.put("z", NbtTag::Int(30));
+
+        let mut incoming = NbtCompound::new();
+        incoming.put("inner", NbtTag::Compound(incoming_inner));
+
+        merge_nbt_compound(&mut target, &incoming);
+
+        let Some(NbtTag::Compound(merged_inner)) = target.get("inner") else {
+            panic!("Expected compound");
+        };
+
+        assert_eq!(merged_inner.get("x"), Some(&NbtTag::Int(10)));
+        assert_eq!(merged_inner.get("y"), Some(&NbtTag::Int(99)));
+        assert_eq!(merged_inner.get("z"), Some(&NbtTag::Int(30)));
+    }
+
+    #[test]
+    fn test_get_i32_result() {
+        assert_eq!(get_i32_result(&NbtTag::Int(123)).unwrap(), 123);
+        assert_eq!(get_i32_result(&NbtTag::Byte(5)).unwrap(), 5);
+        assert_eq!(get_i32_result(&NbtTag::Short(10)).unwrap(), 10);
+        assert_eq!(get_i32_result(&NbtTag::String("hello".into())).unwrap(), 5);
+    }
 }

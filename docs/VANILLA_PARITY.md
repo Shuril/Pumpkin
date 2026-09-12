@@ -106,6 +106,12 @@ Pumpkin API.
 | Name tags | `item/items/name_tag.rs`, `entity/mod.rs` | `NameTagItem#interactLivingEntity`, `Mob#setPersistenceRequired` | mostly; live serializable living-target gate, mob `PersistenceRequired` NBT and custom-name metadata/consumption are implemented; despawn fixture remains |
 | Loot RNG/context | `world/loot.rs`, `block/mod.rs`, `command/commands/loot.rs` | `LootTable`, `LootPool`, `LootContext`, `Block.dropResources` | mostly; an explicit context seed now drives all rolls, conditions, tag expansion, number providers and nested tables through one stream; guardian fish references use the fish-only built-in pool, world-bound block/explosion/entity/command sources derive replay-stable seeds, deferred containers retain theirs, and the shared drop path suppresses XP with Silk Touch; full condition/function codecs and differential fixtures remain |
 
+## Commands and administration
+
+| Область | Pumpkin | Vanilla reference | Статус / что сделать |
+|---|---|---|---|
+| `/data` command | `command/commands/data.rs` | `DataCommands`, `BlockDataAccessor`, `EntityDataAccessor` | mostly; `data get entity`, `data get block <pos>`, `data merge block <pos> <nbt>` (with recursive compound merge, no-change detection and block-entity re-indexing) and `data merge entity <entity> <nbt>` are implemented; path argument resolution and `data modify` operations remain |
+
 ## How to close a parity row
 
 For each row, compare: state transitions, random sequence, event/game-event

@@ -71,6 +71,10 @@
 
 ## P1 — vanilla-visible behavior
 
+- `/data` command parity: `data get entity`, `data get block <pos>`, `data merge block <pos> <nbt>`
+  (with recursive compound merging, no-change detection and block entity updates) and
+  `data merge entity <entity> <nbt>` are implemented; remaining tasks are path filtering (`[path] [scale]`),
+  `data remove` and `data modify` subcommands.
 - Daylight detector sky visibility, weather attenuation and the vanilla sun-angle
   easing are implemented; keep a real-client/weather fixture for packet-level
   verification.
