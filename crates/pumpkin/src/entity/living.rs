@@ -2562,6 +2562,8 @@ impl LivingEntity {
     fn hurt_sound(&self) -> Sound {
         if self.entity.entity_type == &EntityType::SLIME {
             SlimeEntity::hurt_sound_for_size(self.entity.data.load(Relaxed))
+        } else if self.entity.entity_type == &EntityType::IRON_GOLEM {
+            Sound::EntityIronGolemHurt
         } else {
             Self::hurt_sound_for_entity(self.entity.entity_type)
         }
@@ -3274,10 +3276,41 @@ impl EntityBase for LivingEntity {
 
             // Apply remaining damage to health (clamped)
             let max_h = self.get_max_health();
-            let new_health = self.health.load() - remaining;
+            let old_health = self.health.load();
+            let new_health = old_health - remaining;
             let clamped_health = new_health.max(0.0).min(max_h);
             if remaining > 0.0 {
                 self.set_health(clamped_health);
+
+                if self.entity.entity_type == &EntityType::IRON_GOLEM && max_h > 0.0 {
+                    let old_fraction = old_health / max_h;
+                    let new_fraction = clamped_health / max_h;
+                    let old_stage = if old_fraction < 0.25 {
+                        3
+                    } else if old_fraction < 0.5 {
+                        2
+                    } else if old_fraction < 0.75 {
+                        1
+                    } else {
+                        0
+                    };
+                    let new_stage = if new_fraction < 0.25 {
+                        3
+                    } else if new_fraction < 0.5 {
+                        2
+                    } else if new_fraction < 0.75 {
+                        1
+                    } else {
+                        0
+                    };
+                    if new_stage > old_stage {
+                        world.play_sound(
+                            Sound::EntityIronGolemDamage,
+                            SoundCategory::Neutral,
+                            &self.entity.pos.load(),
+                        );
+                    }
+                }
 
                 // LivingEntity#actuallyHurt emits ENTITY_DAMAGE only after
                 // absorption has been removed and health really changed.

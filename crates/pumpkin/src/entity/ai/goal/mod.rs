@@ -23,6 +23,7 @@ pub mod look_around;
 pub mod look_at_entity;
 pub mod melee_attack;
 pub mod move_to_target_pos;
+pub mod offer_flower;
 pub mod owner_hurt_by_target;
 pub mod owner_hurt_target;
 pub mod pick_up_block;
