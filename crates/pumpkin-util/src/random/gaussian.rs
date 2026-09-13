@@ -64,7 +64,9 @@ mod tests {
         }
 
         fn next_splitter(&mut self) -> crate::random::RandomDeriver {
-            unimplemented!()
+            crate::random::RandomDeriver::Xoroshiro(
+                crate::random::xoroshiro128::Xoroshiro::from_seed(0).next_splitter(),
+            )
         }
 
         fn next_i32(&mut self) -> i32 {

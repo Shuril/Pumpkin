@@ -400,7 +400,7 @@ mod tests {
     #[test]
     fn slime_chunk_seed() {
         let seed = super::seed_slime_chunk(0, 0, 12345, 987234911);
-        assert_eq!(seed, 12345 ^ 987234911);
+        assert_eq!(seed, 0x3039 ^ 0x3ad8_025f);
 
         let seed2 = super::seed_slime_chunk(5, -3, 12345678, 987234911);
         assert_ne!(seed2, 0);
