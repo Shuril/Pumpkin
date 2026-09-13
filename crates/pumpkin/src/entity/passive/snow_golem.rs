@@ -4,8 +4,12 @@ use std::sync::{
 };
 
 use pumpkin_data::{
-    entity::EntityType, item::Item, item_stack::ItemStack, meta_data_type::MetaDataType,
-    sound::{Sound, SoundCategory}, tracked_data::TrackedData,
+    entity::EntityType,
+    item::Item,
+    item_stack::ItemStack,
+    meta_data_type::MetaDataType,
+    sound::{Sound, SoundCategory},
+    tracked_data::TrackedData,
 };
 use pumpkin_nbt::compound::NbtCompound;
 use pumpkin_protocol::java::client::play::Metadata;
@@ -14,7 +18,8 @@ use crate::entity::{
     Entity, EntityBaseFuture, NBTStorage, NbtFuture,
     ai::goal::{
         active_target::ActiveTargetGoal, look_around::RandomLookAroundGoal,
-        look_at_entity::LookAtEntityGoal, wander_around::WanderAroundGoal,
+        look_at_entity::LookAtEntityGoal, snowball_attack::SnowballAttackGoal,
+        wander_around::WanderAroundGoal,
     },
     item::ItemEntity,
     mob::{Mob, MobEntity},
@@ -51,7 +56,7 @@ impl SnowGolemEntity {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
 
-            // TODO: SnowballAttackGoal
+            goal_selector.add_goal(1, Box::new(SnowballAttackGoal::new(1.25, 20, 10.0)));
             goal_selector.add_goal(5, Box::new(WanderAroundGoal::new(1.0)));
             goal_selector.add_goal(
                 6,
@@ -62,6 +67,26 @@ impl SnowGolemEntity {
             target_selector.add_goal(
                 1,
                 ActiveTargetGoal::with_default(&mob_arc.mob_entity, &EntityType::ZOMBIE, true),
+            );
+            target_selector.add_goal(
+                1,
+                ActiveTargetGoal::with_default(&mob_arc.mob_entity, &EntityType::SKELETON, true),
+            );
+            target_selector.add_goal(
+                1,
+                ActiveTargetGoal::with_default(&mob_arc.mob_entity, &EntityType::SPIDER, true),
+            );
+            target_selector.add_goal(
+                1,
+                ActiveTargetGoal::with_default(&mob_arc.mob_entity, &EntityType::CREEPER, true),
+            );
+            target_selector.add_goal(
+                1,
+                ActiveTargetGoal::with_default(&mob_arc.mob_entity, &EntityType::PILLAGER, true),
+            );
+            target_selector.add_goal(
+                1,
+                ActiveTargetGoal::with_default(&mob_arc.mob_entity, &EntityType::VINDICATOR, true),
             );
         };
 
@@ -174,7 +199,10 @@ mod tests {
 
     #[test]
     fn snow_golem_shearing_drops_carved_pumpkin() {
-        assert_eq!(Item::CARVED_PUMPKIN.id, pumpkin_data::item::Item::CARVED_PUMPKIN.id);
+        assert_eq!(
+            Item::CARVED_PUMPKIN.id,
+            pumpkin_data::item::Item::CARVED_PUMPKIN.id
+        );
         assert_eq!(Item::SHEARS.id, pumpkin_data::item::Item::SHEARS.id);
     }
 
@@ -183,4 +211,3 @@ mod tests {
         assert_eq!(TrackedData::SNOW_GOLEM_FLAGS.v1_21, 16);
     }
 }
-

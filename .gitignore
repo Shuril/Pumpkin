@@ -157,3 +157,8 @@ version_history.json
 world_nether/
 world_the_end/
 patchbukkit/
+
+# Local decompiled reference & analysis
+/Minecraft/
+graphify-out/
+

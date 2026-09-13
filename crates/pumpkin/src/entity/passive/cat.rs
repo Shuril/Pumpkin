@@ -48,7 +48,7 @@ impl CatEntity {
         let mob_entity = MobEntity::new(entity);
         let cat = Self {
             mob_entity,
-            variant: AtomicU8::new(9), // Default to tabby
+            variant: AtomicU8::new(9),       // Default to tabby
             collar_color: AtomicU8::new(14), // Default to red
             is_tamed: AtomicBool::new(false),
             is_sitting: AtomicBool::new(false),
@@ -75,7 +75,10 @@ impl CatEntity {
 
             goal_selector.add_goal(1, Box::new(SwimGoal::default()));
             goal_selector.add_goal(1, EscapeDangerGoal::new(1.5));
-            goal_selector.add_goal(4, Box::new(AvoidEntityGoal::new(&EntityType::PLAYER, 16.0, 0.8, 1.33)));
+            goal_selector.add_goal(
+                4,
+                Box::new(AvoidEntityGoal::new(&EntityType::PLAYER, 16.0, 0.8, 1.33)),
+            );
             goal_selector.add_goal(4, Box::new(TemptGoal::new(0.6, TEMPT_ITEMS)));
             goal_selector.add_goal(5, BreedGoal::new(0.8));
             goal_selector.add_goal(6, FollowOwnerGoal::new(1.0, 5.0, 10.0));
@@ -352,8 +355,8 @@ impl Mob for CatEntity {
                 }
 
                 // If food and damaged, heal
-                let is_food = item_stack.item.id == Item::COD.id
-                    || item_stack.item.id == Item::SALMON.id;
+                let is_food =
+                    item_stack.item.id == Item::COD.id || item_stack.item.id == Item::SALMON.id;
                 let current_health = self.mob_entity.living_entity.health.load();
                 let max_health = self.mob_entity.living_entity.get_max_health();
 
@@ -386,8 +389,8 @@ impl Mob for CatEntity {
                 }
             } else {
                 // Wild cat: taming with fish
-                let is_food = item_stack.item.id == Item::COD.id
-                    || item_stack.item.id == Item::SALMON.id;
+                let is_food =
+                    item_stack.item.id == Item::COD.id || item_stack.item.id == Item::SALMON.id;
                 if is_food {
                     item_stack.decrement_unless_creative(player.gamemode.load(), 1);
                     world.play_sound(

@@ -5,9 +5,9 @@ use crate::entity::ai::goal::{Controls, Goal, GoalFuture};
 use crate::entity::mob::Mob;
 use crate::world::BlockBreakingProgress;
 use pumpkin_data::block_properties::{BlockProperties, DoubleBlockHalf, OakDoorLikeProperties};
+use pumpkin_data::tag;
 use pumpkin_data::tag::Taggable;
 use pumpkin_data::world::WorldEvent;
-use pumpkin_data::tag;
 use pumpkin_util::Difficulty;
 use pumpkin_world::world::BlockFlags;
 
@@ -163,10 +163,7 @@ impl Goal for BreakDoorGoal {
                     .set_block_breaking(
                         &mob.get_mob_entity().living_entity.entity,
                         door_pos,
-                        BlockBreakingProgress::Update {
-                            stage,
-                            speed: None,
-                        },
+                        BlockBreakingProgress::Update { stage, speed: None },
                     )
                     .await;
                 self.last_break_progress = stage;
@@ -179,7 +176,9 @@ impl Goal for BreakDoorGoal {
                 let door_props = OakDoorLikeProperties::from_state_id(state_id, block);
 
                 // Destroy primary door block
-                world.break_block(&door_pos, None, BlockFlags::SKIP_DROPS).await;
+                world
+                    .break_block(&door_pos, None, BlockFlags::SKIP_DROPS)
+                    .await;
 
                 // Also destroy counterpart door half (upper/lower)
                 let other_half = match door_props.half {
@@ -187,8 +186,13 @@ impl Goal for BreakDoorGoal {
                     DoubleBlockHalf::Lower => pumpkin_data::BlockDirection::Up,
                 };
                 let other_pos = door_pos.offset(other_half.to_offset());
-                if world.get_block(&other_pos).has_tag(&tag::Block::MINECRAFT_DOORS) {
-                    world.break_block(&other_pos, None, BlockFlags::SKIP_DROPS).await;
+                if world
+                    .get_block(&other_pos)
+                    .has_tag(&tag::Block::MINECRAFT_DOORS)
+                {
+                    world
+                        .break_block(&other_pos, None, BlockFlags::SKIP_DROPS)
+                        .await;
                 }
 
                 world.sync_world_event(WorldEvent::SoundZombieDoorCrash, door_pos, 0);

@@ -139,4 +139,3 @@ mod tests {
         assert_eq!(g.dot(2.0, 3.0, 4.0), -1.0);
     }
 }
-

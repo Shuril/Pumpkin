@@ -30,6 +30,7 @@ pub mod pick_up_block;
 pub mod place_block;
 pub mod restrict_sun;
 pub mod revenge;
+pub mod snowball_attack;
 pub mod step_and_destroy_block;
 pub mod swim;
 pub mod teleport_towards_player;

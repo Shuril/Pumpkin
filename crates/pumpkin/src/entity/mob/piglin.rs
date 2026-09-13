@@ -1,8 +1,6 @@
 use std::sync::{Arc, Weak};
 
-use pumpkin_data::{
-    damage::DamageType, entity::EntityType, item::Item, item_stack::ItemStack,
-};
+use pumpkin_data::{damage::DamageType, entity::EntityType, item::Item, item_stack::ItemStack};
 
 use crate::entity::{
     Entity, EntityBase, EntityBaseFuture, NBTStorage,

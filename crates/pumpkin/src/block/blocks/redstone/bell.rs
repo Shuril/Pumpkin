@@ -234,11 +234,7 @@ impl BlockBehaviour for BellBlock {
                 return;
             }
 
-            ring_bell(
-                *args.position,
-                args.world,
-                face.to_horizontal_facing(),
-            );
+            ring_bell(*args.position, args.world, face.to_horizontal_facing());
 
             if let Some(owner_id) = args.projectile.projectile_owner_id()
                 && let Some(player) = args.world.get_player_by_id(owner_id)
@@ -320,4 +316,3 @@ mod tests {
         ));
     }
 }
-

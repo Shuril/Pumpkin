@@ -160,8 +160,8 @@ impl Mob for OcelotEntity {
         Box::pin(async move {
             let entity = self.get_entity();
             let world = entity.world.load();
-            let is_food = item_stack.item.id == Item::COD.id
-                || item_stack.item.id == Item::SALMON.id;
+            let is_food =
+                item_stack.item.id == Item::COD.id || item_stack.item.id == Item::SALMON.id;
 
             let dist_sq = entity
                 .pos

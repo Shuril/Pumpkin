@@ -272,15 +272,24 @@ mod tests {
         let dropped = std::sync::atomic::AtomicI32::new(0);
 
         // Uncharged creeper cannot drop mob head
-        assert!(!charged.load(std::sync::atomic::Ordering::Relaxed) || dropped.load(std::sync::atomic::Ordering::Relaxed) >= 1);
+        assert!(
+            !charged.load(std::sync::atomic::Ordering::Relaxed)
+                || dropped.load(std::sync::atomic::Ordering::Relaxed) >= 1
+        );
 
         // Powered creeper with 0 dropped heads can drop head
         charged.store(true, std::sync::atomic::Ordering::Relaxed);
-        assert!(charged.load(std::sync::atomic::Ordering::Relaxed) && dropped.load(std::sync::atomic::Ordering::Relaxed) < 1);
+        assert!(
+            charged.load(std::sync::atomic::Ordering::Relaxed)
+                && dropped.load(std::sync::atomic::Ordering::Relaxed) < 1
+        );
 
         // Increment dropped skulls count
         dropped.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        assert!(!(charged.load(std::sync::atomic::Ordering::Relaxed) && dropped.load(std::sync::atomic::Ordering::Relaxed) < 1));
+        assert!(
+            !(charged.load(std::sync::atomic::Ordering::Relaxed)
+                && dropped.load(std::sync::atomic::Ordering::Relaxed) < 1)
+        );
     }
 
     #[test]
@@ -406,10 +415,7 @@ impl Mob for CreeperEntity {
                         let disc_id = discs[idx];
                         if let Some(disc_item) = Item::from_id(disc_id) {
                             world
-                                .drop_stack(
-                                    &entity.block_pos.load(),
-                                    ItemStack::new(1, disc_item),
-                                )
+                                .drop_stack(&entity.block_pos.load(), ItemStack::new(1, disc_item))
                                 .await;
                         }
                     }

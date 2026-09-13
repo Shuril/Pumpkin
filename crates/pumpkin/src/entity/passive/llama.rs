@@ -120,7 +120,14 @@ impl Mob for LlamaEntity {
 
     fn mob_init_data_tracker(&self) -> EntityBaseFuture<'_, ()> {
         Box::pin(async move {
-            if self.get_mob_entity().living_entity.entity.age.load(Ordering::Relaxed) < 0 {
+            if self
+                .get_mob_entity()
+                .living_entity
+                .entity
+                .age
+                .load(Ordering::Relaxed)
+                < 0
+            {
                 self.get_mob_entity().living_entity.entity.send_meta_data(
                     &[Metadata::new(
                         TrackedData::BABY_ID,
@@ -151,7 +158,13 @@ impl Mob for LlamaEntity {
             if item_stack.item.id == Item::CHEST.id
                 && self.is_tamed()
                 && !self.has_chest()
-                && self.mob_entity.living_entity.entity.age.load(Ordering::Relaxed) >= 0
+                && self
+                    .mob_entity
+                    .living_entity
+                    .entity
+                    .age
+                    .load(Ordering::Relaxed)
+                    >= 0
             {
                 if !player.is_creative() {
                     item_stack.decrement_unless_creative(player.gamemode.load(), 1);
@@ -159,11 +172,7 @@ impl Mob for LlamaEntity {
                 self.set_has_chest(true);
                 let pos = self.mob_entity.living_entity.entity.pos.load();
                 let world = self.mob_entity.living_entity.entity.world.load();
-                world.play_sound(
-                    Sound::EntityLlamaChest,
-                    SoundCategory::Neutral,
-                    &pos,
-                );
+                world.play_sound(Sound::EntityLlamaChest, SoundCategory::Neutral, &pos);
                 world
                     .emit_game_event(pos.to_block_pos(), GameEvent::EQUIP)
                     .await;
@@ -178,8 +187,8 @@ impl Mob for LlamaEntity {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::AtomicBool;
     use pumpkin_nbt::compound::NbtCompound;
+    use std::sync::atomic::AtomicBool;
 
     #[test]
     fn test_llama_chest_and_tame_state_toggling() {

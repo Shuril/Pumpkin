@@ -45,6 +45,7 @@ impl Mob for ZombieEntity {
         source: Option<&'a dyn crate::entity::EntityBase>,
         cause: Option<&'a dyn crate::entity::EntityBase>,
     ) -> crate::entity::EntityBaseFuture<'a, ()> {
-        self.entity.mob_drop_custom_death_loot(damage_type, source, cause)
+        self.entity
+            .mob_drop_custom_death_loot(damage_type, source, cause)
     }
 }

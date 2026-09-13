@@ -117,11 +117,7 @@ impl Goal for FleeSunGoal {
                     .navigator
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
-                navigator.set_progress(NavigatorGoal::new(
-                    pos,
-                    target,
-                    f64::from(self.speed),
-                ));
+                navigator.set_progress(NavigatorGoal::new(pos, target, f64::from(self.speed)));
             }
         })
     }

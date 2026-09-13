@@ -29,7 +29,7 @@ impl Goal for OfferFlowerGoal {
                 return false;
             }
 
-            if rand::random::<u16>() % 400 != 0 {
+            if !rand::random::<u16>().is_multiple_of(400) {
                 return false;
             }
 
@@ -37,7 +37,11 @@ impl Goal for OfferFlowerGoal {
             let villagers = world.get_nearby_entities(my_pos, 6.0);
             for (_uuid, candidate) in villagers {
                 if candidate.get_entity().entity_type == &EntityType::VILLAGER
-                    && candidate.get_entity().age.load(std::sync::atomic::Ordering::Relaxed) < 0
+                    && candidate
+                        .get_entity()
+                        .age
+                        .load(std::sync::atomic::Ordering::Relaxed)
+                        < 0
                     && candidate.get_entity().is_alive()
                 {
                     self.target = Some(candidate);
@@ -68,11 +72,10 @@ impl Goal for OfferFlowerGoal {
         Box::pin(async {
             self.timer = 400;
             let entity = &mob.get_mob_entity().living_entity.entity;
-            entity.world.load().send_entity_status(
-                entity,
-                EntityStatus::OfferFlower,
-                None,
-            );
+            entity
+                .world
+                .load()
+                .send_entity_status(entity, EntityStatus::OfferFlower, None);
         })
     }
 
@@ -81,11 +84,10 @@ impl Goal for OfferFlowerGoal {
             self.timer = 0;
             self.target = None;
             let entity = &mob.get_mob_entity().living_entity.entity;
-            entity.world.load().send_entity_status(
-                entity,
-                EntityStatus::StopOfferFlower,
-                None,
-            );
+            entity
+                .world
+                .load()
+                .send_entity_status(entity, EntityStatus::StopOfferFlower, None);
         })
     }
 

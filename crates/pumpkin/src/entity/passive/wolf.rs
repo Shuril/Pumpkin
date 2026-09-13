@@ -71,7 +71,7 @@ impl WolfEntity {
         let mob_entity = MobEntity::new(entity);
         let wolf = Self {
             mob_entity,
-            variant: AtomicU8::new(3), // Default to pale
+            variant: AtomicU8::new(3),       // Default to pale
             collar_color: AtomicU8::new(14), // Default to red
             is_tamed: AtomicBool::new(false),
             is_sitting: AtomicBool::new(false),

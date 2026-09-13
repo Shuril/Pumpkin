@@ -149,19 +149,17 @@ impl IronGolemEntity {
         if offer {
             self.offer_flower_ticks.store(400, Ordering::Relaxed);
             let entity = &self.mob_entity.living_entity.entity;
-            entity.world.load().send_entity_status(
-                entity,
-                EntityStatus::OfferFlower,
-                None,
-            );
+            entity
+                .world
+                .load()
+                .send_entity_status(entity, EntityStatus::OfferFlower, None);
         } else {
             self.offer_flower_ticks.store(0, Ordering::Relaxed);
             let entity = &self.mob_entity.living_entity.entity;
-            entity.world.load().send_entity_status(
-                entity,
-                EntityStatus::StopOfferFlower,
-                None,
-            );
+            entity
+                .world
+                .load()
+                .send_entity_status(entity, EntityStatus::StopOfferFlower, None);
         }
     }
 
@@ -254,12 +252,15 @@ impl Mob for IronGolemEntity {
             world.send_entity_status(entity, EntityStatus::StartAttacking, None);
             world.play_sound(Sound::EntityIronGolemAttack, SoundCategory::Neutral, &pos);
             if successful {
-                let resistance = target
-                    .cast_any()
-                    .downcast_ref::<LivingEntity>()
-                    .map_or(0.0, |l| {
-                        l.get_attribute_value(&pumpkin_data::attributes::Attributes::KNOCKBACK_RESISTANCE)
-                    });
+                let resistance =
+                    target
+                        .cast_any()
+                        .downcast_ref::<LivingEntity>()
+                        .map_or(0.0, |l| {
+                            l.get_attribute_value(
+                                &pumpkin_data::attributes::Attributes::KNOCKBACK_RESISTANCE,
+                            )
+                        });
                 let scale = (1.0 - resistance).max(0.0);
                 if scale > 0.0 {
                     let mut vel = target.get_entity().velocity.load();

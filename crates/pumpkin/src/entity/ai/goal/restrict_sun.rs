@@ -86,9 +86,8 @@ mod tests {
 
     #[test]
     fn test_restrict_sun_goal_initialization() {
-        let goal = RestrictSunGoal::new(
-            Weak::<crate::entity::mob::skeleton::SkeletonEntityBase>::new(),
-        );
+        let goal =
+            RestrictSunGoal::new(Weak::<crate::entity::mob::skeleton::SkeletonEntityBase>::new());
         assert_eq!(goal.controls(), Controls::empty());
     }
 

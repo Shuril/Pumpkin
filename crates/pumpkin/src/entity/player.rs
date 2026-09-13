@@ -6997,16 +6997,23 @@ mod tests {
         // Put an item in main inventory slot 15
         inv.set_stack(15, ItemStack::new(12, &Item::APPLE)).await;
         // Put armor in slot 39 (helmet)
-        inv.set_stack(39, ItemStack::new(1, &Item::IRON_HELMET)).await;
+        inv.set_stack(39, ItemStack::new(1, &Item::IRON_HELMET))
+            .await;
         // Put offhand in slot 40
-        inv.set_stack(PlayerInventory::OFF_HAND_SLOT, ItemStack::new(1, &Item::SHIELD)).await;
+        inv.set_stack(
+            PlayerInventory::OFF_HAND_SLOT,
+            ItemStack::new(1, &Item::SHIELD),
+        )
+        .await;
         inv.set_selected_slot(3);
 
         let mut nbt = NbtCompound::new();
         inv.write_nbt(&mut nbt).await;
 
         assert_eq!(nbt.get_int("SelectedItemSlot"), Some(3));
-        let list = nbt.get_list("Inventory").expect("Inventory tag must be present");
+        let list = nbt
+            .get_list("Inventory")
+            .expect("Inventory tag must be present");
         assert_eq!(list.len(), 4);
 
         // Create a new empty inventory and load from NBT
@@ -7040,12 +7047,15 @@ mod tests {
 
         let ec = EnderChestInventory::default();
         ec.set_stack(2, ItemStack::new(64, &Item::OBSIDIAN)).await;
-        ec.set_stack(26, ItemStack::new(1, &Item::NETHER_STAR)).await;
+        ec.set_stack(26, ItemStack::new(1, &Item::NETHER_STAR))
+            .await;
 
         let mut nbt = NbtCompound::new();
         ec.write_nbt(&mut nbt).await;
 
-        let list = nbt.get_list("EnderItems").expect("EnderItems tag must be present");
+        let list = nbt
+            .get_list("EnderItems")
+            .expect("EnderItems tag must be present");
         assert_eq!(list.len(), 2);
 
         let loaded = EnderChestInventory::default();
